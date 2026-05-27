@@ -25,7 +25,8 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-#define TEST_LIST   (1)
+#define TEST_LIST   (0)
+#define TEST_HASH   (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -41,6 +42,10 @@ int main()
     test_type_list();
     test_type_list_cost();
     test_normal_list_cost();
+#endif
+
+#if TEST_HASH
+    test_type_hash();
 #endif
 
     return 0;

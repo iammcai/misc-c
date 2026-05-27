@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "type/type_list.h"
 
 /* ========================================================================== */
@@ -66,5 +67,12 @@ int test_type_list();
  * @retval      test result
  */
 int test_normal_list_cost();
+
+/**
+ * @brief       test type hash
+ * 
+ * @retval      test result
+ */
+int test_type_hash();
 
 #endif

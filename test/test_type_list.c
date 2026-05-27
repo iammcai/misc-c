@@ -195,8 +195,8 @@ int test_normal_list_cost()
     Free(data, sizeof(int)*TEST_DATA_COUNT);
 
     printf("test normal list cost: %s\n", ret == 0 ? "PASS" : "FAIL");
-    printf("add %u item into normal list cost: %u us\n", TEST_DATA_COUNT, add_time);
-    printf("pop %u item from list cost: %u us\n", TEST_DATA_COUNT, del_time);
+    printf("add %u item into normal list cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, add_time, (double)add_time/TEST_DATA_COUNT);
+    printf("pop %u item from normal list cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, del_time, (double)del_time/TEST_DATA_COUNT);
     printf("alloc mem: %u Bytes\n", mem_alloc);
     printf("free mem: %u Bytes\n", mem_free);
     printf("========\n");
@@ -306,8 +306,8 @@ int test_type_list_cost()
     Free(list_head, sizeof(*list_head));
 
     printf("test type list cost: %s\n", ret == 0 ? "PASS" : "FAIL");
-    printf("add %u item into list cost: %u us\n", TEST_DATA_COUNT, add_time);
-    printf("pop %u item from list cost: %u us\n", TEST_DATA_COUNT, del_time);
+    printf("add %u item into list cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, add_time, (double)add_time/TEST_DATA_COUNT);
+    printf("pop %u item from list cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, del_time, (double)del_time/TEST_DATA_COUNT);
     printf("alloc mem: %u Bytes\n", mem_alloc);
     printf("free mem: %u Bytes\n", mem_free);
     printf("========\n");
