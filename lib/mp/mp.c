@@ -164,8 +164,8 @@ static attr_force_inline void g_fixed_free_list_head_hash_init() attr_ctor(CTOR_
 
 // 全局哈希表，存储所有内存类型属性
 static mem_type_attr_hash_head_t g_mem_type_attr_hash_head = {};
-// 全局哈希表，存储所有固定大小空闲链表头
-static fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
+// 全局哈希表，存储所有固定大小空闲链表头。使用线程私有属性，每个线程持有一个同名的副本，互不干扰，做到隔离
+static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -174,7 +174,7 @@ static fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
 // 定义内存类型属性哈希表相关操作
 declare_hash(mem_type_attr, mem_type_attr, mem_type_attr_t, item, 1, 31, _mem_type_attr_cmp, _mem_type_attr_hash)
 
-// 定义空闲链表头链表相关操作
+// 定义空闲链表头哈希表相关操作
 declare_hash(fixed_free_list_head, fixed_free_list_head, fixed_free_list_t, item, 1, 31, _fixed_free_list_cmp, _fixed_free_list_hash)
 
 static inline void g_mem_type_attr_hash_init()
@@ -193,10 +193,35 @@ void mem_type_attr_init(mem_type_attr_t *attr)
     mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
 }
 
-void fixed_free_list_head_init(fixed_free_list_t *ffl)
+void _mp_fixed_init(mem_type_attr_t *attr)
 {
-    assert(ffl);
-    fixed_free_list_head_hash_add(&g_fixed_free_list_hash_head, ffl);
+    // 检查g_fixed_free_list_hash_head是否空，是的话先初始化一下
+    // TODO: 后续修改为线程构造
+    {
+        fixed_free_list_head_hash_head_t empty = {};
+        if(!memcmp(&g_fixed_free_list_hash_head, &empty, sizeof(fixed_free_list_head_hash_head_t)))
+            fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
+    }
+
+    assert(attr && attr->name && mem_type_attr_fixed_size(attr));   // 检查参数
+
+    // 在线程私有的g_fixed_free_list_hash_head哈希表中查找是否存在对应free list
+    fixed_free_list_t key = {.attr = attr};
+    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
+    if(!free_list)  // 没有对应free_list，则创建
+    {
+        free_list = mp_calloc(1, sizeof(fixed_free_list_t));
+        assert(free_list);
+        free_list->attr = attr;
+        fixed_free_list_init(&free_list->head);     // 初始化空闲链表头
+        fixed_free_list_head_hash_add(&g_fixed_free_list_hash_head, free_list);     // 加到全局哈希表
+    }
+    // 补充节点数量到需求
+    while(fixed_free_list_count(&free_list->head) < attr->node_max_num)
+    {
+        fixed_mem_node_t *new_node = fixed_mem_node_new(attr);
+        fixed_free_list_add_head(&free_list->head, new_node);
+    }
 }
 
 void fixed_free_list_supply(fixed_free_list_head_t *head, mem_type_attr_t *attr)
@@ -223,10 +248,10 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
     assert(free_list);
 
-    if(!fixed_free_list_count(free_list->head)) // 检查空闲节点个数
+    if(!fixed_free_list_count(&free_list->head))    // 检查空闲节点个数
         return NULL;
 
-    fixed_mem_node_t *node = fixed_free_list_pop(free_list->head);  // pop一个节点
+    fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
     return mp_fixed_node_data(node);
 }
@@ -241,7 +266,7 @@ void _mp_fixed_node_put(void *ptr)
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
     assert(free_list);
 
-    fixed_free_list_add_head(free_list->head, node);    // 返回空闲链表
+    fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
 }
 
 /* ========================================================================== */
@@ -259,7 +284,7 @@ void mp_dump_fixed_free_list()
     ffl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
     while(ffl)
     {
-        fixed_free_list_head_t *head = ffl->head;
+        fixed_free_list_head_t *head = &ffl->head;
 
         fixed_mem_node_t *node = fixed_free_list_first(head);
         while(node)

@@ -1,6 +1,6 @@
 # mem pool
 
-## 设计
+## 架构设计
 
 首先是一个全局的内存类型属性`mem_type_attr_t`，使用一个全局哈希表`g_mem_type_attr_hash_head`来存储所有类型。
 
@@ -43,3 +43,29 @@ typedef struct{
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
 ```
+
+整体的结构如图：
+
+![mp_struct](../images/mp_struct.png)
+
+## 无锁化
+
+以上实现的内存池是线程不安全的，并发使用需要外部使用锁
+
+加解锁是耗时操作，针对此，考虑使用空间换时间的方式来无锁化
+
+具体而言，使用`thread_local`属性来修饰全局空闲链表，所有的线程各自持有一份“副本”。从内存的视角看，每个线程在内存中都有一份copy
+
+```C
+// 全局哈希表，存储所有固定大小空闲链表头。使用线程私有属性，每个线程持有一个同名的副本，互不干扰，做到隔离
+static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
+```
+
+`mp_fixed_init`宏中对其进行了初始化，具体可见相关实现
+
+多线程视角下，整体的结构如图：
+
+![mp_struct_multi_thread](../images/mp_struct_multi_thread.png)
+
+## 跨线程分配释放
+

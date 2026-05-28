@@ -63,7 +63,7 @@ pre_declare_hash(fixed_free_list_head)
 
 // 固定大小空闲内存链表头定义，哈希表存储起来
 typedef struct{
-    fixed_free_list_head_t  *head;  // 空闲链表头
+    fixed_free_list_head_t  head;   // 空闲链表头
     mem_type_attr_t *attr;          // 所属内存类型
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
@@ -83,11 +83,13 @@ declare_list(fixed_free, fixed_free, fixed_mem_node_t, item)
 extern void mem_type_attr_init(mem_type_attr_t *attr);
 
 /**
- * @brief       封装hash add，加到全局固定空闲链表头的哈希表中
+ * @brief       初始化fixed node mem pool
  * 
- * @param[in]   ffl     - 空闲链表头
+ * @param[in]   attr    - mem type attr
+ * 
+ * @note        查找空闲链表，（创建并）补充节点数量
  */
-extern void fixed_free_list_head_init(fixed_free_list_t *ffl);
+extern void _mp_fixed_init(mem_type_attr_t *attr);
 
 /**
  * @brief       supply mem node from system to free list
@@ -133,22 +135,21 @@ static inline void _mem_type_attr_ ## name ## _init()   \
 /* _declare_mem_type_attr end */
 
 /**
- * 外部使用，定义一个固定节点大小内存池
- * 1. 定义内存类型，加入全局哈希表
- * 2. 定义空闲链表，进行head初始化，将链表头加到全局哈希中
- * 3. 根据指定节点数量和大小，从系统分配内存
+ * 外部使用，声明一类固定大小的内存类型
+ */
+#define declare_mem_type_fixed(name, node_size, node_max_num)   \
+    _declare_mem_type_attr(name, MEM_TYPE_ATTR_FIXED_SIZE, node_size, node_max_num) \
+/* declare_mem_type_fixed end */
+
+/**
+ * 外部使用，初始化一个固定节点大小内存池
+ * 0. 初始化全局空闲链表
+ * 1. 在【线程私有】的全局空闲链表头哈希表中查找有无空闲链表
+ *  1.1 无的话，创建并加入哈希表
+ * 2. 根据指定节点数量和大小，从系统分配内存
 */
-#define declare_mp_fixed(name, node_size, node_max_num) \
-_declare_mem_type_attr(name, MEM_TYPE_ATTR_FIXED_SIZE, node_size, node_max_num) \
-static fixed_free_list_head_t _fixed_free_list_ ## name = {};   \
-static fixed_free_list_t _fixed_free_list_head_ ## name = { .head = &_fixed_free_list_ ## name, .attr = &_mem_type_attr_ ## name, };    \
-static attr_force_inline void _fixed_free_list_ ## name ## init() attr_ctor(CTOR_PRIO_LOW); \
-static inline void _fixed_free_list_ ## name ## init()  \
-{   \
-    fixed_free_list_init(&_fixed_free_list_ ## name);   \
-    fixed_free_list_head_init(&_fixed_free_list_head_ ## name); \
-    fixed_free_list_supply(&_fixed_free_list_ ## name, &_mem_type_attr_ ## name);    \
-}   \
+#define mp_fixed_init(name) \
+    _mp_fixed_init(&_mem_type_attr_ ## name);   \
 /* declare_mp_fixed */
 
 /**
@@ -168,7 +169,7 @@ static inline void _fixed_free_list_ ## name ## init()  \
 /*                              Debug Function                                */
 /* ========================================================================== */
 
-#define MP_TRACE    (0)
+#define MP_TRACE    (1)
 
 #if MP_TRACE
 

@@ -53,6 +53,7 @@ int main()
     test_mp();
     test_mp_cost();
     test_normal_mem_cost();
+    test_mp_multi_thread();
 #endif
 
     return 0;

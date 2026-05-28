@@ -96,4 +96,9 @@ int test_mp_cost();
  */
 int test_normal_mem_cost();
 
+/**
+ * @brief       test mp used in multi threads
+ */
+int test_mp_multi_thread();
+
 #endif

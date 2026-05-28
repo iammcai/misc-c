@@ -19,6 +19,8 @@
 /* ========================================================================== */
 
 #define _POSIX_C_SOURCE 199309L
+#include <pthread.h>
+#include <unistd.h>
 #include "test.h"
 #include "mp/mp.h"
 
@@ -27,13 +29,13 @@
 /* ========================================================================== */
 
 #define TEST_MEM_NODE_SIZE      (512)
-#define TEST_MEM_NODE_COUNT     (102400)
+#define TEST_MEM_NODE_COUNT     (8)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-declare_mp_fixed(test_fixed, TEST_MEM_NODE_SIZE, TEST_MEM_NODE_COUNT)
+declare_mem_type_fixed(test_fixed, TEST_MEM_NODE_SIZE, TEST_MEM_NODE_COUNT)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -83,6 +85,8 @@ int test_mp_cost()
     void* ptr[TEST_MEM_NODE_COUNT] = {};
     int i = 0;
 
+    mp_fixed_init(test_fixed)
+
     clock_start(s, e, get_time)
     for(i = 0; i < TEST_MEM_NODE_COUNT; ++ i)
     {
@@ -110,6 +114,10 @@ int test_mp()
 {
     mp_dump_fixed_free_list();
 
+    mp_fixed_init(test_fixed)
+
+    mp_dump_fixed_free_list();
+
     void *p1 = mp_fixed_node_get(test_fixed);
     void *p2 = mp_fixed_node_get(test_fixed);
     void *p3 = mp_fixed_node_get(test_fixed);
@@ -130,4 +138,42 @@ int test_mp()
     mp_dump_fixed_free_list();
 
     return 0;
+}
+
+/**
+ * @brief       测试多线程mp的线程工作函数
+ */
+static void *test_mp_thread_work(void *args)
+{
+    mp_fixed_init(test_fixed)
+
+    printf("Dump thread%d free list:\n", args);
+    mp_dump_fixed_free_list();
+
+    void *p1 = mp_fixed_node_get(test_fixed);
+    void *p2 = mp_fixed_node_get(test_fixed);
+
+    mp_dump_fixed_free_list();
+
+    while(1)
+    {
+        sleep(1);
+    }
+
+    return NULL;
+}
+
+int test_mp_multi_thread()
+{
+    mp_fixed_init(test_fixed)
+
+    pthread_t t1, t2;
+
+    pthread_create(&t1, NULL, test_mp_thread_work, (void*)0);
+    sleep(1);
+    pthread_create(&t2, NULL, test_mp_thread_work, (void*)1);
+    sleep(1);
+
+    printf("Dump Father thread free list:\n");
+    mp_dump_fixed_free_list();
 }
