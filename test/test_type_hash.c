@@ -106,9 +106,9 @@ int test_type_hash()
     assert(!test_hash_count(&head));
 
     printf("test type hash result: PASS\n");
-    printf("add %d item into hash cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, add_time, (double)add_time/TEST_DATA_COUNT);
-    printf("find %d item in hash cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, find_time, (double)find_time/TEST_DATA_COUNT);
-    printf("del %d item in hash cost: %u us, %.3f i/us\n", TEST_DATA_COUNT, del_time, (double)del_time/TEST_DATA_COUNT);
+    printf("add %d item into hash cost: %u us, %.3f us/i\n", TEST_DATA_COUNT, add_time, (double)add_time/TEST_DATA_COUNT);
+    printf("find %d item in hash cost: %u us, %.3f us/i\n", TEST_DATA_COUNT, find_time, (double)find_time/TEST_DATA_COUNT);
+    printf("del %d item in hash cost: %u us, %.3f us/i\n", TEST_DATA_COUNT, del_time, (double)del_time/TEST_DATA_COUNT);
     printf("========\n");
 
     return 0;
