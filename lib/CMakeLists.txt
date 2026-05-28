@@ -2,6 +2,7 @@
 add_library(Lib STATIC
     type/type_list.c
     type/type_hash.c
+    mp/mp.c
 )
 
 # 添加头文件路径

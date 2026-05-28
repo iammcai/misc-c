@@ -27,6 +27,7 @@
 
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
+#define TEST_MP     (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -46,6 +47,12 @@ int main()
 
 #if TEST_HASH
     test_type_hash();
+#endif
+
+#if TEST_MP
+    test_mp();
+    test_mp_cost();
+    test_normal_mem_cost();
 #endif
 
     return 0;
