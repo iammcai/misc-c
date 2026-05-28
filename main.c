@@ -27,7 +27,8 @@
 
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
-#define TEST_MP     (1)
+#define TEST_MP     (0)
+#define TEST_AQ     (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -54,6 +55,11 @@ int main()
     test_mp_cost();
     test_normal_mem_cost();
     test_mp_multi_thread();
+#endif
+
+#if TEST_AQ
+    test_aq_spsc();
+    test_normal_queue();
 #endif
 
     return 0;

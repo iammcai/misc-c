@@ -43,6 +43,13 @@
         t = (e.tv_sec - s.tv_sec) * 1e6 + (e.tv_nsec - s.tv_nsec) / 1e3;    \
     }   \
 
+#define test_with_clock(s, e, t, code)  do{ \
+    clock_gettime(CLOCK_MONOTONIC, &s); \
+    { code }    \
+    clock_gettime(CLOCK_MONOTONIC, &e); \
+    t = (e.tv_sec - s.tv_sec) * 1e6 + (e.tv_nsec - s.tv_nsec) / 1e3;    \
+}while(0);  \
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -100,5 +107,15 @@ int test_normal_mem_cost();
  * @brief       test mp used in multi threads
  */
 int test_mp_multi_thread();
+
+/**
+ * @brief       test atom queue for spsc 
+ */
+int test_aq_spsc();
+
+/**
+ * @brief       测试普通队列+锁
+ */
+int test_normal_queue();
 
 #endif
