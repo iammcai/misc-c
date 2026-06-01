@@ -3,6 +3,7 @@ add_library(Lib STATIC
     type/type_list.c
     type/type_hash.c
     type/type_atom_queue.c
+    event/ev_thread.c
     mp/mp.c
 )
 

@@ -55,7 +55,7 @@
 #define ATOM_AND_FETCH      __atomic_and_fetch
 #define ATOM_OR_FETCH       __atomic_or_fetch
 
-// 原子CAS
+// 原子CAS，a e 为指针。如果*a==*e，那么更新*a=d；否则*e=*a
 #define ATOM_CMP_XCHG_WEAK(a, e, d, m1, m2) \
     __atomic_compare_exchange_n(a, e, d, 1, m1, m2)
 /* ATOM_CMP_XCHG_WEAK end */

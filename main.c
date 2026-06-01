@@ -28,7 +28,8 @@
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
 #define TEST_MP     (0)
-#define TEST_AQ     (1)
+#define TEST_AQ     (0)
+#define TEST_EV_THD (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -60,6 +61,10 @@ int main()
 #if TEST_AQ
     test_aq_spsc();
     test_normal_queue();
+#endif
+
+#if TEST_EV_THD
+    test_ev_thd();
 #endif
 
     return 0;

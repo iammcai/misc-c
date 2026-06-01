@@ -3,6 +3,7 @@ add_library(Test STATIC
     test_type_hash.c
     test_mp.c
     test_aq.c
+    test_ev_thd.c
 )
 
 target_include_directories(Test PUBLIC

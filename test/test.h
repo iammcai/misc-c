@@ -118,4 +118,9 @@ int test_aq_spsc();
  */
 int test_normal_queue();
 
+/**
+ * @brief       测试事件驱动线程
+ */
+int test_ev_thd();
+
 #endif
