@@ -150,9 +150,10 @@ static attr_pure_inline int _mp_fixed_node_belong_local(fixed_mem_node_t *node)
 /**
  * @brief       put node local
  * 
- * @param[in]   node    - ptr to node
+ * @param[in]   free_list   - ptr to free_list
+ * @param[in]   node        - ptr to node
  */
-static attr_force_inline void _mp_fixed_node_put_local(fixed_mem_node_t *node);
+static attr_force_inline void _mp_fixed_node_put_local(fixed_free_list_t *free_list, fixed_mem_node_t *node);
 
 /**
  * @brief       put node remote
@@ -325,6 +326,7 @@ void fixed_free_list_supply(fixed_free_list_head_t *head, mem_type_attr_t *attr)
     while(fixed_free_list_count(head) < attr->node_max_num)
     {
         node = fixed_mem_node_new(attr);
+        if(!node)   printf("%s %d\n", __func__, __LINE__);
         fixed_free_list_add_head(head, node);
     }
 }
@@ -340,10 +342,10 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
     assert(free_list);
 
     // 将local aq中的节点都归还回来
-    while(fixed_cycle_spsc_atom_queue_count(&free_list->cycle_aq_head.local_cycle_aq_head))
+    fixed_mem_node_t *cycle_node = NULL;
+    while(cycle_node = fixed_cycle_spsc_atom_queue_pop(&free_list->cycle_aq_head.local_cycle_aq_head))
     {
-        fixed_mem_node_t *node = fixed_cycle_spsc_atom_queue_pop(&free_list->cycle_aq_head.local_cycle_aq_head);
-        fixed_free_list_add_head(&free_list->head, node);
+        fixed_free_list_add_head(&free_list->head, cycle_node);
     }
 
     if(!fixed_free_list_count(&free_list->head))    // 检查空闲节点个数
@@ -354,12 +356,9 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
     return mp_fixed_node_data(node);
 }
 
-static inline void _mp_fixed_node_put_local(fixed_mem_node_t *node)
+static inline void _mp_fixed_node_put_local(fixed_free_list_t *free_list, fixed_mem_node_t *node)
 {
-    fixed_free_list_t key = {.attr = node->attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
-    assert(free_list);
-
+    if(!node)   printf("%s %d\n", __func__, __LINE__);
     fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
 }
 
@@ -381,10 +380,11 @@ void _mp_fixed_node_put(void *ptr)
 
     fixed_free_list_t key = {.attr = node->attr};
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
+    assert(node && free_list);
 
     // 本地归还 or 异地归还
     if(node->tid == free_list->cycle_aq_head.tid)
-        _mp_fixed_node_put_local(node);
+        _mp_fixed_node_put_local(free_list, node);
     else
         _mp_fixed_node_put_remote(&free_list->cycle_aq_head.remote_cycle_aq_head, node);
 }
@@ -433,6 +433,7 @@ static inline void fixed_node_recycle_work(void *args)
                     fixed_cycle_spsc_atom_queue_push(&aq_target->local_cycle_aq_head, node);
                     break;
                 }
+                aq_target = fixed_cycle_aq_list_next(aq_target);
             }
             assert(aq_target);
         }

@@ -85,4 +85,41 @@ static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head
 - 所有队列，记录到一个全局链表`g_fixed_cycle_aq_list_head`中
 - 回收队列使用原子SPSC队列，减少锁带来的开销
 - 添加一个后台线程，他会遍历队列，将remote队列中的节点，放到对应的local队列中，由此实现跨线程回收
+    - 线程每1000ms自行唤醒一次；某个线程remote队列长度超过阈值128后，立即唤醒一次
 - 分配内存前，先将local队列中的内存移回到空闲链表
+
+## 最终的设计
+
+![mp_struct_final](../images/mp_struct_final.png)
+
+测试分配释放256*512B的内存，对比`calloc`和`free`
+
+线程1分配，分配后加到消息队列让线程2释放：
+
+```bash
+cai@raspberrypi:~/share/misc-c/build $ ./Main
+mp_fixed_node_get 256 nodes cost 474 us, average 1.852 us/node
+mp_fixed_node_put 256 nodes cost 466 us, average 1.820 us/node
+calloc 256 nodes cost 618 us, average 2.414 us/node
+free 256 nodes cost 641 us, average 2.504 us/node
+cai@raspberrypi:~/share/misc-c/build $ ./Main
+mp_fixed_node_get 256 nodes cost 241 us, average 0.941 us/node
+mp_fixed_node_put 256 nodes cost 234 us, average 0.914 us/node
+calloc 256 nodes cost 1082 us, average 4.227 us/node
+free 256 nodes cost 1009 us, average 3.941 us/node
+cai@raspberrypi:~/share/misc-c/build $ ./Main
+mp_fixed_node_get 256 nodes cost 262 us, average 1.023 us/node
+mp_fixed_node_put 256 nodes cost 256 us, average 1.000 us/node
+calloc 256 nodes cost 407 us, average 1.590 us/node
+free 256 nodes cost 367 us, average 1.434 us/node
+cai@raspberrypi:~/share/misc-c/build $ ./Main
+mp_fixed_node_get 256 nodes cost 244 us, average 0.953 us/node
+mp_fixed_node_put 256 nodes cost 236 us, average 0.922 us/node
+calloc 256 nodes cost 549 us, average 2.145 us/node
+free 256 nodes cost 574 us, average 2.242 us/node
+cai@raspberrypi:~/share/misc-c/build $ ./Main
+mp_fixed_node_get 256 nodes cost 474 us, average 1.852 us/node
+mp_fixed_node_put 256 nodes cost 460 us, average 1.797 us/node
+calloc 256 nodes cost 912 us, average 3.562 us/node
+free 256 nodes cost 904 us, average 3.531 us/node
+```

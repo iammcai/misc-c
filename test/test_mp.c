@@ -29,7 +29,7 @@
 /* ========================================================================== */
 
 #define TEST_MEM_NODE_SIZE      (512)
-#define TEST_MEM_NODE_COUNT     (5000)
+#define TEST_MEM_NODE_COUNT     (256)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -143,6 +143,15 @@ int test_mp()
 
 // 全局指针
 void* gp[TEST_MEM_NODE_COUNT] = {};
+// 用于通知free的aq
+pre_declare_spsc_atom_queue(notify)
+typedef struct{
+    int i;
+    notify_spsc_atom_queue_item_t item;
+}notify_t;
+declare_spsc_atom_queue(notify, notify, notify_t, item)
+notify_spsc_atom_queue_head_t aq_head = {};
+notify_t notifys[TEST_MEM_NODE_COUNT] = {};
 
 void* producer(void *args)
 {
@@ -159,14 +168,16 @@ void* producer(void *args)
             {
                 gp[i] = mp_fixed_node_get(test_fixed);
                 assert(gp[i]);
+                notifys[i].i = i;
+                notify_spsc_atom_queue_push(&aq_head, &notifys[i]);
             }
         }
     );
 
     printf("mp_fixed_node_get %u nodes cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
 
-    sleep(10);       // 等待t2归还完
-    mp_dump_fixed_free_list();      // 应当有TEST_MEM_NODE_COUNT个节点挂着local
+    sleep(5);       // 等待t2归还完
+    //mp_dump_fixed_free_list();    // count数量应该正确
 
     return NULL;
 }
@@ -182,8 +193,14 @@ void* consumer(void *args)
     test_with_clock(
         s, e, put_time,
         {
-            for(i = 0; i < TEST_MEM_NODE_COUNT; ++ i)
-                mp_fixed_node_put(gp[i]);
+            for(i = 0; i < TEST_MEM_NODE_COUNT;)
+            {
+                notify_t *p = notify_spsc_atom_queue_pop(&aq_head);
+                if(!p)
+                    continue;
+                mp_fixed_node_put(gp[p->i]);
+                ++ i;
+            }
         }
     );
 
@@ -205,11 +222,14 @@ void* producer1(void *args)
             {
                 gp[i] = calloc(1, TEST_MEM_NODE_SIZE);
                 assert(gp[i]);
+                notifys[i].i = i;
+                notify_spsc_atom_queue_push(&aq_head, &notifys[i]);
             }
         }
     );
 
     printf("calloc %u nodes cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
+    sleep(5);       // 等待t2归还完
 
     return NULL;
 }
@@ -223,8 +243,14 @@ void* consumer1(void *args)
     test_with_clock(
         s, e, put_time,
         {
-            for(i = 0; i < TEST_MEM_NODE_COUNT; ++ i)
-                free(gp[i]);
+            for(i = 0; i < TEST_MEM_NODE_COUNT;)
+            {
+                notify_t *p = notify_spsc_atom_queue_pop(&aq_head);
+                if(!p)
+                    continue;
+                free(gp[p->i]);
+                ++ i;
+            }
         }
     );
 
@@ -237,20 +263,18 @@ int test_mp_multi_thread()
 {
     pthread_t t1, t2;
 
+    notify_spsc_atom_queue_init(&aq_head);
+
     pthread_create(&t1, NULL, producer, (void*)0);
-    sleep(2);       // 等待t1分配完成
     pthread_create(&t2, NULL, consumer, (void*)1);
-
-    sleep(5);
-
     pthread_join(t1, NULL);
     pthread_join(t2, NULL);
 
     // 测试calloc和free跨线程
     pthread_t t11, t21;
     pthread_create(&t11, NULL, producer1, (void*)0);
-    pthread_join(t11, NULL);
     pthread_create(&t21, NULL, consumer1, (void*)1);
+    pthread_join(t11, NULL);
     pthread_join(t21, NULL);
 
     return 0;
