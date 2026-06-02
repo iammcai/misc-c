@@ -82,7 +82,7 @@ static void dtor2(void)
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-declare_ev_thd(test_producer, producer, NULL);
+declare_ev_thd(test_producer, producer, NULL, EV_THD_WAITFOREVER);
 declare_ev_thd_ctor(test_producer, ctor1)
 declare_ev_thd_prework(test_producer, pre1)
 declare_ev_thd_postwork(test_producer, post1)
@@ -110,7 +110,7 @@ int test_ev_thd()
 
     for(i = 0; i < TEST_COUNT_MAX; ++ i)
     {
-        ev_thd_wake(test_producer)
+        //ev_thd_wake(test_producer)
         sleep(1);
     }
 

@@ -57,6 +57,8 @@ typedef struct{
     ev_thd_hook_list_head_t postworks;  // postwork函数链表
     ev_thd_hook_list_head_t dtors;      // dtor函数链表
 
+    int timeout;        // 超时时间
+
     ev_thd_attr_hash_item_t item;   // 哈希表item
 }ev_thd_attr_t;
 
@@ -78,11 +80,13 @@ typedef enum{
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
+#define EV_THD_WAITFOREVER      (-1)
+
 /**
  * 外部使用，定义一个事件驱动线程
  * 1. 定义事件线程属性，构造加入到哈希表中
  */
-#define declare_ev_thd(_name, _wf, _wa) \
+#define declare_ev_thd(_name, _wf, _wa, _timeout)   \
 static ev_thd_attr_t ev_thd_attr_ ## _name = {  \
     .name = #_name, \
     .work = _wf,    \
@@ -92,6 +96,7 @@ static ev_thd_attr_t ev_thd_attr_ ## _name = {  \
     .event_fd = -1, \
     .run = 0,   \
     .working = 0,   \
+    .timeout = _timeout,    \
 };  \
 static void ev_thd_attr_ ## _name ## _init() attr_ctor(CTOR_PRIO_MID);  \
 static void ev_thd_attr_ ## _name ## _init()    \

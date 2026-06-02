@@ -135,7 +135,7 @@ static attr_force_inline void ev_thd_epoll_init(ev_thd_attr_t *attr);
 static attr_force_inline void ev_thd_epoll_wait(ev_thd_attr_t *attr)
 {
     int n  = 0;
-    int timeout = -1;       // wait forever
+    int timeout = attr->timeout;    // -1 wait forever
     int max_event_num = 1;
     struct epoll_event ep_event = {};
 
