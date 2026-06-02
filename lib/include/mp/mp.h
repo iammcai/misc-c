@@ -25,10 +25,14 @@
 #include <string.h>
 #include "type/type_list.h"
 #include "type/type_hash.h"
+#include "type/type_atom_queue.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
+
+// 逻辑tid类型
+typedef unsigned short tid_t;
 
 // 预定义哈希表存储内存类型属性
 pre_declare_hash(mem_type_attr)
@@ -49,14 +53,29 @@ typedef struct{
 
 // 预定义固定大小内存空闲链表
 pre_declare_list(fixed_free)
+// 预定义固定大小内存回收原子队列
+pre_declare_spsc_atom_queue(fixed_cycle)
 
 // 固定大小内存节点定义
 typedef struct{
     mem_type_attr_t *attr;                  // 所属内存类型
-    fixed_free_list_item_t item;   // free list item
+    fixed_free_list_item_t item;            // free list item
+    fixed_cycle_spsc_atom_queue_item_t aq_item;     // cycle aq time
+    tid_t tid;                              // 内存所属的线程
     unsigned int size;                      // 用户内存大小
     char attr_aligned(8) data[];            // 柔性数组，真正给用户使用的内存区
 } attr_aligned(8) fixed_mem_node_t;
+
+// 预定义链表，存储所有回收队列
+pre_declare_list(fixed_cycle_aq)
+
+// 回收队列定义，由全局链表组织起来
+typedef struct{
+    tid_t tid;      // 回收队列所属线程
+    fixed_cycle_spsc_atom_queue_head_t local_cycle_aq_head;     // 由本线程回收的内存队列
+    fixed_cycle_spsc_atom_queue_head_t remote_cycle_aq_head;    // 由其它线程回收的内存队列
+    fixed_cycle_aq_list_item_t item;    // list item
+}fixed_cycle_aq_t;
 
 // 预定义哈希表，用于存储所有固定大小空闲链表头
 pre_declare_hash(fixed_free_list_head)
@@ -64,6 +83,7 @@ pre_declare_hash(fixed_free_list_head)
 // 固定大小空闲内存链表头定义，哈希表存储起来
 typedef struct{
     fixed_free_list_head_t  head;   // 空闲链表头
+    fixed_cycle_aq_t cycle_aq_head; // 回收队列头
     mem_type_attr_t *attr;          // 所属内存类型
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
@@ -127,8 +147,8 @@ static mem_type_attr_t _mem_type_attr_ ## _name = {  \
     .node_size = _node_size,    \
     .node_max_num = _node_max_num   \
 };  \
-static attr_force_inline void _mem_type_attr_ ## name ## _init() attr_ctor(CTOR_PRIO_LOW);  \
-static inline void _mem_type_attr_ ## name ## _init()   \
+static attr_force_inline void _mem_type_attr_ ## _name ## _init() attr_ctor(CTOR_PRIO_LOW);  \
+static inline void _mem_type_attr_ ## _name ## _init()   \
 {   \
     mem_type_attr_init(&_mem_type_attr_ ## _name);    \
 }   \
@@ -146,7 +166,8 @@ static inline void _mem_type_attr_ ## name ## _init()   \
  * 0. 初始化全局空闲链表
  * 1. 在【线程私有】的全局空闲链表头哈希表中查找有无空闲链表
  *  1.1 无的话，创建并加入哈希表
- * 2. 根据指定节点数量和大小，从系统分配内存
+ * 2. 
+ * 3. 根据指定节点数量和大小，从系统分配内存
 */
 #define mp_fixed_init(name) \
     _mp_fixed_init(&_mem_type_attr_ ## name);   \

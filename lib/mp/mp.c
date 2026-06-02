@@ -19,6 +19,8 @@
 /* ========================================================================== */
 
 #include "mp/mp.h"
+#include "plat/atom.h"
+#include "event/ev_thread.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -27,6 +29,8 @@
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
+
+#define RECYCLE_WAKE_THRESHOLD  (64)   // 唤醒阈值
 
 // 获取node中的data给用户
 #define mp_fixed_node_data(_node)   (_node)->data;
@@ -125,6 +129,47 @@ static attr_force_inline void* mp_calloc(size_t num, size_t size)
 }
 
 /**
+ * @brief       new a logic tid
+ * 
+ * @note        分配一个新的逻辑ID，原子ADD保证并发可用
+ */
+static attr_force_inline tid_t tid_new();
+
+/**
+ * @brief       获取tid
+ * 
+ * @param[in]
+ */
+static attr_pure_inline tid_t tid_get(mem_type_attr_t *attr);
+
+static attr_pure_inline int _mp_fixed_node_belong_local(fixed_mem_node_t *node)
+{
+    return node->tid == tid_get(node->attr);
+}
+
+/**
+ * @brief       put node local
+ * 
+ * @param[in]   node    - ptr to node
+ */
+static attr_force_inline void _mp_fixed_node_put_local(fixed_mem_node_t *node);
+
+/**
+ * @brief       put node remote
+ * 
+ * @param[in]   aq_head - remote aq head
+ * @param[in]   node    - ptr to node
+ */
+static attr_force_inline void _mp_fixed_node_put_remote(fixed_cycle_spsc_atom_queue_head_t *aq_head, fixed_mem_node_t *node);
+
+/**
+ * @brief       find free_list_t ptr by tid
+ * 
+ * @param[in]   tid     - tid
+ */
+static attr_force_inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t tid);
+
+/**
  * @brief       new fixed mem node from system
  * 
  * @param[in]   attr    - mem type attr
@@ -140,6 +185,7 @@ static attr_force_inline fixed_mem_node_t* fixed_mem_node_new(mem_type_attr_t *a
 
     node->size = attr->node_size;
     node->attr = attr;
+    node->tid = tid_get(attr);
 
     return node;
 }
@@ -158,6 +204,27 @@ static attr_force_inline void g_mem_type_attr_hash_init() attr_ctor(CTOR_PRIO_MI
  */
 static attr_force_inline void g_fixed_free_list_head_hash_init() attr_ctor(CTOR_PRIO_MID);
 
+/**
+ * @brief       init global variable: g_fixed_cycle_aq_list_head
+ * 
+ * @note        CTOR
+ */
+static attr_force_inline void g_fixed_cycle_aq_list_head_init() attr_ctor(CTOR_PRIO_MID);
+
+/**
+ * @brief       recycle fixed node work func
+ * 
+ * @note        固定大小节点内存回收线程的工作函数
+ */
+static attr_force_inline void fixed_node_recycle_work(void *args);
+
+/**
+ * @brief       init recycle thread
+ * 
+ * @note        CTOR，启动回收线程
+ */
+static attr_force_inline void fixed_node_recycle_init() attr_ctor(CTOR_PRIO_HIGH);
+
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -166,6 +233,16 @@ static attr_force_inline void g_fixed_free_list_head_hash_init() attr_ctor(CTOR_
 static mem_type_attr_hash_head_t g_mem_type_attr_hash_head = {};
 // 全局哈希表，存储所有固定大小空闲链表头。使用线程私有属性，每个线程持有一个同名的副本，互不干扰，做到隔离
 static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
+
+// 全局tid，用于自行管理分配逻辑线程ID
+static tid_t g_tid = 0;
+// 全局链表，存储所有线程独立的回收队列
+static fixed_cycle_aq_list_head_t g_fixed_cycle_aq_list_head = {};
+// 声明回收事件线程，兜底1000ms回收一次
+declare_ev_thd(fixed_node_recycle, fixed_node_recycle_work, NULL, 1000)
+
+// 唤醒阈值，线程私有
+static thread_local int recycle_wake_thread = 0;
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -177,6 +254,12 @@ declare_hash(mem_type_attr, mem_type_attr, mem_type_attr_t, item, 1, 31, _mem_ty
 // 定义空闲链表头哈希表相关操作
 declare_hash(fixed_free_list_head, fixed_free_list_head, fixed_free_list_t, item, 1, 31, _fixed_free_list_cmp, _fixed_free_list_hash)
 
+// 定义回收队列链表相关操作
+declare_list(fixed_cycle_aq, fixed_cycle_aq, fixed_cycle_aq_t, item)
+
+// 定义回收队列的相关操作
+declare_spsc_atom_queue(fixed_cycle, fixed_cycle, fixed_mem_node_t, aq_item)
+
 static inline void g_mem_type_attr_hash_init()
 {
     mem_type_attr_hash_init(&g_mem_type_attr_hash_head);
@@ -187,6 +270,11 @@ static inline void g_fixed_free_list_head_hash_init()
     fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
 }
 
+static inline void g_fixed_cycle_aq_list_head_init()
+{
+    fixed_cycle_aq_list_init(&g_fixed_cycle_aq_list_head);
+}
+
 void mem_type_attr_init(mem_type_attr_t *attr)
 {
     assert(attr && attr->name);
@@ -195,8 +283,7 @@ void mem_type_attr_init(mem_type_attr_t *attr)
 
 void _mp_fixed_init(mem_type_attr_t *attr)
 {
-    // 检查g_fixed_free_list_hash_head是否空，是的话先初始化一下
-    // TODO: 后续修改为线程构造
+    // 重要：检查g_fixed_free_list_hash_head是否空，是的话先初始化一下
     {
         fixed_free_list_head_hash_head_t empty = {};
         if(!memcmp(&g_fixed_free_list_hash_head, &empty, sizeof(fixed_free_list_head_hash_head_t)))
@@ -215,13 +302,17 @@ void _mp_fixed_init(mem_type_attr_t *attr)
         free_list->attr = attr;
         fixed_free_list_init(&free_list->head);     // 初始化空闲链表头
         fixed_free_list_head_hash_add(&g_fixed_free_list_hash_head, free_list);     // 加到全局哈希表
+
+        // 初始化内存回收队列相关
+        free_list->cycle_aq_head.tid = tid_new();
+        fixed_cycle_spsc_atom_queue_init(&free_list->cycle_aq_head.local_cycle_aq_head);
+        fixed_cycle_spsc_atom_queue_init(&free_list->cycle_aq_head.remote_cycle_aq_head);
+        // 加到全局链表
+        fixed_cycle_aq_list_add_tail(&g_fixed_cycle_aq_list_head, &free_list->cycle_aq_head);
     }
+
     // 补充节点数量到需求
-    while(fixed_free_list_count(&free_list->head) < attr->node_max_num)
-    {
-        fixed_mem_node_t *new_node = fixed_mem_node_new(attr);
-        fixed_free_list_add_head(&free_list->head, new_node);
-    }
+    fixed_free_list_supply(&free_list->head, attr);
 }
 
 void fixed_free_list_supply(fixed_free_list_head_t *head, mem_type_attr_t *attr)
@@ -248,12 +339,38 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
     assert(free_list);
 
+    // 将local aq中的节点都归还回来
+    while(fixed_cycle_spsc_atom_queue_count(&free_list->cycle_aq_head.local_cycle_aq_head))
+    {
+        fixed_mem_node_t *node = fixed_cycle_spsc_atom_queue_pop(&free_list->cycle_aq_head.local_cycle_aq_head);
+        fixed_free_list_add_head(&free_list->head, node);
+    }
+
     if(!fixed_free_list_count(&free_list->head))    // 检查空闲节点个数
         return NULL;
 
     fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
     return mp_fixed_node_data(node);
+}
+
+static inline void _mp_fixed_node_put_local(fixed_mem_node_t *node)
+{
+    fixed_free_list_t key = {.attr = node->attr};
+    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
+    assert(free_list);
+
+    fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
+}
+
+static inline void _mp_fixed_node_put_remote(fixed_cycle_spsc_atom_queue_head_t *aq_head, fixed_mem_node_t *node)
+{
+    // 将node放置到本线程的remote aq中
+    fixed_cycle_spsc_atom_queue_push(aq_head, node);
+
+    // 唤醒回收线程
+    if(fixed_cycle_spsc_atom_queue_count(aq_head) == RECYCLE_WAKE_THRESHOLD)
+        ev_thd_wake(fixed_node_recycle);
 }
 
 void _mp_fixed_node_put(void *ptr)
@@ -264,9 +381,68 @@ void _mp_fixed_node_put(void *ptr)
 
     fixed_free_list_t key = {.attr = node->attr};
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
-    assert(free_list);
 
-    fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
+    // 本地归还 or 异地归还
+    if(node->tid == free_list->cycle_aq_head.tid)
+        _mp_fixed_node_put_local(node);
+    else
+        _mp_fixed_node_put_remote(&free_list->cycle_aq_head.remote_cycle_aq_head, node);
+}
+
+static inline tid_t tid_new()
+{
+    return ATOM_ADD_FETCH(&g_tid, 1, MORDER_ACQ_REL);
+}
+
+static inline tid_t tid_get(mem_type_attr_t *attr)
+{
+    assert(attr);
+    fixed_free_list_t key = {.attr = attr};
+    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
+    assert(free_list);
+    return free_list->cycle_aq_head.tid;
+}
+
+static inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t tid)
+{
+    fixed_free_list_t *fl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
+    while(fl)
+    {
+        if(fl->cycle_aq_head.tid == tid)
+            return fl;
+        fl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
+    }
+    return NULL;
+}
+
+static inline void fixed_node_recycle_work(void *args)
+{
+    // 遍历所有aq，逐一将节点挂到正确的aq上
+    fixed_cycle_aq_t *aq = fixed_cycle_aq_list_first(&g_fixed_cycle_aq_list_head);
+    while(aq)
+    {
+        fixed_mem_node_t *node = NULL;
+        while(node = fixed_cycle_spsc_atom_queue_pop(&aq->remote_cycle_aq_head))
+        {
+            // 找到对应aq_t，挂到其local队列
+            fixed_cycle_aq_t *aq_target = fixed_cycle_aq_list_first(&g_fixed_cycle_aq_list_head);
+            while(aq_target)
+            {
+                if(aq_target->tid == node->tid)
+                {
+                    fixed_cycle_spsc_atom_queue_push(&aq_target->local_cycle_aq_head, node);
+                    break;
+                }
+            }
+            assert(aq_target);
+        }
+        aq = fixed_cycle_aq_list_next(aq);
+    }
+}
+
+static inline void fixed_node_recycle_init()
+{
+    ev_thd_run(fixed_node_recycle);
 }
 
 /* ========================================================================== */
@@ -279,17 +455,27 @@ void mp_dump_fixed_free_list()
 {
     fixed_free_list_t *ffl = NULL;
 
-    printf("dump fixed free list\n");
+    printf("dump fixed free list info\n");
 
     ffl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
     while(ffl)
     {
-        fixed_free_list_head_t *head = &ffl->head;
+        // 查看回收队列情况
+        fixed_cycle_aq_t *cycle_aq = &ffl->cycle_aq_head;
+        printf("cycle aq: pos %p, tid %u, local aq count %u, remote aq count %u\n",
+            cycle_aq, cycle_aq->tid,
+            fixed_cycle_spsc_atom_queue_count(&cycle_aq->local_cycle_aq_head),
+            fixed_cycle_spsc_atom_queue_count(&cycle_aq->remote_cycle_aq_head)
+        );
 
+        // 查看空闲节点
+        fixed_free_list_head_t *head = &ffl->head;
         fixed_mem_node_t *node = fixed_free_list_first(head);
+        printf("dump fixed free list, count %u\n", fixed_free_list_count(head));
         while(node)
         {
-            printf("pos %p, attr->name %s, size %u, user pos %p\n", node, node->attr->name, node->size, node->data);
+            printf("\tpos %p, attr->name %s, tid %u, size %u, user pos %p\n",
+                node, node->attr->name, node->tid, node->size, node->data);
             node = fixed_free_list_next(node);
         }
         printf("========\n");
