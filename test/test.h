@@ -123,4 +123,9 @@ int test_normal_queue();
  */
 int test_ev_thd();
 
+/**
+ * @brief       测试锁
+ */
+int test_ev_lock();
+
 #endif

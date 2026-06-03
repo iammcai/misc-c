@@ -4,6 +4,7 @@ add_library(Test STATIC
     test_mp.c
     test_aq.c
     test_ev_thd.c
+    test_ev_lock.c
 )
 
 target_include_directories(Test PUBLIC

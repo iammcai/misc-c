@@ -27,9 +27,10 @@
 
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
-#define TEST_MP     (1)
+#define TEST_MP     (0)
 #define TEST_AQ     (0)
 #define TEST_EV_THD (0)
+#define TEST_EV_LOCK    (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -65,6 +66,10 @@ int main()
 
 #if TEST_EV_THD
     test_ev_thd();
+#endif
+
+#if TEST_EV_LOCK
+    test_ev_lock();
 #endif
 
     return 0;

@@ -5,6 +5,7 @@ add_library(Lib STATIC
     type/type_atom_queue.c
     event/ev_thread.c
     mp/mp.c
+    event/ev_lock.c
 )
 
 # 添加头文件路径
