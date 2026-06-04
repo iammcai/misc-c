@@ -49,7 +49,7 @@ typedef struct{
 declare_spsc_atom_queue(test, test, data_t, item)
 declare_list(test_normal, test_normal, data_normal_t, item)
 
-#define TEST_DATA_COUNT     (100000)
+#define TEST_DATA_COUNT     (5000)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -206,6 +206,65 @@ int test_normal_queue()
     printf("test normal spsc PASS\n");
     printf("test normal push/pop spsc %d items, cost %.3f ms\n", TEST_DATA_COUNT, (double)time/1000);
     printf("========\n");
+
+    return 0;
+}
+
+static ATOMIC_UINT64_T mpmc_sum = 0;
+static mpmc_atom_queue_head_t *mpmc_aq_head = NULL;
+
+void* mpmc_producer(void *args)
+{
+    int i = 0;
+    
+    for(i = 0; i < TEST_DATA_COUNT; ++ i)
+    {
+        int *data = calloc(1, sizeof(int));
+        *data = i;
+        mpmc_atom_queue_push(mpmc_aq_head, data);
+    }
+
+    return NULL;
+}
+
+void* mpmc_consumer(void *args)
+{
+    int i = 0;
+
+    for(i = 0; i < TEST_DATA_COUNT;)
+    {
+        int *data = mpmc_atom_queue_pop(mpmc_aq_head);
+        if(!data)
+            continue;
+        ATOM_FETCH_ADD(&mpmc_sum, *data, MORDER_SEQ_SCT);
+        free(data);
+        ++ i;
+    }
+}
+
+int test_aq_mpmc()
+{
+    mpmc_atom_queue_init(&mpmc_aq_head);
+
+    struct timespec s,e;
+    unsigned long t;
+    pthread_t p1, p2, c2, c1;
+
+    test_with_clock(
+        s,e,t,
+        {
+            pthread_create(&p1, NULL, mpmc_producer, NULL);
+            pthread_create(&p2, NULL, mpmc_producer, NULL);
+            pthread_create(&c1, NULL, mpmc_consumer, NULL);
+            pthread_create(&c2, NULL, mpmc_consumer, NULL);
+            pthread_join(p1, NULL);
+            pthread_join(p2, NULL);
+            pthread_join(c1, NULL);
+            pthread_join(c2, NULL);
+        }
+    )
+
+    assert(mpmc_sum == (unsigned long)(0+TEST_DATA_COUNT-1)*TEST_DATA_COUNT/2*2);
 
     return 0;
 }

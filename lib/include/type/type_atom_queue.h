@@ -42,6 +42,8 @@ typedef struct{
     unsigned int count;                     // 队列长度
 }spsc_atom_queue_head_t;
 
+typedef struct mpmc_atom_queue_head_s mpmc_atom_queue_head_t;   // 隐藏成员信息
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
@@ -125,6 +127,34 @@ extern spsc_atom_queue_item_t* type_spsc_atom_queue_pop(spsc_atom_queue_head_t *
  * @note        
  */
 static attr_force_inline unsigned int type_spsc_atom_queue_count(spsc_atom_queue_head_t *head);
+
+/**
+ * @brief       init mpmc aq
+ * 
+ * @param[in]   head    - aq head
+ * 
+ * @note        申请哨兵节点，初始head,tail均指向，版本号0
+ */
+extern void mpmc_atom_queue_init(mpmc_atom_queue_head_t **head);
+
+/**
+ * @brief       push data into mpmc aq
+ * 
+ * @param[in]   head    - aq head
+ * @param[in]   data    - ptr to data
+ * 
+ * @note        基于MS算法push
+ */
+extern void mpmc_atom_queue_push(mpmc_atom_queue_head_t *head, void *data);
+
+/**
+ * @brief       pop data from mpmc aq
+ * 
+ * @param[in]   head    - aq head
+ * 
+ * @note        基于MS算法pop
+ */
+extern void* mpmc_atom_queue_pop(mpmc_atom_queue_head_t *head);
 
 /* ========================================================================== */
 /*                         Private Function Implementations                   */

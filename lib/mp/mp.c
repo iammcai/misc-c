@@ -116,19 +116,6 @@ static attr_pure_inline unsigned int mem_type_attr_fixed_size(mem_type_attr_t *a
 }
 
 /**
- * @brief       call system calloc
- * 
- * @param[in]   num     - element num
- * @param[in]   size    - elememt size
- * 
- * @retval      ptr to memory
- */
-static attr_force_inline void* mp_calloc(size_t num, size_t size)
-{
-    return calloc(num, size);
-}
-
-/**
  * @brief       new a logic tid
  * 
  * @note        分配一个新的逻辑ID，原子ADD保证并发可用

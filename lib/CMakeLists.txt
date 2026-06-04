@@ -8,6 +8,11 @@ add_library(Lib STATIC
     event/ev_lock.c
 )
 
+# 添加链接库
+target_link_libraries(Lib
+    atomic
+)
+
 # 添加头文件路径
 target_include_directories(Lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include

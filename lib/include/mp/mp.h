@@ -135,6 +135,31 @@ extern void* _mp_fixed_node_get(mem_type_attr_t *attr);
  */
 extern void _mp_fixed_node_put(void *ptr);
 
+/**
+ * @brief       call system calloc
+ * 
+ * @param[in]   num     - element num
+ * @param[in]   size    - elememt size
+ * 
+ * @retval      ptr to memory
+ */
+static attr_force_inline void* mp_calloc(size_t num, size_t size)
+{
+    void* ret = calloc(num, size);
+    assert(ret);
+    return ret;
+}
+
+/**
+ * @brief       call system free
+ * 
+ * @param[in]   ptr     - ptr to buffer
+ */
+static attr_force_inline void mp_free(void *ptr)
+{
+    free(ptr);
+}
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */

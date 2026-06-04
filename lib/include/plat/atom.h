@@ -76,6 +76,7 @@ typedef volatile int                ATOMIC_INT32_T;
 typedef volatile unsigned int       ATOMIC_UINT32_T;
 typedef volatile long long          ATOMIC_INT64_T;
 typedef volatile unsigned long long ATOMIC_UINT64_T;
+typedef __uint128_t                 ATOMIC_UINT128_T;
 typedef volatile uintptr_t          ATOMIC_UINTPTR_T;
 typedef volatile size_t             ATOMIC_SIZE_T;
 

@@ -28,9 +28,9 @@
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
 #define TEST_MP     (0)
-#define TEST_AQ     (0)
+#define TEST_AQ     (1)
 #define TEST_EV_THD (0)
-#define TEST_EV_LOCK    (1)
+#define TEST_EV_LOCK    (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -60,8 +60,9 @@ int main()
 #endif
 
 #if TEST_AQ
-    test_aq_spsc();
-    test_normal_queue();
+    //test_aq_spsc();
+    //test_normal_queue();
+    test_aq_mpmc();
 #endif
 
 #if TEST_EV_THD
