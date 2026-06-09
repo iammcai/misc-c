@@ -19,7 +19,9 @@
 /* ========================================================================== */
 
 #include <stdio.h>
+#include <unistd.h>
 #include "test.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -28,9 +30,10 @@
 #define TEST_LIST   (0)
 #define TEST_HASH   (0)
 #define TEST_MP     (0)
-#define TEST_AQ     (1)
+#define TEST_AQ     (0)
 #define TEST_EV_THD (0)
 #define TEST_EV_LOCK    (0)
+#define TEST_MSG_Q  (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -62,7 +65,8 @@ int main()
 #if TEST_AQ
     //test_aq_spsc();
     //test_normal_queue();
-    test_aq_mpmc();
+    //test_aq_mpmc();
+    test_aq_mpsc();
 #endif
 
 #if TEST_EV_THD
@@ -72,6 +76,18 @@ int main()
 #if TEST_EV_LOCK
     test_ev_lock();
 #endif
+
+#if TEST_MSG_Q
+    test_msg_q();
+#endif
+
+    cli_init();     // cli
+
+    // Main进入休眠
+    while(1)
+    {
+        sleep(1);
+    }
 
     return 0;
 }
