@@ -124,6 +124,11 @@ int test_normal_queue();
 int test_aq_mpmc();
 
 /**
+ * @brief       测试mpsc无锁队列
+ */
+int test_aq_mpsc();
+
+/**
  * @brief       测试事件驱动线程
  */
 int test_ev_thd();
@@ -132,5 +137,15 @@ int test_ev_thd();
  * @brief       测试锁
  */
 int test_ev_lock();
+
+/**
+ * @brief       测试自旋锁
+ */
+int test_ev_spinlock();
+
+/**
+ * @brief       测试消息队列
+ */
+int test_msg_q();
 
 #endif

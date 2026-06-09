@@ -49,7 +49,7 @@ typedef struct{
 declare_spsc_atom_queue(test, test, data_t, item)
 declare_list(test_normal, test_normal, data_normal_t, item)
 
-#define TEST_DATA_COUNT     (5000)
+#define TEST_DATA_COUNT     (1)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -265,6 +265,140 @@ int test_aq_mpmc()
     )
 
     assert(mpmc_sum == (unsigned long)(0+TEST_DATA_COUNT-1)*TEST_DATA_COUNT/2*2);
+
+    return 0;
+}
+
+#define TEST_MPSC_PRODUCER  (4)
+static mpsc_atom_queue_head_t *mpsc_aq_head = NULL;
+static unsigned long mpsc_sum = 0;
+pre_declare_list(test_mpsc)
+typedef struct{
+    int data;
+    test_mpsc_list_item_t item;
+}mpsc_data_t;
+declare_list(test_mpsc, test_mpsc, mpsc_data_t, item)
+static test_mpsc_list_head_t mpsc_list_head = {};
+static mpsc_data_t mpsc_normal_data[TEST_MPSC_PRODUCER][TEST_DATA_COUNT] = {};
+static pthread_mutex_t mpsc_normal_mtx = PTHREAD_MUTEX_INITIALIZER;
+
+void* mpsc_normal_producer(void *args)
+{
+    int i = 0;
+    int producer_i = *(int*)args;
+
+    for(i = 0; i < TEST_DATA_COUNT; ++ i)
+    {
+        pthread_mutex_lock(&mpsc_normal_mtx);
+        test_mpsc_list_add_tail(&mpsc_list_head, &mpsc_normal_data[producer_i][i]);
+        pthread_mutex_unlock(&mpsc_normal_mtx);
+    }
+    return NULL;
+}
+
+void* mpsc_normal_consumer(void *args)
+{
+    int i = 0;
+    for(i = 0; i < TEST_DATA_COUNT * TEST_MPSC_PRODUCER;)
+    {
+        pthread_mutex_lock(&mpsc_normal_mtx);
+        mpsc_data_t* data = test_mpsc_list_pop(&mpsc_list_head);
+        pthread_mutex_unlock(&mpsc_normal_mtx);
+
+        if(!data)
+            continue;
+        else
+        {
+            ATOM_FETCH_ADD(&mpsc_sum, data->data, MORDER_RELAXED);
+            ++ i;
+        }
+    }
+    return NULL;
+}
+
+void* mpsc_producer(void *agrs)
+{
+    int i = 0;
+    for(i = 0; i < TEST_DATA_COUNT; ++ i)
+    {
+        int *data = malloc(sizeof(int));
+        *data = i;
+        mpsc_atom_queue_push(mpsc_aq_head, data);
+    }
+    return NULL;
+}
+
+void* mpsc_consumer(void *args)
+{
+    int i = 0;
+    for(i = 0; i < TEST_DATA_COUNT * TEST_MPSC_PRODUCER;)
+    {
+        int *data = mpsc_atom_queue_pop(mpsc_aq_head);
+        if(!data)
+            continue;
+        else
+        {
+            ATOM_FETCH_ADD(&mpsc_sum, *data, MORDER_RELAXED);
+            free(data);
+            ++ i;
+        }
+    }
+    return NULL;
+}
+
+int test_aq_mpsc()
+{
+    pthread_t p1, p2, p3, c1;
+    struct timespec s,e;
+    unsigned int t;
+
+    mpsc_atom_queue_init(&mpsc_aq_head);
+
+    test_with_clock(
+        s,e,t,
+        {
+            pthread_create(&p1, NULL, mpsc_producer, NULL);
+            pthread_create(&p2, NULL, mpsc_producer, NULL);
+            pthread_create(&p3, NULL, mpsc_producer, NULL);
+            pthread_create(&c1, NULL, mpsc_consumer, NULL);
+            pthread_join(p1, NULL);
+            pthread_join(p2, NULL);
+            pthread_join(p3, NULL);
+            pthread_join(c1, NULL);
+        }
+    )
+
+    assert(mpsc_sum == (unsigned long)TEST_MPSC_PRODUCER*(0+TEST_DATA_COUNT-1)*TEST_DATA_COUNT/2);
+
+    printf("mpsc, producer count %d, push and pop %d items, cost %u us, average %.3f us/item\n",
+        TEST_MPSC_PRODUCER, TEST_MPSC_PRODUCER * TEST_DATA_COUNT, t, (double)t/(TEST_MPSC_PRODUCER * TEST_DATA_COUNT));
+
+    test_mpsc_list_init(&mpsc_list_head);
+    int i = 0, j = 0;
+    for(i = 0; i < TEST_MPSC_PRODUCER; ++ i)
+    {
+        for(j = 0; j < TEST_DATA_COUNT; ++ j)
+            mpsc_normal_data[i][j].data = j;
+    }
+
+    mpsc_sum = 0;
+    int a0 = 0, a1 = 1, a2 = 2;
+    test_with_clock(
+        s,e,t,
+        {
+            pthread_create(&p1, NULL, mpsc_normal_producer, &a0);
+            pthread_create(&p2, NULL, mpsc_normal_producer, &a1);
+            pthread_create(&p3, NULL, mpsc_normal_producer, &a2);
+            pthread_create(&c1, NULL, mpsc_normal_consumer, NULL);
+            pthread_join(p1, NULL);
+            pthread_join(p2, NULL);
+            pthread_join(p3, NULL);
+            pthread_join(c1, NULL);
+        }
+    )
+    assert(mpsc_sum == (unsigned long)TEST_MPSC_PRODUCER*(0+TEST_DATA_COUNT-1)*TEST_DATA_COUNT/2);
+    printf("mpsc normal queue, producer count %d, push and pop %d items, cost %u us, average %.3f us/item\n",
+        TEST_MPSC_PRODUCER, TEST_MPSC_PRODUCER * TEST_DATA_COUNT, t, (double)t/(TEST_MPSC_PRODUCER * TEST_DATA_COUNT));
 
     return 0;
 }

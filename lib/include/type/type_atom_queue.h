@@ -42,7 +42,9 @@ typedef struct{
     unsigned int count;                     // 队列长度
 }spsc_atom_queue_head_t;
 
-typedef struct mpmc_atom_queue_head_s mpmc_atom_queue_head_t;   // 隐藏成员信息
+typedef struct mpsc_atom_queue_head_s mpsc_atom_queue_head_t;   // mpsc队列声明
+
+typedef struct mpmc_atom_queue_head_s mpmc_atom_queue_head_t;   // mpmc队列声明，对外隐藏成员信息
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -123,10 +125,30 @@ extern spsc_atom_queue_item_t* type_spsc_atom_queue_pop(spsc_atom_queue_head_t *
  * @param[in]   head        spsc atom queue head
  * 
  * @retval      counts
- * 
- * @note        
  */
 static attr_force_inline unsigned int type_spsc_atom_queue_count(spsc_atom_queue_head_t *head);
+
+/**
+ * @brief       init mpsc atom queue
+ */
+extern void mpsc_atom_queue_init(mpsc_atom_queue_head_t **head);
+
+/**
+ * @brief       push into mpsc aq
+ * 
+ * @param[in]   head    - aq head
+ * @param[in]   data    - data
+ */
+extern void mpsc_atom_queue_push(mpsc_atom_queue_head_t *head, void *data);
+
+/**
+ * @brief       pop from mpsc aq
+ * 
+ * @param[in]   aq_head     - head
+ * 
+ * @retval      user data
+ */
+extern void* mpsc_atom_queue_pop(mpsc_atom_queue_head_t *aq_head);
 
 /**
  * @brief       init mpmc aq

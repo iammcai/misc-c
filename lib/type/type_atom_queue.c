@@ -25,13 +25,31 @@
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
+// MPSC队列节点定义
+typedef struct{
+    void *data;             // 用户数据
+    ATOMIC_UINTPTR_T next;  // next item
+}mpsc_atom_queue_item_t;
+
+// 含version的MPSC指针定义
+typedef struct{
+    mpsc_atom_queue_item_t *ptr;
+    uint64_t version;
+} attr_aligned(16) mpsc_tagged_ptr_t;
+
+// MPSC队列定义
+struct mpsc_atom_queue_head_s{
+    ATOMIC_UINT128_T head;  // 哨兵
+    ATOMIC_UINT128_T tail;  // 队尾
+};
+
 // MPMC队列节点定义
 typedef struct{
     void *data;             // 指向用户数据
     ATOMIC_UINTPTR_T next;  // next
 }mpmc_atom_queue_item_t;
 
-// 含version的指针定义
+// 含version的MPMC指针定义
 typedef struct{
     mpmc_atom_queue_item_t *ptr;
     uint64_t version;
@@ -48,17 +66,33 @@ struct mpmc_atom_queue_head_s{
 /* ========================================================================== */
 
 /**
- * @brief       trans u128 to tagged ptr
+ * @brief       trans u128 to mpmc tagged ptr
  */
-static attr_pure_inline mpmc_tagged_ptr_t u128_to_tagged_ptr(ATOMIC_UINT128_T u)
+static attr_pure_inline mpmc_tagged_ptr_t u128_to_mpmc_tagged_ptr(ATOMIC_UINT128_T u)
 {
     return *(mpmc_tagged_ptr_t*)&u;
 }
 
 /**
- * @brief       trans tagged ptr to u128
+ * @brief       trans mpmc tagged ptr to u128
  */
-static attr_pure_inline ATOMIC_UINT128_T tagged_ptr_to_u128(mpmc_tagged_ptr_t t)
+static attr_pure_inline ATOMIC_UINT128_T mpmc_tagged_ptr_to_u128(mpmc_tagged_ptr_t t)
+{
+    return *(ATOMIC_UINT128_T*)&t;
+}
+
+/**
+ * @brief       trans u128 to mpsc tagged ptr
+ */
+static attr_pure_inline mpsc_tagged_ptr_t u128_to_mpsc_tagged_ptr(ATOMIC_UINT128_T u)
+{
+    return *(mpsc_tagged_ptr_t*)&u;
+}
+
+/**
+ * @brief       trans mpsc tagged ptr to u128
+ */
+static attr_pure_inline ATOMIC_UINT128_T mpsc_tagged_ptr_to_u128(mpsc_tagged_ptr_t t)
 {
     return *(ATOMIC_UINT128_T*)&t;
 }
@@ -106,6 +140,119 @@ spsc_atom_queue_item_t* type_spsc_atom_queue_pop(spsc_atom_queue_head_t *head)
     return it;
 }
 
+void mpsc_atom_queue_init(mpsc_atom_queue_head_t **head)
+{
+    *head = mp_calloc(1, sizeof(mpsc_atom_queue_head_t));   // Head
+
+    mpsc_atom_queue_item_t *dummy_item = mp_calloc(1, sizeof(mpsc_atom_queue_item_t));   // 哨兵节点
+    dummy_item->next = 0;
+
+    mpsc_tagged_ptr_t dummy_tag = {
+        .ptr = dummy_item,
+        .version = 0,
+    };
+    ATOMIC_UINT128_T dummy = mpsc_tagged_ptr_to_u128(dummy_tag);
+
+    ATOM_STORE(&(*head)->head, dummy, MORDER_SEQ_SCT);
+    ATOM_STORE(&(*head)->tail, dummy, MORDER_SEQ_SCT);
+}
+
+void mpsc_atom_queue_push(mpsc_atom_queue_head_t *head, void *data)
+{
+    assert(head && data);
+
+    // 申请新节点
+    mpsc_atom_queue_item_t *item = mp_calloc(1, sizeof(mpsc_atom_queue_item_t));
+    item->data = data;
+    item->next = 0;
+
+    while(1)
+    {
+        // 获取tail以及next
+        ATOMIC_UINT128_T tail = ATOM_LOAD(&head->tail, MORDER_SEQ_SCT);
+        mpsc_tagged_ptr_t tail_tag = u128_to_mpsc_tagged_ptr(tail);
+        mpsc_atom_queue_item_t *tail_next = ATOM_UINT2PTR(ATOM_LOAD(&tail_tag.ptr->next, MORDER_SEQ_SCT));
+
+        // 检查tail是否已经被其它线程修改
+        if(tail != ATOM_LOAD(&head->tail, MORDER_SEQ_SCT))
+            continue;
+
+        // 检查next
+        if(tail_next)   // 帮忙切tail
+        {
+            mpsc_tagged_ptr_t new_tail_tag = {
+                .ptr = tail_next,
+                .version = tail_tag.version + 1,
+            };
+            ATOMIC_UINT128_T new_tail = mpsc_tagged_ptr_to_u128(new_tail_tag);
+            ATOM_CMP_XCHG_WEAK(&head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
+        }
+        else
+        {
+            // 修改tail->next为item
+            mpsc_atom_queue_item_t *expect = NULL;
+            if(ATOM_CMP_XCHG_WEAK(&tail_tag.ptr->next, &expect, item, MORDER_SEQ_SCT, MORDER_SEQ_SCT))
+            {
+                // 更新tail，失败也没关系
+                mpsc_tagged_ptr_t new_tail_tag = {
+                    .ptr = item,
+                    .version = tail_tag.version + 1,
+                };
+                ATOMIC_UINT128_T new_tail = mpsc_tagged_ptr_to_u128(new_tail_tag);
+                ATOM_CMP_XCHG_WEAK(&head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
+                return;
+            }
+        }
+    }
+}
+
+void* mpsc_atom_queue_pop(mpsc_atom_queue_head_t *aq_head)
+{
+    assert(aq_head);
+
+    while(1)
+    {
+        // 获取head以及tail
+        ATOMIC_UINT128_T head = ATOM_LOAD(&aq_head->head, MORDER_SEQ_SCT);
+        mpsc_tagged_ptr_t head_tag = u128_to_mpsc_tagged_ptr(head);
+        ATOMIC_UINT128_T tail = ATOM_LOAD(&aq_head->tail, MORDER_SEQ_SCT);
+        mpsc_tagged_ptr_t tail_tag = u128_to_mpsc_tagged_ptr(tail);
+
+        // 无需检查head，因为只有一个consumer
+
+        mpsc_atom_queue_item_t *head_next = ATOM_UINT2PTR(ATOM_LOAD(&head_tag.ptr->next, MORDER_SEQ_SCT));
+        // 确认是否空队列
+        if(head_tag.ptr == tail_tag.ptr)
+        {
+            // 可能push到一半，需要再确认下next
+            if(!head_next)
+                return NULL;
+
+            // 协助推动tail
+            mpsc_tagged_ptr_t new_tail_tag = {
+                .ptr = head_next,
+                .version = tail_tag.version + 1,
+            };
+            ATOMIC_UINT128_T new_tail = mpsc_tagged_ptr_to_u128(new_tail_tag);
+            ATOM_CMP_XCHG_WEAK(&aq_head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
+        }
+        else
+        {
+            // 队头在哨兵next
+            void *data = head_next->data;
+            // 更新head到head->next
+            mpsc_tagged_ptr_t new_head_tag = {
+                .ptr = head_next,
+                .version = head_tag.version + 1,
+            };
+            ATOMIC_UINT128_T new_head = mpsc_tagged_ptr_to_u128(new_head_tag);
+            ATOM_STORE(&aq_head->head, new_head, MORDER_SEQ_SCT);   // 没有竞争，直接store
+            free(head_tag.ptr);     // 释放内存
+            return data;
+        }
+    }
+}
+
 void mpmc_atom_queue_init(mpmc_atom_queue_head_t **head)
 {
     *head = mp_calloc(1, sizeof(mpmc_atom_queue_head_t));
@@ -117,7 +264,7 @@ void mpmc_atom_queue_init(mpmc_atom_queue_head_t **head)
         .ptr = dummy_item,
         .version = 0,
     };
-    ATOMIC_UINT128_T dummy = tagged_ptr_to_u128(dummy_tag);
+    ATOMIC_UINT128_T dummy = mpmc_tagged_ptr_to_u128(dummy_tag);
 
     ATOM_STORE(&(*head)->head, dummy, MORDER_SEQ_SCT);
     ATOM_STORE(&(*head)->tail, dummy, MORDER_SEQ_SCT);
@@ -136,7 +283,7 @@ void mpmc_atom_queue_push(mpmc_atom_queue_head_t *head, void *data)
     {
         // 获取tail以及tail->next
         ATOMIC_UINT128_T tail = ATOM_LOAD(&head->tail, MORDER_SEQ_SCT);
-        mpmc_tagged_ptr_t tail_tag = u128_to_tagged_ptr(tail);
+        mpmc_tagged_ptr_t tail_tag = u128_to_mpmc_tagged_ptr(tail);
         mpmc_atom_queue_item_t *tail_next = ATOM_UINT2PTR(ATOM_LOAD(&tail_tag.ptr->next, MORDER_SEQ_SCT));
 
         // 检查tail是否已经被修改了，如果是，重来
@@ -151,7 +298,7 @@ void mpmc_atom_queue_push(mpmc_atom_queue_head_t *head, void *data)
                 .ptr = tail_next,
                 .version = tail_tag.version + 1,
             };
-            ATOMIC_UINT128_T new_tail = tagged_ptr_to_u128(new_tail_tag);
+            ATOMIC_UINT128_T new_tail = mpmc_tagged_ptr_to_u128(new_tail_tag);
             ATOM_CMP_XCHG_WEAK(&head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
         }
         else
@@ -165,7 +312,7 @@ void mpmc_atom_queue_push(mpmc_atom_queue_head_t *head, void *data)
                     .ptr = item,
                     .version = tail_tag.version + 1,
                 };
-                ATOMIC_UINT128_T new_tail = tagged_ptr_to_u128(new_tail_tag);
+                ATOMIC_UINT128_T new_tail = mpmc_tagged_ptr_to_u128(new_tail_tag);
                 ATOM_CMP_XCHG_WEAK(&head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
                 // CAS失败无需重试，其它线程帮忙推进
                 return;
@@ -182,9 +329,9 @@ void* mpmc_atom_queue_pop(mpmc_atom_queue_head_t *aq_head)
     {
         //获取head和tail
         ATOMIC_UINT128_T head = ATOM_LOAD(&aq_head->head, MORDER_SEQ_SCT);
-        mpmc_tagged_ptr_t head_tag = u128_to_tagged_ptr(head);
+        mpmc_tagged_ptr_t head_tag = u128_to_mpmc_tagged_ptr(head);
         ATOMIC_UINT128_T tail = ATOM_LOAD(&aq_head->tail, MORDER_SEQ_SCT);
-        mpmc_tagged_ptr_t tail_tag = u128_to_tagged_ptr(tail);
+        mpmc_tagged_ptr_t tail_tag = u128_to_mpmc_tagged_ptr(tail);
 
         // 检查head是否已经被修改了
         if(head != ATOM_LOAD(&aq_head->head, MORDER_SEQ_SCT))
@@ -205,7 +352,7 @@ void* mpmc_atom_queue_pop(mpmc_atom_queue_head_t *aq_head)
                     .ptr = head_next,
                     .version = tail_tag.version + 1,
                 };
-                ATOMIC_UINT128_T new_tail = tagged_ptr_to_u128(new_tail_tag);
+                ATOMIC_UINT128_T new_tail = mpmc_tagged_ptr_to_u128(new_tail_tag);
                 ATOM_CMP_XCHG_WEAK(&aq_head->tail, &tail, new_tail, MORDER_SEQ_SCT, MORDER_SEQ_SCT);
             }
         }
@@ -218,7 +365,7 @@ void* mpmc_atom_queue_pop(mpmc_atom_queue_head_t *aq_head)
                 .ptr = head_next,
                 .version = head_tag.version + 1,
             };
-            ATOMIC_UINT128_T new_head = tagged_ptr_to_u128(new_head_tag);
+            ATOMIC_UINT128_T new_head = mpmc_tagged_ptr_to_u128(new_head_tag);
             if(ATOM_CMP_XCHG_WEAK(&aq_head->head, &head, new_head, MORDER_SEQ_SCT, MORDER_SEQ_SCT))
             {
                 // 释放原来的head内存，返回

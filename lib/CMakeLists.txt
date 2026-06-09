@@ -6,6 +6,7 @@ add_library(Lib STATIC
     event/ev_thread.c
     mp/mp.c
     event/ev_lock.c
+    msg_q/msg_q.c
 )
 
 # 添加链接库
