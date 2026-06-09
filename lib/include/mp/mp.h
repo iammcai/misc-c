@@ -151,6 +151,21 @@ static attr_force_inline void* mp_calloc(size_t num, size_t size)
 }
 
 /**
+ * @brief       call system realloc
+ * 
+ * @param[in]   ptr - ptr to buffer
+ * @param[in]   size - new size
+ * 
+ * @retval      new ptr to buffer
+ */
+static attr_force_inline void* mp_realloc(void *ptr, size_t size)
+{
+    void *ret = realloc(ptr, size);
+    assert(ret);
+    return ret;
+}
+
+/**
  * @brief       call system free
  * 
  * @param[in]   ptr     - ptr to buffer

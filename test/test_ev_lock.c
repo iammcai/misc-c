@@ -46,6 +46,7 @@
 /* ========================================================================== */
 
 ev_rwlock_t rwlock = EV_RWLOCK_INITIALIZER;
+ev_spinlock_t spinlock = EV_SPINLOCK_INITIALIZER;
 unsigned int var = 0;
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -76,6 +77,18 @@ void* writer_mtx(void *args)
     }
 }
 
+void* writer_spin(void *args)
+{
+    int i = 0;
+    for(i = 0; i < WRITE_TIMES; ++ i)
+    {
+        ev_with_spinlock(&spinlock)
+        {
+            ++ var;
+        }
+    }
+}
+
 void* reader(void *args)
 {
     int i = 0;
@@ -100,6 +113,20 @@ void* reader_mtx(void *args)
         pthread_mutex_lock(&mtx);
         s_var = var;
         pthread_mutex_unlock(&mtx);
+    }
+}
+
+void* reader_spin(void *args)
+{
+    int i = 0;
+    unsigned int s_var = 0;
+
+    for(i = 0; i < READ_TIMES; ++ i)
+    {
+        ev_with_spinlock(&spinlock)
+        {
+            s_var = var;
+        }
     }
 }
 
@@ -136,6 +163,34 @@ int test_ev_lock()
     assert(var == (WRITE_TIMES * TEST_WRITERS));
 
     printf("ev_lock: %d readers read %d times, %d writers write %d times, total cost %.3f s\n", 
+        TEST_READERS, READ_TIMES, TEST_WRITERS, WRITE_TIMES, (double)time/1e6);
+
+    var = 0;
+    test_with_clock(
+        s,e,time,
+        {
+            for(i = 0; i < TEST_WRITERS; ++ i)
+            {
+                pthread_create(&writers[i], NULL, writer_spin, NULL);
+            }
+            for(i = 0; i < TEST_READERS; ++ i)
+            {
+                pthread_create(&readers[i], NULL, reader_spin, NULL);
+            }
+            for(i = 0; i < TEST_WRITERS; ++ i)
+            {
+                pthread_join(writers[i], NULL);
+            }
+            for(i = 0; i < TEST_READERS; ++ i)
+            {
+                pthread_join(readers[i], NULL);
+            }
+        }
+    );
+
+    assert(var == (WRITE_TIMES * TEST_WRITERS));
+
+    printf("ev_spinlock: %d readers read %d times, %d writers write %d times, total cost %.3f s\n", 
         TEST_READERS, READ_TIMES, TEST_WRITERS, WRITE_TIMES, (double)time/1e6);
     
     var = 0;

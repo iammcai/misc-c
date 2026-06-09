@@ -21,12 +21,18 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <sched.h>
 #include "plat/compiler.h"
 #include "plat/atom.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
+
+// 自旋锁定义
+typedef struct{
+    ATOMIC_UINT8_T flag;
+}ev_spinlock_t;
 
 // 读写锁定义
 typedef struct{
@@ -37,6 +43,24 @@ typedef struct{
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
+
+// 最大自旋次数，超出则yield
+#define EV_SPIN_LOCK_SPIN_COUNT (10)
+
+// 静态初始化spinlock
+#define EV_SPINLOCK_INITIALIZER { .flag = 0 }
+
+// 动态初始化spinlock
+#define ev_spinlock_init(lock)  \
+    _ev_spinlock_init(lock);    \
+/* ev_spinlock_init end */
+
+/**
+ * 外部使用，后接{}，代码块内处理受自旋锁保护，异常退出可自动解锁
+ */
+#define ev_with_spinlock(lock)  \
+    for(ev_spinlock_t *_lock attr_cleanup(_ev_spin_unlock) = _ev_spin_lock(lock), *_once = NULL; _once == NULL; _once = (void*)1)   \
+/* ev_with_spinlock end */
 
 // 静态初始化rwlock
 #define EV_RWLOCK_INITIALIZER   { .readers = 0, .writing = 0, }
@@ -63,6 +87,66 @@ typedef struct{
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       asm yield
+ * 
+ * @note        不让出CPU，硬件流水线暂停一会
+ */
+static attr_force_inline void ev_pause(void)
+{
+	__asm__ __volatile__ ("yield");
+}
+
+/**
+ * @brief       init spinlock
+ * 
+ * @param[in]   lock    - spin lock
+ */
+static attr_force_inline void _ev_spinlock_init(ev_spinlock_t *lock)
+{
+    ATOM_STORE(&lock->flag, 0, MORDER_RELEASE);
+}
+
+/**
+ * @brief       lock spin lock
+ * 
+ * @param[in]   lock    - ptr to spin lock
+ * 
+ * @retval      origin lock
+ * 
+ * @note        内部使用，上锁，返回锁
+ */
+static attr_force_inline ev_spinlock_t* _ev_spin_lock(ev_spinlock_t *lock)
+{
+    int flag = 0;
+    int spin = EV_SPIN_LOCK_SPIN_COUNT;
+    while(!ATOM_CMP_XCHG_WEAK(&lock->flag, &flag, 1, MORDER_SEQ_SCT, MORDER_RELAXED))   // 0->1，失败重试
+    {
+        flag = 0;
+        if(--spin)
+        {
+            ev_pause();
+            continue;
+        }
+        spin = EV_SPIN_LOCK_SPIN_COUNT;
+        sched_yield();
+    }
+
+    return lock;
+}
+
+/**
+ * @brief       unlock spin lock
+ * 
+ * @param[in]   lock    - 2nd ptr to spin lock
+ * 
+ * @note        内部使用，作为析构函数，解锁
+ */
+static attr_force_inline void _ev_spin_unlock(ev_spinlock_t **lock)
+{
+    ATOM_STORE(&(*lock)->flag, 0, MORDER_RELEASE);
+}
 
 /**
  * @brief       init rwlock
