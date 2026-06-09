@@ -22,6 +22,7 @@
 /* ========================================================================== */
 
 #include <sched.h>
+#include <pthread.h>
 #include "plat/compiler.h"
 #include "plat/atom.h"
 
@@ -39,6 +40,11 @@ typedef struct{
     ATOMIC_UINT32_T readers;    // 读者数量
     ATOMIC_UINT8_T writing;     // 写者持有
 }ev_rwlock_t;
+
+// 互斥锁定义
+typedef struct{
+    pthread_mutex_t mutex;
+}ev_mutex_t;
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -83,6 +89,21 @@ typedef struct{
 #define ev_with_wrlock(lock)    \
     for(ev_rwlock_t *_lock attr_cleanup(_ev_wr_unlock) = _ev_wr_lock(lock), *_once = NULL; NULL == _once; _once = (void*)1) \
 /* ev_with_wrlock end */
+
+// 静态初始化互斥锁
+#define EV_MUTEX_INITIALIZER    { .mutex = PTHREAD_MUTEX_INITIALIZER, }
+
+// 动态初始化互斥锁
+#define ev_mutex_init(mutex)    \
+    _ev_mutex_init(mutex);  \
+/* ev_mutex_init end */
+
+/**
+ * 外部使用，后接{}，代码块内的处理由互斥锁保护，异常退出或者正常退出均可释放
+ */
+#define ev_with_mutex(mutex)    \
+    for(ev_mutex_t *_mutex attr_cleanup(_ev_mutex_unlock) = _ev_mutex_lock(mutex), *_once = NULL; NULL == _once; _once = (void*)1)  \
+/* ev_with_mutex end */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -253,6 +274,43 @@ static attr_force_inline ev_rwlock_t* _ev_wr_lock(ev_rwlock_t *lock)
 static attr_force_inline void _ev_wr_unlock(ev_rwlock_t **lock)
 {
     ev_wr_unlock(*lock);
+}
+
+/**
+ * @brief       init mutex
+ * 
+ * @param[in]   mutex   - ev mutex
+ * 
+ * @note        内部使用，初始化互斥锁
+ */
+static attr_force_inline void _ev_mutex_init(ev_mutex_t *mutex)
+{
+    pthread_mutex_init(&mutex->mutex, NULL);
+}
+
+/**
+ * @brief       lock mutex
+ * 
+ * @param[in]   mutex   - ev mutex
+ * 
+ * @note        内部使用，互斥锁上锁，返回锁
+ */
+static attr_force_inline ev_mutex_t* _ev_mutex_lock(ev_mutex_t *mutex)
+{
+    pthread_mutex_lock(&mutex->mutex);
+    return mutex;
+}
+
+/**
+ * @brief       unlock mutex
+ * 
+ * @param[in]   mutex   - 2nd ptr to ev mutex
+ * 
+ * @note        内部使用，析构解锁
+ */
+static attr_force_inline void _ev_mutex_unlock(ev_mutex_t **mutex)
+{
+    pthread_mutex_unlock(&(*mutex)->mutex);
 }
 
 #endif

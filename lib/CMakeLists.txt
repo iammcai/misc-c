@@ -7,6 +7,7 @@ add_library(Lib STATIC
     mp/mp.c
     event/ev_lock.c
     msg_q/msg_q.c
+    plat/debug.c
 )
 
 # 添加链接库
