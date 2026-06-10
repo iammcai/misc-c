@@ -34,6 +34,7 @@
 #define TEST_EV_THD (0)
 #define TEST_EV_LOCK    (0)
 #define TEST_MSG_Q  (0)
+#define TEST_HEAP   (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -81,13 +82,17 @@ int main()
     test_msg_q();
 #endif
 
-    cli_init();     // cli
+#if TEST_HEAP
+    test_heap();
+#endif
+
+    //cli_init();     // cli
 
     // Main进入休眠
-    while(1)
-    {
-        sleep(1);
-    }
+    //while(1)
+    //{
+        //sleep(1);
+    //}
 
     return 0;
 }

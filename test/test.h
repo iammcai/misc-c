@@ -26,6 +26,7 @@
 #include <string.h>
 #include <time.h>
 #include "type/type_list.h"
+#include "plat/debug.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -147,5 +148,10 @@ int test_ev_spinlock();
  * @brief       测试消息队列
  */
 int test_msg_q();
+
+/**
+ * @brief       测试堆
+ */
+int test_heap();
 
 #endif

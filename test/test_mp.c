@@ -28,8 +28,8 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-#define TEST_MEM_NODE_SIZE      (512)
-#define TEST_MEM_NODE_COUNT     (256)
+#define TEST_MEM_NODE_SIZE      (1600)
+#define TEST_MEM_NODE_COUNT     (1024)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -174,7 +174,7 @@ void* producer(void *args)
         }
     );
 
-    printf("mp_fixed_node_get %u nodes cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
+    printf("mp_fixed_node_get %u nodes(size %u B) cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, TEST_MEM_NODE_SIZE, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
 
     sleep(5);       // 等待t2归还完
     //mp_dump_fixed_free_list();    // count数量应该正确
@@ -228,7 +228,7 @@ void* producer1(void *args)
         }
     );
 
-    printf("calloc %u nodes cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
+    printf("calloc %u nodes(size %u B) cost %u us, average %.3f us/node\n", TEST_MEM_NODE_COUNT, TEST_MEM_NODE_SIZE, get_time, (double)get_time/TEST_MEM_NODE_COUNT);
     sleep(5);       // 等待t2归还完
 
     return NULL;

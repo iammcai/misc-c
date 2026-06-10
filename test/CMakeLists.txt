@@ -6,6 +6,7 @@ add_library(Test STATIC
     test_ev_thd.c
     test_ev_lock.c
     test_msg_q.c
+    test_heap.c
 )
 
 target_include_directories(Test PUBLIC
