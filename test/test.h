@@ -154,4 +154,14 @@ int test_msg_q();
  */
 int test_heap();
 
+/**
+ * @brief       测试跳表正确性
+ */
+int test_skiplist();
+
+/**
+ * @brief       测试跳表性能
+ */
+int test_skiplist_cost();
+
 #endif

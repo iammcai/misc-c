@@ -7,6 +7,7 @@ add_library(Test STATIC
     test_ev_lock.c
     test_msg_q.c
     test_heap.c
+    test_skiplist.c
 )
 
 target_include_directories(Test PUBLIC

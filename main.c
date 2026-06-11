@@ -20,6 +20,8 @@
 
 #include <stdio.h>
 #include <unistd.h>
+#include <time.h>
+#include <stdlib.h>
 #include "test.h"
 #include "cli/cli.h"
 
@@ -34,7 +36,8 @@
 #define TEST_EV_THD (0)
 #define TEST_EV_LOCK    (0)
 #define TEST_MSG_Q  (0)
-#define TEST_HEAP   (1)
+#define TEST_HEAP   (0)
+#define TEST_SKIPLIST   (1)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -46,6 +49,8 @@
 
 int main()
 {
+    srand(time(NULL));
+
 #if TEST_LIST
     test_type_list();
     test_type_list_cost();
@@ -84,6 +89,11 @@ int main()
 
 #if TEST_HEAP
     test_heap();
+#endif
+
+#if TEST_SKIPLIST
+    //test_skiplist();
+    test_skiplist_cost();
 #endif
 
     //cli_init();     // cli
