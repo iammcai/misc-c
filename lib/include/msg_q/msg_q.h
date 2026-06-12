@@ -21,6 +21,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <string.h>
 #include "plat/compiler.h"
 #include "event/ev_lock.h"
 #include "event/ev_sem.h"
@@ -128,6 +129,53 @@ extern msg_q_ret_type_e _msg_q_push(msg_q_t *msg_q, void *ctx, size_t len);
  * @retval      err code
  */
 extern msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_type, void *ctx);
+
+/**
+ * @brief       外部使用，创建消息队列
+ * 
+ * @param[in]   name        - mq name
+ * @param[in]   capacity    - elem capacity
+ * @param[in]   elem_size   - elem size
+ * 
+ * @retval      ptr to mq
+ */
+static msg_q_t* msg_q_create(const char *name, size_t capacity, size_t elem_size)
+{
+    msg_q_t *mq = mp_calloc(1, sizeof(msg_q_t)+capacity*elem_size);
+    assert(mq);
+
+    char *tmp_name = mp_calloc(strlen(name)+1, sizeof(char));
+    assert(tmp_name);
+    strncpy(tmp_name, name, strlen(name));
+    mq->name = tmp_name;
+
+    mq->capacity = capacity;
+    mq->elem_size = elem_size;
+
+    ev_spinlock_init(&mq->spinlock_in);
+    ev_sem_init(&mq->sem_out);
+
+    return mq;
+}
+
+/**
+ * @brief       destroy msg q
+ * 
+ * @param[in]   p_mq    - ptr to mq
+ * 
+ * @note        业务模块需保证使用方退出
+ */
+static void msg_q_destroy(msg_q_t **p_mq)
+{
+    assert(p_mq && *p_mq);
+
+    msg_q_t *mq = *p_mq;
+
+    mp_free((void*)mq->name);  // 释放name申请的内存
+    mp_free(mq);
+
+    *p_mq = NULL;   // 防止悬空
+}
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */

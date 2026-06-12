@@ -92,6 +92,18 @@ static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head
 
 ![mp_struct_final](../images/mp_struct_final.png)
 
+### 使用方式
+
+固定大小内存：
+
+1. `declare_mem_type_fixed`，全局定义内存类型
+2. 线程内部`mp_fixed_init`初始化内存池，此时还没有申请内存节点
+3. `mp_fixed_supply`申请线程内存节点，线程需要分配的话就要调用
+4. `mp_fixed_node_get`：申请内存
+5. `mp_fixed_node_put`：归还内存
+
+### 测试
+
 测试分配释放256*512B的内存，对比`calloc`和`free`
 
 线程1分配，分配后加到消息队列让线程2释放：

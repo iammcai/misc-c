@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-05-27 | cai | Initial creation.
+ *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  */
 
 #ifndef __MP_H__
@@ -114,10 +115,9 @@ extern void _mp_fixed_init(mem_type_attr_t *attr);
 /**
  * @brief       supply mem node from system to free list
  * 
- * @param[in]   head    - free list head
  * @param[in]   attr    - mem type attr
  */
-extern void fixed_free_list_supply(fixed_free_list_head_t *head, mem_type_attr_t *attr);
+extern void fixed_mp_supply(mem_type_attr_t *attr);
 
 /**
  * @brief       get node from fixed mem pool
@@ -206,12 +206,18 @@ static inline void _mem_type_attr_ ## _name ## _init()   \
  * 0. 初始化全局空闲链表
  * 1. 在【线程私有】的全局空闲链表头哈希表中查找有无空闲链表
  *  1.1 无的话，创建并加入哈希表
- * 2. 
- * 3. 根据指定节点数量和大小，从系统分配内存
+ * 2. 创建aq用于跨线程回收
 */
 #define mp_fixed_init(name) \
     _mp_fixed_init(&_mem_type_attr_ ## name);   \
 /* declare_mp_fixed */
+
+/**
+ * 外部使用，补充空闲节点
+ */
+#define mp_fixed_supply(name)   \
+    fixed_mp_supply(&_mem_type_attr_ ## name);    \
+/* mp_fixed_supply end */
 
 /**
  * 外部使用，从内存池获取一个固定大小的内存结点

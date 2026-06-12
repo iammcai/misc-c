@@ -156,6 +156,7 @@ notify_t notifys[TEST_MEM_NODE_COUNT] = {};
 void* producer(void *args)
 {
     mp_fixed_init(test_fixed);
+    mp_fixed_supply(test_fixed);
 
     int i = 0;
     struct timespec s, e;

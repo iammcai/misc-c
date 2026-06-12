@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-05-27 | cai | Initial creation.
+ *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  */
 
 /* ========================================================================== */
@@ -298,22 +299,24 @@ void _mp_fixed_init(mem_type_attr_t *attr)
         // 加到全局链表
         fixed_cycle_aq_list_add_tail(&g_fixed_cycle_aq_list_head, &free_list->cycle_aq_head);
     }
-
-    // 补充节点数量到需求
-    fixed_free_list_supply(&free_list->head, attr);
 }
 
-void fixed_free_list_supply(fixed_free_list_head_t *head, mem_type_attr_t *attr)
+void fixed_mp_supply(mem_type_attr_t *attr)
 {
     int count = 0;
     fixed_mem_node_t *node = NULL;
 
-    assert(head && attr);
+    assert(attr);
+
+    fixed_free_list_t key = {.attr = attr};
+    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
+    assert(free_list);
+
+    fixed_free_list_head_t *head = &free_list->head;
 
     while(fixed_free_list_count(head) < attr->node_max_num)
     {
         node = fixed_mem_node_new(attr);
-        if(!node)   printf("%s %d\n", __func__, __LINE__);
         fixed_free_list_add_head(head, node);
     }
 }
