@@ -58,7 +58,7 @@
 
 // 计算数组长度
 #ifndef array_size
-#define array_size(x)   (sizeof((x))/sizeof((*x)))
+#define array_size(x)   (sizeof((x))/sizeof((x)[0]))
 #endif
 
 #endif

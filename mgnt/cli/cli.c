@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-06-09 | cai | Initial creation.
+ *   1.1 | 2026-06-15 | cai | Support args pass.
  */
 
 /* ========================================================================== */
@@ -22,7 +23,6 @@
 #include "cli/cli.h"
 #include "event/ev_lock.h"
 #include "mp/mp.h"
-#include "plat/debug.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -42,7 +42,10 @@
  * 
  * @note        处理cli命令，调用相应回调
  */
-static attr_force_inline void _cli_handler(const char *cmd);
+static attr_force_inline void _cli_handler(const char *cmd)
+{
+    _cli_trie_excute(cmd);
+}
 
 /**
  * @brief       cli routine, wait user input and run cli
@@ -73,13 +76,6 @@ static pthread_t cli_stask_tid;
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static inline void _cli_handler(const char *cmd)
-{
-    cli_hook_func hook = _cli_trie_find(cmd);
-    if(hook)
-        hook(0, NULL);
-}
-
 static void* _cli_routine(void *args)
 {
     dbg_major("CLI start...");
@@ -87,7 +83,7 @@ static void* _cli_routine(void *args)
     {
         char input[CLI_INPUT_LEN] = {};
 
-        printf("misc-c > ");
+        safe_printf("misc-c > ");
 
         if(fgets(input, CLI_INPUT_LEN, stdin));
         {
@@ -106,8 +102,8 @@ static void* _cli_routine(void *args)
 void cli_init()
 {
     // cli注册
-    cli_register("?", "dump all cli cmd", _cli_cmd_dump);
-    cli_register("show cli", "dump all cli cmd", _cli_cmd_dump);
+    cli_register("?", "dump all cli cmd", NULL, _cli_cmd_dump);
+    cli_register("help", "dump all cli cmd", NULL, _cli_cmd_dump);
 
     // 创建线程执行监听cli输入
     pthread_create(&cli_stask_tid, NULL, _cli_routine, NULL);

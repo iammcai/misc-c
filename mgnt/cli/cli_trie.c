@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-06-10 | cai | Initial creation.
+ *   1.1 | 2026-06-15 | cai | Support args pass.
  */
 
 /* ========================================================================== */
@@ -31,6 +32,20 @@
 
 // 一行cli中单词最大数量
 #define CLI_ITEM_COUNT_MAX      (64)
+
+/* ========================================================================== */
+/*                             Type Definitions                               */
+/* ========================================================================== */
+
+// cli解析信息定义
+typedef struct{
+    cli_hook_func hook;     // 回调函数
+    cli_param_t *params;    // 参数数组
+    unsigned char params_count; // 参数数量
+
+    char **remain_argv;         // 剩余参数列表
+    unsigned char remain_argc;  // 剩余参数个数
+}cli_match_info_t;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -75,6 +90,25 @@ static char** _cmd_split(const char *cmd);
  * @param[in]   cmd_max_len     - max len of cmd buffer
  */
 static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned short cmd_max_len);
+
+/**
+ * @brief       match cmd in trie tree, exclude args
+ * 
+ * @param[in]   items   - items array, after split
+ * @param[in]   items_count - counts of items
+ * 
+ * @retval      match info
+ */
+static cli_match_info_t _cli_trie_match(char **items, unsigned char items_count);
+
+/**
+ * @brief       parse args and execute cli
+ * 
+ * @param[in]   match   - 通过 _cli_trie_match 解析得到的信息
+ * 
+ * @note        解析参数，并执行回调
+ */
+static void* _cli_trie_parse_execute(cli_match_info_t *match);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -128,7 +162,8 @@ static char** _cmd_split(const char *cmd)
     return array;
 }
 
-void _cli_trie_insert(const char *cmd, const char *help, cli_hook_func hook)
+void _cli_trie_insert(const char *cmd, const char *help,
+    cli_param_t *param, unsigned char param_size, cli_hook_func hook)
 {
     char **items = NULL;
     char *token = NULL;
@@ -157,7 +192,7 @@ void _cli_trie_insert(const char *cmd, const char *help, cli_hook_func hook)
             {
                 // 新增节点
                 cli_trie_item_t *item_new = mp_calloc(1, sizeof(cli_trie_item_t));
-                item_new->name = strdup(token);
+                item_new->name = mp_strdup(token);
                 // trie_item->next扩容，并指定
                 trie_item->next = mp_realloc(trie_item->next, (trie_item->size + 1) * sizeof(cli_trie_item_t*));
                 trie_item->next[trie_item->size] = item_new;
@@ -172,9 +207,22 @@ void _cli_trie_insert(const char *cmd, const char *help, cli_hook_func hook)
         // 此时trie_item指向的是末尾的节点
         if(trie_item->help)
             mp_free(trie_item->help);   // 支持修改Help
-        trie_item->help = strdup(help);
+        trie_item->help = mp_strdup(help);
         trie_item->hook = hook;
         trie_item->is_end = 1;
+        if(param && param_size)     // 存参数，部分需要深拷贝
+        {
+            trie_item->params_cnt = param_size;
+            trie_item->params = mp_calloc(param_size, sizeof(cli_param_t));
+            unsigned char param_i = 0;
+            for(param_i = 0; param_i < param_size; ++ param_i)
+            {
+                trie_item->params[param_i].help = mp_strdup(param[param_i].help);
+                trie_item->params[param_i].short_name = param[param_i].short_name;
+                trie_item->params[param_i].type = param[param_i].type;
+                trie_item->params[param_i].required = param[param_i].required;
+            }
+        }
     }
 
     _cmd_split_cleanup(items);      // 释放内存
@@ -191,11 +239,35 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
 
     if(item->name)      // 排除掉root节点
     {
-        strncat(cmd, item->name, strlen(item->name));
+        strncat(cmd, item->name, cmd_max_len - strlen(cmd));
         // 如果是is_end节点，进行打印
         if(item->is_end)
-            printf("[cmd]: %s\n\t[help]: %s\n", cmd, item->help);
-        strcat(cmd, " ");
+        {
+            safe_printf("[cmd]: %s\n" "\t[help]: %s\n", cmd, item->help);
+            if(item->params)    // 如果有参数，展示
+            {
+                safe_printf("\t<params>:\n");
+                unsigned char param_i = 0;
+                for(; param_i < item->params_cnt; ++ param_i)
+                {
+                    cli_param_t *param = &item->params[param_i];
+                    safe_printf("\t\t");
+                    if(PARAM_POS == param->type)
+                        safe_printf("<value> ");
+                    else
+                    {
+                        if(param->short_name)
+                            safe_printf("-%c ", param->short_name);
+                        if(PARAM_VALUE == param->type)
+                            safe_printf("<value> ");
+                    }
+                    safe_printf(", %s ", param->required ? "required" : "optional");
+                    safe_printf(", help: %s\n", param->help);
+                }
+            }
+        }
+
+        strncat(cmd, " ", cmd_max_len - 1);
     }
 
     // 递归next
@@ -219,34 +291,165 @@ void _cli_trie_dump()
     }
 }
 
-cli_hook_func _cli_trie_find(const char *cmd)
+cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
+{
+    cli_match_info_t match = {};
+    cli_trie_item_t *trie_item = &g_cli_trie.root;
+    unsigned char i = 0;
+    unsigned char remain = items_count;
+    cli_trie_item_t *last_end_item = NULL;
+
+    ev_with_mutex(&g_cli_trie_mtx)
+    {
+        for(i = 0; i < items_count && items[i]; ++ i) // 遍历所有items
+        {
+            // 扫描next数组，匹配word
+            unsigned char j = 0;
+            for(j = 0; j < trie_item->size; ++ j)
+            {
+                if(!strcmp(items[i], trie_item->next[j]->name))
+                    break;
+            }
+            if(j == trie_item->size)    // 查找失败
+                break;
+            
+
+            // 更新继续查找
+            trie_item = trie_item->next[j];
+            remain -= 1;
+
+            // 记录最后一个is_end节点
+            if(trie_item->is_end)
+                last_end_item = trie_item;
+        }
+    }
+
+    if(last_end_item)
+    {
+        match.hook = last_end_item->hook;
+        match.params = last_end_item->params;
+        match.params_count = last_end_item->params_cnt;
+        match.remain_argc = remain;
+        match.remain_argv = &items[items_count - remain];   // 指向items的剩余位置
+    }
+
+    return match;
+}
+
+void* _cli_trie_parse_execute(cli_match_info_t *match)
+{
+    if(!match || !match->hook)
+        return NULL;
+
+    if(!match->remain_argc && !match->params)   // 没有参数，立即执行
+    {
+        return match->hook(0, NULL);
+    }
+
+    dbg("params_count %d, remain_argc %d", match->params_count, match->remain_argc);
+
+    void *ret = NULL;
+    // 传给用户的agrv[]必须按照注册顺序
+    cli_param_t *usr_param = match->params;
+    unsigned char usr_param_cnt = match->params_count;
+    char **usr_argv = (char**)mp_calloc(usr_param_cnt, sizeof(char*));      // 给用户的argv
+    unsigned char *is_fill = (unsigned char*)mp_calloc(usr_param_cnt, sizeof(unsigned char));   // 是否填充
+
+    unsigned char i = 0;
+    for(; i < match->remain_argc;)     // 遍历剩余参数列表，填充到usr_argv
+    {
+        char *cur_arg = match->remain_argv[i];
+        dbg("cur arg: %s", cur_arg);
+
+        // 匹配-标识的短名
+        if(strlen(cur_arg) == 2 && cur_arg[0] == '-')
+        {
+            char *short_name = cur_arg+1;
+            unsigned char j = 0;
+            for(; j < usr_param_cnt; ++ j)    // 遍历找到long_name匹配
+                if(*short_name == match->params[j].short_name && is_fill[j] == 0)
+                    break;
+            if(j == usr_param_cnt)    // 匹配失败，直接返回
+            {
+                safe_printf("-cli: %s: Error args\n", cur_arg);
+                goto cleanup;
+            }
+            // 匹配成功，根据是否带值，匹配掉下一个
+            if(PARAM_VALUE == match->params[j].type)
+            {
+                usr_argv[j] = match->remain_argv[i+1];
+                i += 2;
+            }
+            else    // 否则填充一个"1"
+            {
+                usr_argv[j] = "1";
+                i+=1;
+            }
+            is_fill[j] = 1;     // 标记已填充
+            continue;
+        }
+        else    // 不带标识的参数，直接填充到下一个
+        {
+            unsigned char j = 0;
+            for(; j < usr_param_cnt; ++ j)
+                if(usr_param->type == PARAM_POS && is_fill[j] == 0)
+                    break;
+            if(j == usr_param_cnt)  // 填充失败
+            {
+                safe_printf("-cli: %s: Error args\n", cur_arg);
+                goto cleanup;
+            }
+            // 继续
+            usr_argv[j] = cur_arg;
+            is_fill[j] = 1;
+            i += 1;
+        }
+    }
+
+    // 检查是否所有必选参数都填充
+    for(i = 0; i < usr_param_cnt; ++ i)
+    {
+        if(usr_param[i].required && !is_fill[i])
+        {
+            safe_printf("-cli: : Param leakage\n");
+            goto cleanup;
+        }
+    }
+
+    dbg("pass param cnt %d", usr_param_cnt);
+
+    ret =  match->hook(usr_param_cnt, usr_argv);
+
+cleanup:
+    // 释放内存
+    mp_free(usr_argv);
+    mp_free(is_fill);
+    return ret;
+}
+
+void* _cli_trie_excute(const char *cmd)
 {
     if(!cmd)
         return NULL;
 
+    // 将cmd转换为标准的格式
     char** items = _cmd_split(cmd);
     if(!items)
         return NULL;
 
-    unsigned char index = 0;
-    char *token = items[0];
-    cli_trie_item_t *trie_item = &g_cli_trie.root;
-    ev_with_mutex(&g_cli_trie_mtx)
-    {
-        while(token)
-        {
-            unsigned char idx = 0;
-            for(; idx < trie_item->size; ++ idx)
-                if(!strcmp(token, trie_item->next[idx]->name))
-                    break;
-            // 查找失败，直接返回
-            if(idx == trie_item->size)
-                return NULL;
-            // 否则继续查找
-            token = items[++index];
-            trie_item = trie_item->next[idx];
-        }
-    }
-    // 此时trie_item就是目标，检查is_end
-    return trie_item->is_end ? trie_item->hook : NULL;
+    void *ret = NULL;
+    unsigned char items_cnt = 0;
+    while(items[items_cnt])
+        ++ items_cnt;           // 获取items个数
+
+    // 从前缀树中解析命令，不含参数
+    cli_match_info_t match = _cli_trie_match(items, items_cnt);
+    if(!match.hook)
+        safe_printf("-cli: %s: Unknown command\n", cmd);
+    else    // 继续解析参数，并执行
+        ret = _cli_trie_parse_execute(&match);
+
+    _cmd_split_cleanup(items);
+    return ret;
+
 }

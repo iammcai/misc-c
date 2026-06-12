@@ -166,6 +166,22 @@ static attr_force_inline void* mp_realloc(void *ptr, size_t size)
 }
 
 /**
+ * @brief       call system calloc, memcpy for strdup
+ * 
+ * @param[in]   str     - string to dup
+ * 
+ * @retval      dup string
+ */
+static attr_force_inline void* mp_strdup(const char *str)
+{
+    if(!str)
+        return NULL;
+    char *dup = mp_calloc(strlen(str)+1, sizeof(char));
+    memcpy(dup, str, strlen(str));
+    return dup;
+}
+
+/**
  * @brief       call system free
  * 
  * @param[in]   ptr     - ptr to buffer

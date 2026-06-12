@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-06-09 | cai | Initial creation.
+ *   1.1 | 2026-06-15 | cai | Support args pass.
  */
 
 #ifndef __CLI_H__
@@ -30,8 +31,8 @@
 /**
  * 外部使用，注册cli信息
  */
-#define cli_register(_cmd, _help, _hook)   \
-    _cli_register(_cmd, _help, _hook);   \
+#define cli_register(_cmd, _help, _param, _hook)   \
+    _cli_register(_cmd, _help, _param, _param ? array_size(_param) : 0, _hook);  \
 /* cli_register end */
 
 /* ========================================================================== */
@@ -43,12 +44,15 @@
  * 
  * @param[in]   cmd     - cli command
  * @param[in]   help    - cli help string
+ * @param[in]   param   - param array
+ * @param[in]   param_size  - param array size
  * @param[in]   hook    - cli hook func
  * 
  */
-static attr_force_inline void _cli_register(const char *cmd, const char *help, cli_hook_func hook)
+static attr_force_inline void _cli_register(const char *cmd, const char *help, 
+    cli_param_t *param, unsigned char param_size,  cli_hook_func hook)
 {
-    _cli_trie_insert(cmd, help, hook);
+    _cli_trie_insert(cmd, help, param, param_size, hook);
 }
 
 /**

@@ -35,6 +35,8 @@ typedef enum{
     debug_level_error,          // 错误信息
     debug_level_always,         // 永远打印的信息
     debug_level_all,            // 输出所有信息
+
+    debug_level_cnt,
 }debug_level_e;
 
 /* ========================================================================== */
@@ -57,6 +59,11 @@ typedef enum{
     _debug_printf(debug_level_always, __FILE__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
 
+/**
+ * 外部使用，安全打印
+ */
+#define safe_printf(fmt, args...)   \
+    _safe_printf(fmt, ##args)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -81,5 +88,13 @@ extern void _debug_printf(debug_level_e level, const char *file, const char *fun
  * @param[in]   level   - debug level, none, normal, maj, err, all
  */
 extern void debug_level_set(debug_level_e level);
+
+/**
+ * @brief       safe printf
+ * 
+ * @param[in]   fmt - format
+ * @param[in]   ... - other args
+ */
+extern void _safe_printf(const char *fmt, ...);
 
 #endif

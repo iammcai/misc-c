@@ -23,6 +23,8 @@
 #include "plat/debug.h"
 #include "plat/atom.h"
 #include "event/ev_lock.h"
+#include "cli/cli.h"
+#include <string.h>
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -31,6 +33,26 @@
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       cli hook for: debug level set <level>
+ * 
+ * @param[in]   argc    - 1
+ * @param[in]   argv[0] - debug level
+ */
+static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char* argv[]);
+
+/**
+ * @brief       cli hook for: debug level get
+ */
+static attr_pure_inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[]);
+
+/**
+ * @brief       debug early init
+ * 
+ * @note        register cli
+ */
+static void _debug_init() attr_ctor(CTOR_PRIO_MID);
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -50,7 +72,7 @@
 /* ========================================================================== */
 
 // 全局调试等级
-static ATOMIC_UINT8_T g_debug_level = debug_level_none;
+static ATOMIC_UINT8_T g_debug_level = debug_level_all;
 // 全局互斥锁
 static ev_mutex_t g_debug_mtx = EV_MUTEX_INITIALIZER;
 
@@ -102,10 +124,86 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
     va_end(list);
 }
 
+void _safe_printf(const char *fmt, ...)
+{
+    va_list list;
+    va_start(list, fmt);
+    ev_with_mutex(&g_debug_mtx)
+    {
+        vprintf(fmt, list);     // 输出
+    }
+    va_end(list);
+}
+
 void debug_level_set(debug_level_e level)
 {
     if(level == debug_level_always)
         return;
 
     ATOM_STORE(&g_debug_level, level, MORDER_RELEASE);
+}
+
+static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char* argv[])
+{
+    const char *table[debug_level_cnt] = {
+        "none",
+        "normal",
+        "major",
+        "error",
+        "",
+        "all"
+    };
+
+    if(argc != 1)
+    {
+        safe_printf("Error param count\n");
+        return NULL;
+    }
+
+    unsigned char i = 0;
+    for(; i < debug_level_cnt; ++ i)
+    {
+        if(!strcmp(table[i], argv[0]))
+            break;
+    }
+    if(i == debug_level_cnt)
+    {
+        safe_printf("Error debug level: %s\n", argv[0]);
+        return NULL;
+    }
+
+    debug_level_set(i);
+    
+    return NULL;
+}
+
+static inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[])
+{
+    const char *table[debug_level_cnt] = {
+        "none",
+        "normal",
+        "major",
+        "error",
+        "",
+        "all"
+    };
+
+    safe_printf("%s\n", table[ATOM_LOAD(&g_debug_level, MORDER_ACQUIRE)]);
+
+    return NULL;
+}
+
+static void _debug_init()
+{
+    cli_param_t set_param[] = {
+        {
+            .short_name = '\0',
+            .type = PARAM_POS,
+            .required = 1,
+            .help = "support: none / normal / major / error / all",
+        },
+    };
+
+    cli_register("debug level set", "set debug level", set_param, cli_set_debug_level_hook);
+    cli_register("debug level get", "get debug level", NULL, cli_get_debug_level_hook);
 }

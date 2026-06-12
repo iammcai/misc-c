@@ -15,6 +15,7 @@ add_library(Lib STATIC
 # 添加链接库
 target_link_libraries(Lib
     atomic
+    Mgnt
 )
 
 # 添加头文件路径
