@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include "test.h"
 #include "cli/cli.h"
+#include "zcap/zcap.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -37,7 +38,7 @@
 #define TEST_EV_LOCK    (0)
 #define TEST_MSG_Q  (0)
 #define TEST_HEAP   (0)
-#define TEST_SKIPLIST   (1)
+#define TEST_SKIPLIST   (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -46,6 +47,26 @@
 /* ========================================================================== */
 /*                         Private Function Implementations                   */
 /* ========================================================================== */
+
+/**
+ * @brief       platform init
+ */
+static attr_force_inline void _platfrom_init()
+{
+    // 开启debug
+    debug_level_set(debug_level_all);
+
+    // 声明抓取接口eth0
+    declare_zcap(eth0);
+    // 启动
+    zcap_start(eth0);
+
+    // 初始化cli线程
+    cli_init();     // cli
+
+    // 关闭debug
+    debug_level_set(debug_level_none);
+}
 
 int main()
 {
@@ -96,13 +117,13 @@ int main()
     test_skiplist_cost();
 #endif
 
-    //cli_init();     // cli
+    _platfrom_init();
 
     // Main进入休眠
-    //while(1)
-    //{
-        //sleep(1);
-    //}
+    while(1)
+    {
+        sleep(1);
+    }
 
     return 0;
 }
