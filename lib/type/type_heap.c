@@ -88,7 +88,7 @@ void type_heap_create(heap_head_t *head, unsigned int min_size, unsigned int max
 
 void type_heap_destroy(heap_head_t *head)
 {
-    mp_free(head->array);
+    mp_free(head->array, sizeof(heap_item_t*)*head->size);
     memset(head, 0, sizeof(heap_head_t));
 }
 
@@ -121,13 +121,13 @@ void type_heap_resize(heap_head_t *head, heap_size_op_e op)
 
     if(!new_size)
     {
-        mp_free(head->array);
+        mp_free(head->array, head->size*sizeof(heap_item_t*));
         head->array = NULL;
         head->size = 0;
         return;
     }
 
-    head->array = mp_realloc(head->array, sizeof(heap_item_t*)*new_size);
+    head->array = mp_realloc(head->array, sizeof(heap_item_t*)*new_size, sizeof(heap_item_t*)*head->size);
     head->size = new_size;
 }
 

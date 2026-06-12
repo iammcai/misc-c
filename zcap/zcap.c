@@ -51,15 +51,13 @@
 // 帧数量
 #define FRAME_NR        (BLOCK_SIZE*BLOCK_NR/FRAME_SIZE)
 
-// 内存池节点数量，2048应该能满足
-#define ZCAP_ST_MP_NODE_COUNT   (2048)
+// 内存池节点数量，开启MP_DETAIL_DUMP观察调整
+#define ZCAP_ST_MP_NODE_COUNT   (512)
 
 // 抓包epoll超时 200ms
 #define EPOLL_TIMEOUT   (200)
 
 #define err_str         strerror(errno)
-
-#define ZCAP_MSG_Q_CAP      (2048)      // 消息队列最大长度
 
 #define ZCAP_CAL_RATE_INTERVAL  (1000)  // 计算速率间隔，1s一次
 

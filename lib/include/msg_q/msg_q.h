@@ -171,8 +171,8 @@ static void msg_q_destroy(msg_q_t **p_mq)
 
     msg_q_t *mq = *p_mq;
 
-    mp_free((void*)mq->name);  // 释放name申请的内存
-    mp_free(mq);
+    mp_free((void*)mq->name, (strlen(mq->name)+1)*sizeof(char));  // 释放name申请的内存
+    mp_free(mq, sizeof(msg_q_t));
 
     *p_mq = NULL;   // 防止悬空
 }

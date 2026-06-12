@@ -369,7 +369,7 @@ void* mpmc_atom_queue_pop(mpmc_atom_queue_head_t *aq_head)
             if(ATOM_CMP_XCHG_WEAK(&aq_head->head, &head, new_head, MORDER_SEQ_SCT, MORDER_SEQ_SCT))
             {
                 // 释放原来的head内存，返回
-                mp_free(head_tag.ptr);
+                mp_free(head_tag.ptr, sizeof(mpmc_atom_queue_item_t));
                 return data;
             }
         }

@@ -65,10 +65,10 @@ static attr_force_inline void _cmd_split_cleanup(char **array)
     unsigned char idx = 0;
     while(item)
     {
-        mp_free(item);
+        mp_free(item, sizeof(char)*(strlen(item)+1));
         item = array[++idx];
     }
-    mp_free(array);
+    mp_free(array, sizeof(char*)*(CLI_ITEM_COUNT_MAX + 1));
 }
 
 /**
@@ -155,7 +155,7 @@ static char** _cmd_split(const char *cmd)
 
     if(!size)       // 检查是否分割结果为空，纯空格
     {
-        mp_free(array);
+        mp_free(array, sizeof(char*)*(CLI_ITEM_COUNT_MAX + 1));
         return NULL;
     }
 
@@ -194,7 +194,9 @@ void _cli_trie_insert(const char *cmd, const char *help,
                 cli_trie_item_t *item_new = mp_calloc(1, sizeof(cli_trie_item_t));
                 item_new->name = mp_strdup(token);
                 // trie_item->next扩容，并指定
-                trie_item->next = mp_realloc(trie_item->next, (trie_item->size + 1) * sizeof(cli_trie_item_t*));
+                trie_item->next = mp_realloc(
+                    trie_item->next, (trie_item->size + 1) * sizeof(cli_trie_item_t*), trie_item->size * sizeof(cli_trie_item_t*)
+                );
                 trie_item->next[trie_item->size] = item_new;
                 trie_item->size ++;
                 // 更新trie_item
@@ -206,7 +208,7 @@ void _cli_trie_insert(const char *cmd, const char *help,
 
         // 此时trie_item指向的是末尾的节点
         if(trie_item->help)
-            mp_free(trie_item->help);   // 支持修改Help
+            mp_free(trie_item->help, sizeof(char)*(strlen(trie_item->help)+1));     // 支持修改Help
         trie_item->help = mp_strdup(help);
         trie_item->hook = hook;
         trie_item->is_end = 1;
@@ -277,7 +279,7 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
 
     // 复原cmd
     strncpy(cmd, cmd_ori, cmd_max_len);
-    mp_free(cmd_ori);
+    mp_free(cmd_ori, cmd_max_len*sizeof(char));
 }
 
 void _cli_trie_dump()
@@ -422,8 +424,8 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
 
 cleanup:
     // 释放内存
-    mp_free(usr_argv);
-    mp_free(is_fill);
+    mp_free(usr_argv, usr_param_cnt*sizeof(char*));
+    mp_free(is_fill, usr_param_cnt*sizeof(unsigned char));
     return ret;
 }
 

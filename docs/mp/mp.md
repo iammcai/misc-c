@@ -135,3 +135,20 @@ mp_fixed_node_put 256 nodes cost 460 us, average 1.797 us/node
 calloc 256 nodes cost 912 us, average 3.562 us/node
 free 256 nodes cost 904 us, average 3.531 us/node
 ```
+
+## 调试方案
+
+在支持cli后，通过`show mp`查看通过`mp_xxx`分配的信息，原则上向系统申请的内存，都需要走这个接口
+
+```bash
+misc-c > show mp
+
+********************************
+alloc count: 579, size: 1079536B
+free  count: 36, size: 4838B
+current used: 1074698 B, 1049.510 KB
+********************************
+
+```
+
+另外，代码中添加一个`MP_DETAIL_DUMP`宏，开启时添加一些dbg打印，主要用来收集运行时数据。平时关闭，避免影响申请/释放速度

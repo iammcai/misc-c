@@ -13,6 +13,7 @@
  * @history
  *   1.0 | 2026-05-27 | cai | Initial creation.
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
+ *   1.2 | 2026-06-15 | cai | Add debug method.
  */
 
 #ifndef __MP_H__
@@ -89,6 +90,12 @@ typedef struct{
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
 
+// extern 全局统计数据
+extern ATOMIC_UINT32_T g_mp_calloc_cnt;
+extern ATOMIC_UINT64_T g_mp_calloc_size;
+extern ATOMIC_UINT32_T g_mp_free_cnt;
+extern ATOMIC_UINT64_T g_mp_free_size;
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -147,6 +154,10 @@ static attr_force_inline void* mp_calloc(size_t num, size_t size)
 {
     void* ret = calloc(num, size);
     assert(ret);
+
+    ATOM_FETCH_ADD(&g_mp_calloc_cnt, 1, MORDER_ACQ_REL);
+    ATOM_FETCH_ADD(&g_mp_calloc_size, num*size, MORDER_ACQ_REL);
+
     return ret;
 }
 
@@ -155,13 +166,20 @@ static attr_force_inline void* mp_calloc(size_t num, size_t size)
  * 
  * @param[in]   ptr - ptr to buffer
  * @param[in]   size - new size
+ * @param[in]   ori_size    - origin size
  * 
  * @retval      new ptr to buffer
  */
-static attr_force_inline void* mp_realloc(void *ptr, size_t size)
+static attr_force_inline void* mp_realloc(void *ptr, size_t size, size_t ori_size)
 {
     void *ret = realloc(ptr, size);
     assert(ret);
+
+    ATOM_FETCH_ADD(&g_mp_free_cnt, 1, MORDER_ACQ_REL);
+    ATOM_FETCH_ADD(&g_mp_free_size, ori_size, MORDER_ACQ_REL);
+    ATOM_FETCH_ADD(&g_mp_calloc_cnt, 1, MORDER_ACQ_REL);
+    ATOM_FETCH_ADD(&g_mp_calloc_size, size, MORDER_ACQ_REL);
+
     return ret;
 }
 
@@ -185,10 +203,19 @@ static attr_force_inline void* mp_strdup(const char *str)
  * @brief       call system free
  * 
  * @param[in]   ptr     - ptr to buffer
+ * @param[in]   size    - size of buffer
+ * 
+ * @note        size依赖用户输入，务必别自欺欺人
  */
-static attr_force_inline void mp_free(void *ptr)
+static attr_force_inline void mp_free(void *ptr, unsigned int size)
 {
-    free(ptr);
+    if(ptr)
+    {
+        free(ptr);
+
+        ATOM_FETCH_ADD(&g_mp_free_cnt, 1, MORDER_ACQ_REL);
+        ATOM_FETCH_ADD(&g_mp_free_size, size, MORDER_ACQ_REL);
+    }
 }
 
 /* ========================================================================== */

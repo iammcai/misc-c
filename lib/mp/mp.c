@@ -13,6 +13,7 @@
  * @history
  *   1.0 | 2026-05-27 | cai | Initial creation.
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
+ *   1.2 | 2026-06-15 | cai | Add debug method.
  */
 
 /* ========================================================================== */
@@ -22,14 +23,13 @@
 #include "mp/mp.h"
 #include "plat/atom.h"
 #include "event/ev_thread.h"
-
-/* ========================================================================== */
-/*                             Type Definitions                               */
-/* ========================================================================== */
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
+
+#define MP_DETAIL_DUMP  (0)     // 查看运行时情况，例如内存池剩余水位
 
 #define RECYCLE_WAKE_THRESHOLD  (64)   // 唤醒阈值
 
@@ -214,6 +214,16 @@ static attr_force_inline void fixed_node_recycle_work(void *args);
  */
 static attr_force_inline void fixed_node_recycle_init() attr_ctor(CTOR_PRIO_HIGH);
 
+/**
+ * @brief       ctor register mp cli
+ */
+static attr_force_inline void mp_cli_init() attr_ctor(CTOR_PRIO_MID);
+
+/**
+ * @brief       cli hook for: show mp
+ */
+static void* _mp_show_mp_hook(unsigned char argc, char *argv[]);
+
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -232,6 +242,12 @@ declare_ev_thd(fixed_node_recycle, fixed_node_recycle_work, NULL, 1000)
 
 // 唤醒阈值，线程私有
 static thread_local int recycle_wake_thread = 0;
+
+// 全局统计数据
+ATOMIC_UINT32_T g_mp_calloc_cnt = 0;     // 申请次数
+ATOMIC_UINT64_T g_mp_calloc_size = 0;    // 申请大小
+ATOMIC_UINT32_T g_mp_free_cnt = 0;       // 释放次数
+ATOMIC_UINT64_T g_mp_free_size = 0;      // 释放大小
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -343,6 +359,11 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
 
     fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
+    #if MP_DETAIL_DUMP
+    // 查看剩余百分比
+    dbg_major("get a fixed node, fixed mp left %.3f", (double)fixed_free_list_count(&free_list->head)/attr->node_max_num);
+    #endif
+
     return mp_fixed_node_data(node);
 }
 
@@ -434,6 +455,24 @@ static inline void fixed_node_recycle_work(void *args)
 static inline void fixed_node_recycle_init()
 {
     ev_thd_run(fixed_node_recycle);
+}
+
+static inline void mp_cli_init()
+{
+    cli_register("show mp", "dump mem pool info", NULL, _mp_show_mp_hook);
+}
+
+static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
+{
+    unsigned long calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_ACQUIRE);
+    unsigned long free_size = ATOM_LOAD(&g_mp_free_size, MORDER_ACQUIRE);
+
+    safe_printf("\n********************************\n");
+    safe_printf("alloc count: %u, size: %luB\n", ATOM_LOAD(&g_mp_calloc_cnt, MORDER_ACQUIRE), calloc_size);
+    safe_printf("free  count: %u, size: %luB\n", ATOM_LOAD(&g_mp_free_cnt, MORDER_ACQUIRE), free_size);
+    safe_printf("current used: %lu B, %.3f KB\n", calloc_size - free_size, (double)(calloc_size - free_size)/1024);
+    safe_printf("********************************\n\n");
+    return NULL;
 }
 
 /* ========================================================================== */
