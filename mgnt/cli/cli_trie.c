@@ -323,16 +323,29 @@ cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
     {
         for(i = 0; i < items_count && items[i]; ++ i) // 遍历所有items
         {
+            cli_trie_item_t *prefix_match_item = NULL;      // 前缀匹配节点
+            unsigned char prefix_match_cnt = 0;
+
             // 扫描next数组，匹配word
             unsigned char j = 0;
             for(j = 0; j < trie_item->size; ++ j)
                 if(!strcmp(items[i], trie_item->next[j]->name))
                     break;
-            if(j == trie_item->size)    // 查找失败
-                break;
+                else if(!strncmp(items[i], trie_item->next[j]->name, strlen(items[i])))     // 尝试前缀匹配
+                {
+                    prefix_match_cnt += 1;
+                    prefix_match_item = trie_item->next[j];
+                }
 
-            // 更新继续查找
-            trie_item = trie_item->next[j];
+            if(j == trie_item->size && 0 == prefix_match_cnt)       // 查找失败
+                break;
+            else if(j == trie_item->size && prefix_match_cnt > 1)   // 存在多个前缀匹配
+                break;
+            else if(j == trie_item->size)
+                trie_item = prefix_match_item;
+            else
+                trie_item = trie_item->next[j];
+
             remain -= 1;
 
             // 记录最后一个is_end节点
