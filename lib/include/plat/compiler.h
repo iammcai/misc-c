@@ -27,8 +27,18 @@
 #define attr_force_inline   inline __attribute__((unused, always_inline))
 #define attr_pure_inline    inline __attribute__((unused, always_inline, pure))
 #define attr_const_inline   inline __attribute__((unused, always_inline, const))
+// ctor/dtor 避免vscode intellisense检查报错，实际gcc编译支持参数
+#ifdef __INTELLISENSE__
+#define attr_ctor(x)        
+#else
 #define attr_ctor(x)        __attribute__((constructor(x)))                 // 指定构造函数，在main函数执行前会自动运行
+#endif
+#ifdef __INTELLISENSE__
+#define attr_dtor(x)        
+#else
 #define attr_dtor(x)        __attribute__((destructor(x)))
+#endif
+
 #define attr_aligned(n)     __attribute__((aligned(n)))                     // 指定起始地址必须是n的倍数，效果就是按n字节对齐
 #define attr_cleanup(f)     __attribute__((unused, cleanup(f)))             // 指定cleanup函数，离开作用域后，自动调用f
 

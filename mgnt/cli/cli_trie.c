@@ -33,6 +33,10 @@
 // 一行cli中单词最大数量
 #define CLI_ITEM_COUNT_MAX      (64)
 
+// CLI打印格式
+#define CLI_CMD_HELP_FMT    "%-32s%-64s\n"      // "cmd" + "help"
+#define CLI_PARAM_FMT       "%-32s  %-62s\n"    // " " + "param"
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -245,26 +249,26 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
         // 如果是is_end节点，进行打印
         if(item->is_end)
         {
-            safe_printf("[cmd]: %s\n" "\t[help]: %s\n", cmd, item->help);
+            safe_printf(CLI_CMD_HELP_FMT, cmd, item->help);
             if(item->params)    // 如果有参数，展示
             {
-                safe_printf("\t<params>:\n");
                 unsigned char param_i = 0;
                 for(; param_i < item->params_cnt; ++ param_i)
                 {
                     cli_param_t *param = &item->params[param_i];
-                    safe_printf("\t\t");
+                    char fmt[CLI_INPUT_LEN] = {};
                     if(PARAM_POS == param->type)
-                        safe_printf("<value> ");
+                        snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), "<value> ");
                     else
                     {
                         if(param->short_name)
-                            safe_printf("-%c ", param->short_name);
+                            snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), "-%c ", param->short_name);
                         if(PARAM_VALUE == param->type)
-                            safe_printf("<value> ");
+                            snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), "<value> ");
                     }
-                    safe_printf(", %s ", param->required ? "required" : "optional");
-                    safe_printf(", help: %s\n", param->help);
+                    snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), ", %s ", param->required ? "required" : "optional");
+                    snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), ", help: %s", param->help);
+                    safe_printf(CLI_PARAM_FMT, " ", fmt);
                 }
             }
         }
@@ -288,9 +292,7 @@ void _cli_trie_dump()
     char cmd[CLI_INPUT_LEN] = {};
 
     ev_with_mutex(&g_cli_trie_mtx)
-    {
         _cli_trie_dump_recursive(item, cmd, CLI_INPUT_LEN);
-    }
 }
 
 cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
@@ -308,13 +310,10 @@ cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
             // 扫描next数组，匹配word
             unsigned char j = 0;
             for(j = 0; j < trie_item->size; ++ j)
-            {
                 if(!strcmp(items[i], trie_item->next[j]->name))
                     break;
-            }
             if(j == trie_item->size)    // 查找失败
                 break;
-            
 
             // 更新继续查找
             trie_item = trie_item->next[j];

@@ -83,7 +83,7 @@ static void* _cli_routine(void *args)
     {
         char input[CLI_INPUT_LEN] = {};
 
-        safe_printf("misc-c > ");
+        safe_printf(fmt_color_green "misc-c > " fmt_color_clear);
 
         if(fgets(input, CLI_INPUT_LEN, stdin));
         {

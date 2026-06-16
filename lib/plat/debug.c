@@ -61,12 +61,6 @@ static void _debug_init() attr_ctor(CTOR_PRIO_MID);
 // dbg最大长度
 #define DBG_LEN_MAX     (256)
 
-// 格式化输出控制
-#define fmt_color_red           "\033[31m"
-#define fmt_color_green         "\033[32m"
-#define fmt_color_yellow        "\033[33m"
-#define fmt_color_clear         "\033[0m"
-
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -75,6 +69,15 @@ static void _debug_init() attr_ctor(CTOR_PRIO_MID);
 static ATOMIC_UINT8_T g_debug_level = debug_level_all;
 // 全局互斥锁
 static ev_mutex_t g_debug_mtx = EV_MUTEX_INITIALIZER;
+// level - name 对照表
+const char *level_name_table[debug_level_cnt] = {
+    "none",
+    "normal",
+    "major",
+    "error",
+    "always",
+    "all"
+};
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -96,31 +99,36 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
         return;
 
     const char *fmt = NULL;
-
     switch(level)
     {
         case debug_level_normal:
-            fmt = "<%s | %s | %d> %s\n";    // <file | func | line> fmt
+            fmt = "[%.3f] [%s] [%s:%d %s] %s\n";    // [time] [level] [file:line func] usr_fmt
             break;
         case debug_level_error:
-            fmt = fmt_color_yellow "<%s | %s | %d> %s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] " fmt_color_yellow "%s\n" fmt_color_clear;
             break;
         case debug_level_major:
-            fmt = fmt_color_green "<%s | %s | %d> %s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] " fmt_color_red "%s\n" fmt_color_clear;
             break;
         case debug_level_always:
-            fmt = fmt_color_red "<%s | %s | %d> %s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] " fmt_color_green "%s\n" fmt_color_clear;
             break;
         default:
             return;
     }
 
+    // 获取时间
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+
     va_start(list, usr_fmt);
-    snprintf(dbg_fmt, DBG_LEN_MAX, fmt, file, func, line, usr_fmt);
+    snprintf(dbg_fmt, DBG_LEN_MAX, fmt, 
+        (double)ts.tv_sec + (double)ts.tv_nsec/1000000000, 
+        level_name_table[level], file, line, func, usr_fmt
+    );
     ev_with_mutex(&g_debug_mtx)
-    {
         vprintf(dbg_fmt, list);     // 输出
-    }
+
     va_end(list);
 }
 
@@ -129,9 +137,8 @@ void _safe_printf(const char *fmt, ...)
     va_list list;
     va_start(list, fmt);
     ev_with_mutex(&g_debug_mtx)
-    {
         vprintf(fmt, list);     // 输出
-    }
+
     va_end(list);
 }
 
@@ -145,15 +152,6 @@ void debug_level_set(debug_level_e level)
 
 static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char* argv[])
 {
-    const char *table[debug_level_cnt] = {
-        "none",
-        "normal",
-        "major",
-        "error",
-        "",
-        "all"
-    };
-
     if(argc != 1)
     {
         safe_printf("Error param count\n");
@@ -163,7 +161,7 @@ static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char
     unsigned char i = 0;
     for(; i < debug_level_cnt; ++ i)
     {
-        if(!strcmp(table[i], argv[0]))
+        if(!strcmp(level_name_table[i], argv[0]))
             break;
     }
     if(i == debug_level_cnt)
@@ -179,16 +177,7 @@ static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char
 
 static inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[])
 {
-    const char *table[debug_level_cnt] = {
-        "none",
-        "normal",
-        "major",
-        "error",
-        "",
-        "all"
-    };
-
-    safe_printf("%s\n", table[ATOM_LOAD(&g_debug_level, MORDER_ACQUIRE)]);
+    safe_printf("%s\n", level_name_table[ATOM_LOAD(&g_debug_level, MORDER_ACQUIRE)]);
 
     return NULL;
 }

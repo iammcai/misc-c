@@ -43,20 +43,26 @@ typedef enum{
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
+// 格式化输出控制
+#define fmt_color_red           "\033[31m"
+#define fmt_color_green         "\033[32m"
+#define fmt_color_yellow        "\033[33m"
+#define fmt_color_clear         "\033[0m"
+
 /**
  * 外部使用，区分调试等级
  */
 #define dbg(fmt, args...)   \
-    _debug_printf(debug_level_normal, __FILE__, __func__, __LINE__, fmt, ##args);   \
+    _debug_printf(debug_level_normal, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
 #define dbg_major(fmt, args...) \
-    _debug_printf(debug_level_major, __FILE__, __func__, __LINE__, fmt, ##args);   \
+    _debug_printf(debug_level_major, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
 #define dbg_error(fmt, args...)     \
-    _debug_printf(debug_level_error, __FILE__, __func__, __LINE__, fmt, ##args);   \
+    _debug_printf(debug_level_error, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
 #define dbg_always(fmt, args...)    \
-    _debug_printf(debug_level_always, __FILE__, __func__, __LINE__, fmt, ##args);   \
+    _debug_printf(debug_level_always, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
 
 /**
