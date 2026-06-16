@@ -131,6 +131,8 @@ if(-1 == setsockopt(captor->sock_fd, SOL_PACKET, PACKET_RX_RING, &req, sizeof(re
 }
 ```
 
+**注意，这里绑定的是`PACKET_RX_RING`，对应的是网卡DMA rx方向的报文。实际中，我们设备tx出去的报文也会放到DMA rx，因此直接读取看到的报文srcMac为本接口，也是正常的。业务中需要手动过滤掉！才是真正意义上的接口rx报文**
+
 然后将环形缓冲区映射到用户空间
 
 ```C

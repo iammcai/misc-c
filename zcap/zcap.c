@@ -87,6 +87,8 @@ static void _zcap_rate_cal_wf(void *args);
 static zcaptor_hash_head_t g_zcaptor_hash_head = {};
 // 全局事件线程，用于统计速率统计
 declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, ZCAP_CAL_RATE_INTERVAL)
+// 控制是否打印报文简要信息
+static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -129,6 +131,29 @@ static attr_pure_inline int _zcaptor_hash(zcap_t *z)
 // 定义哈希表操作
 declare_hash(zcaptor, zcaptor, zcap_t, item, 1, 4, _zcaptor_cmp, _zcaptor_hash);
 
+/**
+ * @brief       trans ether type value to string
+ * 
+ * @param[in]   ether_type  - et, host order
+ * 
+ * @retval      string
+ */
+static attr_pure_inline const char* _zcap_get_ethertype_name(uint16_t ether_type)
+{
+    switch(ether_type)
+    {
+        case 0x0800:
+            return "ipv4";
+        case 0x0806:
+            return "arp";
+        case 0x86dd:
+            return "ipv6";
+        default:
+            return "unknown";
+    }
+    return NULL;
+}
+
 static void _zcap_rate_cal_wf(void *args)
 {
     zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
@@ -170,7 +195,37 @@ static attr_force_inline void g_zcaptor_hash_init()
  */
 static attr_force_inline void zcap_global_init() attr_ctor(CTOR_PRIO_MID);
 
-static void* zcap_dump_captor(unsigned char argc, char *argv[]);
+/**
+ * @brief       cli hook for: show zcaptor
+ * 
+ * @note        打印zcaptor信息
+ */
+static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[]);
+
+static attr_force_inline void* zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
+{
+    if(argc != 1)
+    {
+        safe_printf("-zcap: Error param cnt\n");
+        return NULL;
+    }
+
+    int period = cli_param_parse_str_2_u32(argv[0]);
+    if(-1 == period)
+    {
+        safe_printf("-zcap: Error param: %s\n", argv[0]);
+        return NULL;
+    }
+
+    unsigned char expected = 0;
+    if(ATOM_CMP_XCHG_WEAK(&g_zcap_dump_pkt_info, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
+    {
+        sleep(period);
+        ATOM_STORE(&g_zcap_dump_pkt_info, 0, MORDER_RELAXED);
+    }
+
+    return NULL;
+}
 
 /**
  * @brief       clean up zcap resource
@@ -186,7 +241,8 @@ static attr_force_inline void _zcap_clean_up(zcap_t *captor)
     if(captor->ring_buffer)
         munmap(captor->ring_buffer, BLOCK_SIZE*BLOCK_NR);
     captor->ring_len = 0;
-    
+
+    memset(captor->if_mac, 0, MAC_ADDR_SIZE);
     captor->if_index = -1;
     // 关闭socket
     if(captor->sock_fd != -1)
@@ -231,7 +287,7 @@ static int _zcap_socket_init(zcap_t *captor)
         goto clean_up;
     }
 
-    // 获取接口对应的索引
+    // 获取接口对应的索引还有mac
     strncpy(ifr.ifr_name, captor->if_name, IFNAMSIZ-1);
     if(-1 == ioctl(captor->sock_fd, SIOCGIFINDEX, &ifr))
     {
@@ -239,6 +295,12 @@ static int _zcap_socket_init(zcap_t *captor)
         goto clean_up;
     }
     captor->if_index = ifr.ifr_ifindex;
+    if(-1 == ioctl(captor->sock_fd, SIOCGIFHWADDR, &ifr))
+    {
+        dbg_error("ioctl get hwaddr fail");
+        goto clean_up;
+    }
+    memcpy(captor->if_mac, ifr.ifr_hwaddr.sa_data, MAC_ADDR_SIZE);
 
     // socket绑定到接口
     addr.sll_family = AF_PACKET;
@@ -427,6 +489,17 @@ clean_up:
  */
 static void _zcap_analyze_a_pkt(zcap_t *captor, zcap_packet_t *packet)
 {
+    if(!captor || !packet)
+        return;
+
+    if(packet->len < sizeof(struct ethhdr))      // error pkt
+        return;
+
+    const struct ethhdr *l2 = (struct ethhdr*)packet->packet;
+
+    if(!memcmp(l2->h_source, captor->if_mac, MAC_ADDR_SIZE))
+        return;
+
     // 可选，打印报文
 #if DUMP_PKT_DETAIL
     dbg_major("analyze receive pkt, len %d", packet->len);
@@ -441,6 +514,13 @@ static void _zcap_analyze_a_pkt(zcap_t *captor, zcap_packet_t *packet)
     }
     safe_printf("\n");
 #endif
+
+    if(ATOM_LOAD(&g_zcap_dump_pkt_info, MORDER_RELAXED))
+        safe_printf("%-5s: len %-4d: src:%02x:%02x:%02x:%02x:%02x:%02x, type %s\n",
+            captor->if_name, packet->len,
+            l2->h_source[0], l2->h_source[1], l2->h_source[2], l2->h_source[3], l2->h_source[4], l2->h_source[5],
+            _zcap_get_ethertype_name(ntohs(l2->h_proto))
+        );
 
     // 更新统计数据
     zcap_stat_t *stat = &captor->stat;
@@ -556,20 +636,28 @@ void _zcap_cancel(zcap_t *captor)
 static inline void zcap_global_init()
 {
     // 注册cli
-    cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor);
+    cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook);
+    cli_param_t dump_pkt_param[] = {
+        {.required = 1, .short_name = 't', .type = PARAM_VALUE, .help = "means dump period(s)"},
+    };
+    cli_register("zcaptor dump packet", "dump info of rx packet during a preiod", dump_pkt_param, zcap_dump_pkt_cli_hook);
 
     // 启动zcap cal rate线程
     ev_thd_run(zcap_rate_cal);
 }
 
-static void* zcap_dump_captor(unsigned char argc, char *argv[])
+static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
 {
     zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
 
     while(captor)
     {
         safe_printf("\n********************************\n");
-        safe_printf("if_name: %s\n", captor->if_name);
+        safe_printf("if_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n", 
+            captor->if_name, captor->if_index,
+            captor->if_mac[0],captor->if_mac[1],captor->if_mac[2],
+            captor->if_mac[3],captor->if_mac[4],captor->if_mac[5]
+        );
         safe_printf("runing flag: %d, analyze flag %d\n", 
             ATOM_LOAD(&captor->running, MORDER_ACQUIRE),
             ATOM_LOAD(&captor->analyzing, MORDER_ACQUIRE)

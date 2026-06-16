@@ -36,6 +36,9 @@
 // 帧大小，2KB，足够满足普通以太网报文
 #define FRAME_SIZE      (2048)
 
+// mac地址长度
+#define MAC_ADDR_SIZE   (6)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -73,6 +76,7 @@ typedef struct{
     const char *if_name;    // 监听接口名
     int sock_fd;            // 监听所用socket fd
     int if_index;           // 接口对应内核index
+    uint8_t if_mac[MAC_ADDR_SIZE];  // 接口mac
     ATOMIC_UINT8_T ready;   // 是否初始化完毕
     void *ring_buffer;      // 映射
     unsigned long ring_len; // 映射大小

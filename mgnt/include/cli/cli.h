@@ -56,6 +56,15 @@ static attr_force_inline void _cli_register(const char *cmd, const char *help,
 }
 
 /**
+ * @brief       prase string to u32, for cli param
+ * 
+ * @param[in]   str     - string
+ * 
+ * @retval      prase result, -1 means fail
+ */
+extern int cli_param_parse_str_2_u32(const char *str);
+
+/**
  * @brief       cli module init
  * 
  * @note        启动cli服务

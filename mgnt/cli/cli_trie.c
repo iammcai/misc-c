@@ -127,6 +127,22 @@ static ev_mutex_t g_cli_trie_mtx = EV_MUTEX_INITIALIZER;
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+int cli_param_parse_str_2_u32(const char *str)
+{
+    int result = 0;
+
+    const char *c = str;
+    while(*c != '\0')
+    {
+        if(!(*c >= '0' && *c <= '9'))
+            return -1;
+        result = result * 10 + (*c - '0');
+        c ++;
+    }
+
+    return result;
+}
+
 static char** _cmd_split(const char *cmd)
 {
     assert(cmd);
