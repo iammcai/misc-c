@@ -379,6 +379,11 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
             // 匹配成功，根据是否带值，匹配掉下一个
             if(PARAM_VALUE == match->params[j].type)
             {
+                if(i+1 >= match->remain_argc)
+                {
+                    safe_printf("-cli: %s: Leak value\n", cur_arg);
+                    goto cleanup;
+                }
                 usr_argv[j] = match->remain_argv[i+1];
                 i += 2;
             }
