@@ -35,12 +35,11 @@ pre_declare_heap(ev_timer)
 // 定时器定义
 typedef struct ev_timer_s ev_timer_t;
 
+// 高精度定时器定义
+typedef struct ev_high_res_timer_s ev_high_res_timer_t; 
+
 // 定时器回调函数定义
 typedef void (*ev_timer_cb_func)(void *args);
-
-/* ========================================================================== */
-/*                             Macro Definitions                              */
-/* ========================================================================== */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -71,8 +70,34 @@ extern void ev_timer_start(ev_timer_t *timer);
  */
 extern void ev_timer_stop(ev_timer_t *timer);
 
-/* ========================================================================== */
-/*                           Function Definition                              */
-/* ========================================================================== */
+/**
+ * @brief       create a high resolution timer
+ * 
+ * @param[in]   name        - hr timer name
+ * @param[in]   timeout     - timeout, ms
+ * @param[in]   cb          - callback function
+ * @param[in]   args        - args for cb
+ * 
+ * @note        高精度定时器创建
+ */
+extern ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout, ev_timer_cb_func cb, void *args);
+
+/**
+ * @brief       start high resolution timer
+ * 
+ * @param[in]   hr_timer    - timer
+ * 
+ * @note        高精度定时器启动
+ */
+extern void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer);
+
+/**
+ * @brief       stop high resolution timer
+ * 
+ * @param[in]   hr_timer    - timer
+ * 
+ * @note        高精度定时器停止
+ */
+extern void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer);
 
 #endif

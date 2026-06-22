@@ -175,4 +175,9 @@ int test_thp();
  */
 int test_ev_timer();
 
+/**
+ * @brief       测试高精度定时器
+ */
+int test_ev_high_res_timer();
+
 #endif

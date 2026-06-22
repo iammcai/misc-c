@@ -18,7 +18,11 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <unistd.h>
 #include <time.h>
+#include <sys/timerfd.h>
+#include <sys/epoll.h>
+#include <sys/errno.h>
 #include "plat/atom.h"
 #include "event/ev_timer.h"
 #include "event/ev_thread.h"
@@ -26,6 +30,13 @@
 #include "plat/debug.h"
 #include "mp/mp.h"
 #include "thp/thp.h"
+
+/* ========================================================================== */
+/*                            Macro Definitions                               */
+/* ========================================================================== */
+
+// 高精度定时器监听数量
+#define EV_HIGH_RES_TIMER_COUNT_MAX     (64)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -41,9 +52,14 @@ struct ev_timer_s{
     ev_timer_heap_item_t item;  // heap item
 };
 
-/* ========================================================================== */
-/*                             Macro Definitions                              */
-/* ========================================================================== */
+// 高精度定时器定义
+struct ev_high_res_timer_s{
+    const char *name;   // name
+    int tfd;        // timer fd
+    uint64_t tv;    // timer value, ms
+    ev_timer_cb_func cb;    // 回调
+    void *args;             // 回调参数
+};
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -67,6 +83,14 @@ static attr_pure_inline int _ev_timer_cmp(ev_timer_t *t1, ev_timer_t *t2)
     return 0;
 }
 
+static attr_force_inline uint64_t _mono_time_get()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t ms = ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL;
+    return ms;
+}
+
 /**
  * @brief       low resolution clock work function
  * 
@@ -80,6 +104,13 @@ static void _low_res_clock_work(void *args);
  * @note        低精度线程ctor钩子，用来创建线程池
  */
 static attr_force_inline void _low_res_clock_init();
+
+/**
+ * @brief       routine of ev high res timer fd
+ * 
+ * @note        用于监听epoll fd，触发定时器
+ */
+static void* _ev_high_res_timer_routine(void *args);
 
 /**
  * @brief       ctor init ev timer
@@ -105,6 +136,13 @@ static ev_spinlock_t g_heap_spinlock = EV_SPINLOCK_INITIALIZER;
 // 线程池，用于处理定时任务，由low_res_clock管理
 static thp_t _thp_ev_timer = {};
 
+// epoll fd，管理全局timer_fd
+static int g_high_res_epoll_fd = -1;
+// 监听epoll fd的线程
+static pthread_t g_high_res_thd = 0;
+// 用于高精度定时器的线程池
+static thp_t _thp_ev_high_res_timer = {};
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -121,9 +159,7 @@ static inline void _low_res_clock_init()
 
 static void _low_res_clock_work(void *args)
 {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t ms = ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL;
+    uint64_t ms = _mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
 
     ev_with_spinlock(&g_heap_spinlock)
@@ -192,14 +228,141 @@ void ev_timer_stop(ev_timer_t *timer)
     ATOM_STORE(&timer->deleted, 1, MORDER_RELEASE);
 }
 
+ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout, ev_timer_cb_func cb, void *args)
+{
+    assert(name && timeout && cb);
+
+    ev_high_res_timer_t *hr_timer = mp_calloc(1, sizeof(ev_high_res_timer_t));
+    hr_timer->name = mp_strdup(name);
+    hr_timer->cb = cb;
+    hr_timer->args = args;
+    hr_timer->tv = timeout;
+
+    // 创建Timer fd，非阻塞，fork-exec自动关闭
+    hr_timer->tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if(hr_timer->tfd < 0)
+    {
+        dbg_error("create timer fd fail");
+        goto error;
+    }
+
+    // 设置参数全0，相当于不激活
+    struct itimerspec its = {0};
+    if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
+    {
+        dbg_error("timer fd set fail");
+        goto error;
+    }
+
+    // 加入epoll监听
+    struct epoll_event ev = {
+        .events = EPOLLIN | EPOLLET,
+        .data.ptr = hr_timer,       // 将timer作为参数，fd打包到里面
+    };
+    if(epoll_ctl(g_high_res_epoll_fd, EPOLL_CTL_ADD, hr_timer->tfd, &ev) < 0)
+    {
+        dbg_error("epoll add fail");
+        goto error;
+    }
+
+    return hr_timer;
+
+error:
+    if(hr_timer && hr_timer->tfd >= 0)
+        close(hr_timer->tfd);
+    mp_free(hr_timer, sizeof(ev_high_res_timer_t));
+
+    return NULL;
+}
+
+void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer)
+{
+    assert(hr_timer && hr_timer->tfd != -1);
+
+    // 设置参数，启动定时器
+    struct itimerspec its = {
+        .it_interval = 0,   // 单次启动
+        .it_value.tv_nsec = (hr_timer->tv % 1000) * 1000000L,
+        .it_value.tv_sec = hr_timer->tv / 1000,
+    };
+
+    if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
+        dbg_error("start timer %s fail", hr_timer->name);
+
+    dbg("timer %s start", hr_timer->name);
+
+    return;
+}
+
+void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
+{
+    assert(hr_timer && hr_timer->tfd >= 0);
+
+    // 设置时间0，相当于暂停
+    struct itimerspec its = {0};
+    if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
+        dbg_error("stop timer %s fail", hr_timer->name);
+}
+
+static void* _ev_high_res_timer_routine(void *args)
+{
+    int n = 0;
+    struct epoll_event evs[EV_HIGH_RES_TIMER_COUNT_MAX] = {};
+
+    // 初始化并启动线程池
+    thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
+    thp_run(ev_high_res_timer);
+
+    while(1)
+    {
+        // 阻塞等待直到唤醒
+        n = epoll_wait(g_high_res_epoll_fd, evs, EV_HIGH_RES_TIMER_COUNT_MAX, -1);
+        if(n < 0)
+            if(errno == EINTR)
+                continue;
+            else
+                break;
+        // 处理可读timer fd
+        int i = 0;
+        for(; i < n; ++ i)
+        {
+            while(1)    // ET epoll，读完缓冲区
+            {
+                // 读取timer_fd写的缓冲区，一次64位，tfd在ptr中
+                ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)evs[i].data.ptr;
+                uint64_t once = 0;
+                int ret = read(hr_timer->tfd, &once, sizeof(uint64_t));
+                if(ret < 0)
+                    if(errno == EAGAIN) // 读完
+                        break;
+                    else        // 异常发生
+                    {
+                        dbg_error("read %s", strerror(errno));
+                        break;
+                    }
+                // 任务交给线程池
+                dbg("handle high res timer %s", hr_timer->name);
+                thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);
+            }
+        }
+    }
+
+    dbg_error("epoll wait for ev high res clock error exit");
+    return NULL;
+}
+
 static void ev_timer_init(void)
 {
     // 更新当前时钟
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    uint64_t ms = ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL;
+    uint64_t ms = _mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
 
     ev_timer_heap_init(&g_ev_timer_heap);   // 初始化堆
     ev_thd_run(low_res_clock);      // 启动低精度时钟线程
+
+    // 创建epoll fd用于管理高精度定时任务
+    g_high_res_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    assert(g_high_res_epoll_fd >= 0);
+    // 创建线程监听epoll
+    pthread_create(&g_high_res_thd, NULL, _ev_high_res_timer_routine, NULL);
 }

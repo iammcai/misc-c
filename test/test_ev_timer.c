@@ -49,11 +49,33 @@ void test_timer_cb(void *args)
 int test_ev_timer()
 {
     unsigned char i = 5;
+    ev_timer_t *timer = NULL;
     for(; i < 10; ++ i)
     {
-        ev_timer_t *timer = ev_timer_create(i*1000, test_timer_cb, NULL);
+        timer = ev_timer_create(i*1000, test_timer_cb, NULL);
         ev_timer_start(timer);
     }
+    ev_timer_stop(timer);
 
     sleep(11);
+    return 0;
+}
+
+int test_ev_high_res_timer()
+{
+    unsigned char i = 5;
+    ev_high_res_timer_t *timer;
+
+    for(; i < 10; ++ i)
+    {
+        char name[10];
+        snprintf(name, 10, "hrt_%d", i);
+        timer = ev_high_res_timer_create(name, i*1000, test_timer_cb, NULL);
+        ev_high_res_timer_start(timer);
+    }
+    ev_high_res_timer_stop(timer);
+
+    sleep(11);
+
+    return 0;
 }
