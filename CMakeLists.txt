@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(MISC-C)
 
+set(CMAKE_BUILD_TYPE Debug)
+
 # 添加可执行文件
 add_executable(Main
     main.c
@@ -15,7 +17,9 @@ add_subdirectory(test)
 # 头文件目录
 target_link_libraries(Main PUBLIC
     Mgnt
+    -Wl,--whole-archive
     Lib
+    -Wl,--no-whole-archive
     Zcap
     Test
 )

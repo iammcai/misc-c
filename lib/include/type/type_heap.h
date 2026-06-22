@@ -24,6 +24,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include "plat/compiler.h"
+#include "plat/debug.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -105,6 +106,14 @@ static attr_force_inline type* fprefix ## _heap_pop(sprefix ## _heap_head_t *hea
     type_heap_heapify_down(&head->heap_head, index, fprefix ## _heap_item_cmp); \
     if(type_heap_resize_tresh_down(&head->heap_head))   \
         type_heap_resize(&head->heap_head, HEAP_SIZE_SHRINK);   \
+    return container_of(first_item, type, field.heap_item); \
+}   \
+static attr_pure_inline type* fprefix ## _heap_top(sprefix ## _heap_head_t *head)   \
+{   \
+    assert(head);   \
+    if(0 == type_heap_count(&head->heap_head))  \
+        return NULL;    \
+    heap_item_t *first_item = type_heap_first(&head->heap_head);    \
     return container_of(first_item, type, field.heap_item); \
 }   \
 static attr_force_inline void fprefix ## _heap_del(sprefix ## _heap_head_t *head, type *item)   \

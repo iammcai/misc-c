@@ -361,7 +361,7 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
 
     #if MP_DETAIL_DUMP
     // 查看剩余百分比
-    dbg_major("get a fixed node, fixed mp left %.3f", (double)fixed_free_list_count(&free_list->head)/attr->node_max_num);
+    dbg_always("get a fixed node, fixed mp left %.3f", (double)fixed_free_list_count(&free_list->head)/attr->node_max_num);
     #endif
 
     return mp_fixed_node_data(node);
@@ -369,7 +369,6 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
 
 static inline void _mp_fixed_node_put_local(fixed_free_list_t *free_list, fixed_mem_node_t *node)
 {
-    if(!node)   printf("%s %d\n", __func__, __LINE__);
     fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
 }
 

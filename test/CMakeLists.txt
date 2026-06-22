@@ -8,6 +8,8 @@ add_library(Test STATIC
     test_msg_q.c
     test_heap.c
     test_skiplist.c
+    test_thp.c
+    test_ev_timer.c
 )
 
 target_include_directories(Test PUBLIC

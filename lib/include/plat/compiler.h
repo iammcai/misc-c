@@ -43,6 +43,7 @@
 #define attr_cleanup(f)     __attribute__((unused, cleanup(f)))             // 指定cleanup函数，离开作用域后，自动调用f
 
 // 构造、析构优先级，数值越小，优先级越高
+#define CTOR_PRIO_LOW_LOW  (104)
 #define CTOR_PRIO_LOW      (103)
 #define CTOR_PRIO_MID      (102)
 #define CTOR_PRIO_HIGH     (101)

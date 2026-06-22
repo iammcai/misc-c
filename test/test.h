@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include "type/type_list.h"
 #include "plat/debug.h"
 
@@ -163,5 +164,15 @@ int test_skiplist();
  * @brief       测试跳表性能
  */
 int test_skiplist_cost();
+
+/**
+ * @brief       测试线程池
+ */
+int test_thp();
+
+/**
+ * @brief       测试定时器
+ */
+int test_ev_timer();
 
 #endif

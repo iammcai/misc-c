@@ -10,6 +10,8 @@ add_library(Lib STATIC
     event/ev_lock.c
     msg_q/msg_q.c
     plat/debug.c
+    thp/thp.c
+    event/ev_timer.c
 )
 
 # 添加链接库

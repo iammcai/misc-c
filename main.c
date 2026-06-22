@@ -39,6 +39,8 @@
 #define TEST_MSG_Q  (0)
 #define TEST_HEAP   (0)
 #define TEST_SKIPLIST   (0)
+#define TEST_THP    (0)
+#define TEST_EV_TIMER   (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -115,6 +117,14 @@ int main()
 #if TEST_SKIPLIST
     //test_skiplist();
     test_skiplist_cost();
+#endif
+
+#if TEST_THP
+    test_thp();
+#endif
+
+#if TEST_EV_TIMER
+    test_ev_timer();
 #endif
 
     _platfrom_init();

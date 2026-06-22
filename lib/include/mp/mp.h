@@ -115,7 +115,7 @@ extern void mem_type_attr_init(mem_type_attr_t *attr);
  * 
  * @param[in]   attr    - mem type attr
  * 
- * @note        查找空闲链表，（创建并）补充节点数量
+ * @note        查找空闲链表，暂不补充节点数量
  */
 extern void _mp_fixed_init(mem_type_attr_t *attr);
 
