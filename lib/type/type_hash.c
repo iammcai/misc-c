@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "type/type_hash.h"
+#include "mp/mp.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -48,12 +49,12 @@ void type_hash_init(hash_head_t *head, unsigned char min_shift, unsigned char ma
     head->min_shift = head->tab_shift = min_shift;
     head->max_shift = max_shift;
 
-    head->entries = calloc(hash_size(head->tab_shift), sizeof(hash_item_t*));   // TODO: mp
+    head->entries = mp_calloc(hash_size(head->tab_shift), sizeof(hash_item_t*));
 }
 
 void type_hash_fini(hash_head_t *head)
 {
-    free(head->entries);    // TODO: mp
+    mp_free(head->entries, hash_size(head->tab_shift) * sizeof(hash_item_t*));
     memset(head, 0, sizeof(hash_head_t));
 }
 
@@ -132,7 +133,7 @@ void type_hash_grow(hash_head_t *head, unsigned char new_shift)
     new_size = hash_size(new_shift);            // 新的桶数量
     head->tab_shift = new_shift;                // 修改新的shift
 
-    head->entries = realloc(head->entries, new_size * sizeof(hash_item_t*));    // TODO: mp
+    head->entries = mp_realloc(head->entries, new_size * sizeof(hash_item_t*), old_size * sizeof(hash_item_t*));
     memset(head->entries + old_size, 0, (new_size - old_size) * sizeof(hash_item_t*));  // 将新桶的头指针置空
 
     // 核心切分移动逻辑
@@ -211,7 +212,7 @@ void type_hash_shrink(hash_head_t *head, unsigned char new_shift)
         }
     }
 
-    head->entries = realloc(head->entries, new_size * sizeof(hash_item_t*));    // TODO: mp
+    head->entries = mp_realloc(head->entries, new_size * sizeof(hash_item_t*), old_size * sizeof(hash_item_t*));
 }
 
 hash_item_t* type_hash_find(hash_head_t *head, hash_item_t *item, type_hash_cmp_f cmp_func, type_hash_hash_f hash_func)

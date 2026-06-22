@@ -42,7 +42,7 @@ void type_hash_init(hash_head_t *head, unsigned char min_shift, unsigned char ma
     head->min_shift = head->tab_shift = min_shift;
     head->max_shift = max_shift;
 
-    head->entries = calloc(hash_size(head->tab_shift), sizeof(hash_item_t*));   // TODO: mp
+    head->entries = calloc(hash_size(head->tab_shift), sizeof(hash_item_t*));
 }
 
 hash_item_t* type_hash_add(hash_head_t *head, hash_item_t *item, type_hash_cmp_f cmp_func, type_hash_hash_f hash_func)
