@@ -20,6 +20,7 @@
 
 #define _POSIX_C_SOURCE 199309L
 #include <pthread.h>
+#include <stdint.h>
 #include "test.h"
 #include "msg_q/msg_q.h"
 
@@ -86,7 +87,7 @@ data_t datas[MSG_Q_SENDER][MSG_COUNT_PER_SENDER] = {};
 void* normal_sender(void *args)
 {
     int i = 0;
-    int index = (int)args;
+    int index = (int)(uintptr_t)args;
     for(i = 0; i < MSG_COUNT_PER_SENDER; ++ i)
     {
         pthread_mutex_lock(&mtx);
@@ -154,7 +155,7 @@ int test_msg_q()
         {
             pthread_create(&r, NULL, normal_receiver, NULL);
             for(i = 0; i < MSG_Q_SENDER; ++ i)
-                pthread_create(&s[i], NULL, normal_sender, (void*)i);
+                pthread_create(&s[i], NULL, normal_sender, (void*)(uintptr_t)i);
             for(i = 0; i < MSG_Q_SENDER; ++ i)
                 pthread_join(s[i], NULL);
             pthread_join(r, NULL);
