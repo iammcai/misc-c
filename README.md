@@ -79,8 +79,6 @@
 
 ## 🤔 TODOLIST
 
-- ev_thd目前是每个线程一个epollfd+eventfd，需要融入到ev_loop架构中
-
 ---
 
 ## 🚀 快速开始

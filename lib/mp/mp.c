@@ -212,7 +212,7 @@ static attr_force_inline void fixed_node_recycle_work(void *args);
  * 
  * @note        CTOR，启动回收线程
  */
-static attr_force_inline void fixed_node_recycle_init() attr_ctor(CTOR_PRIO_HIGH);
+static attr_force_inline void fixed_node_recycle_init() attr_ctor(CTOR_PRIO_LOW);
 
 /**
  * @brief       ctor register mp cli

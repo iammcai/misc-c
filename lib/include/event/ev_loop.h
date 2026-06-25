@@ -22,7 +22,7 @@
 /* ========================================================================== */
 
 #include <pthread.h>
-#include <pthread.h>
+#include <sys/epoll.h>
 #include "plat/compiler.h"
 #include "event/ev_lock.h"
 #include "type/type_list.h"
@@ -125,6 +125,13 @@ typedef struct el_s{
 #define event_loop_register_file_event_eventfd(fd, mask, cb_func, args) \
     _el_reg_fe(fd, EL_FILE_EVENT_TYPE_EVENTFD, mask, cb_func, args); \
 /* event_loop_register_file_event_eventfd end */
+
+/**
+ * 外部使用，注销fd事件
+ */
+#define event_loop_deregister_file_event(fd)    \
+    _el_reg_fe(fd, EL_FILE_EVENT_TYPE_NORMAL, EL_FILE_EVENT_NONE, NULL, NULL);  \
+/* event_loop_deregister_file_event end */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */

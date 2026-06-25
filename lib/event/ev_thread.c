@@ -21,10 +21,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/prctl.h>
-#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include "event/ev_thread.h"
 #include "plat/atom.h"
+#include "event/ev_loop.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -117,70 +117,91 @@ static attr_force_inline void ev_thd_hook_walk(ev_thd_attr_t *attr, ev_thd_hook_
 }
 
 /**
- * @brief       init epoll and other components
+ * @brief       timer cb for ev thd
  * 
- * @param[in]   attr    - ev thd attr
+ * @param[in]   ev_thd_attr
  * 
- * @note        初始化epoll，创建一个event fd内核计数器用来产生可写事件，监听他来唤醒线程
+ * @note        ev_thd 自唤醒定时器的回调函数
  */
-static attr_force_inline void ev_thd_epoll_init(ev_thd_attr_t *attr);
-
-/**
- * @brief       epoll wait
- * 
- * @param[in]   attr    - ev thd attr
- * 
- * @note        阻塞等待eventfd可写事件，等待结束时，读取清除缓冲区
- */
-static attr_force_inline void ev_thd_epoll_wait(ev_thd_attr_t *attr)
+static attr_force_inline void _ev_thd_timer_cb(void *args)
 {
-    int n  = 0;
-    int timeout = attr->timeout;    // -1 wait forever
-    int max_event_num = 1;
-    struct epoll_event ep_event = {};
-
-    assert(attr);
-
-    n = epoll_wait(attr->epoll_fd, &ep_event, max_event_num, timeout);
-    if(n > 0)
-    {
-        unsigned long long one = 1;
-        read(attr->event_fd, &one, sizeof(one));    // 重要：读取清除缓冲区
-    }
+    ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
+    ev_sem_post(&attr->sem);    // 写sem唤醒工作线程
+    // 重新启动定时器
+    ev_high_res_timer_start(attr->timer);
 }
 
 /**
- * @brief       epoll wake by write event fd
+ * @brief       eventfd cb for ev thd
+ * 
+ * @param[in]   ev_thd_attr
+ * 
+ * @note        ev_thd eventfd可写回调
+ */
+static attr_force_inline void _ev_thd_eventfd_cb(void *args)
+{
+    ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
+    ev_sem_post(&attr->sem);    // 写sem唤醒工作线程
+}
+
+/**
+ * @brief       init event components
  * 
  * @param[in]   attr    - ev thd attr
+ * 
+ * @note        创建一个event fd内核计数器用来产生可写事件，监听他来唤醒线程；创建定时器自唤醒
  */
-static attr_force_inline void ev_thd_epoll_wake(ev_thd_attr_t *attr)
+static attr_force_inline void ev_thd_event_init(ev_thd_attr_t *attr);
+
+/**
+ * @brief       sem wait
+ * 
+ * @param[in]   attr    - ev thd attr
+ * 
+ * @note        通过sem阻塞等待eventfd可写事件，由ev_loop通知
+ */
+static attr_force_inline void ev_thd_event_wait(ev_thd_attr_t *attr)
+{
+    ev_sem_wait(&attr->sem);
+}
+
+/**
+ * @brief       wake by write event fd
+ * 
+ * @param[in]   attr    - ev thd attr
+ * 
+ * @note        主动唤醒，如果设置了自唤醒，那么先停止定时器，唤醒后再重新启动
+ */
+static attr_force_inline void ev_thd_event_wake(ev_thd_attr_t *attr)
 {
     assert(attr);
     
-    if(attr->event_fd >= 0)
-    {
-        unsigned long long one = 1;
-        write(attr->event_fd, &one, sizeof(one));   // 触发EPOLLIN事件
-    }
+    // 如果有定时器，那么先停止运行
+    if(attr->timeout && attr->timer)
+        ev_high_res_timer_stop(attr->timer);
+
+    eventfd_write_one(attr->event_fd);  // 写eventfd，evloop会得知
+
+    // 如果有定时器，那么重新启动
+    if(attr->timeout && attr->timer)
+        ev_high_res_timer_start(attr->timer);
 }
 
 /**
- * @brief       epoll fini
+ * @brief       event fini
  * 
  * @param[in]   attr    - ev thd attr
  * 
- * @note        清理epoll资源
+ * @note        回收eventfd，timerfd资源等
  */
-static attr_force_inline void ev_thd_epoll_fini(ev_thd_attr_t *attr)
+static attr_force_inline void ev_thd_event_fini(ev_thd_attr_t *attr)
 {
-    struct epoll_event ep_event = { .data.fd = attr->event_fd, .events = EPOLLIN };
+    // 移除eventfd在evloop中的注册
+    event_loop_deregister_file_event(attr->event_fd);
 
-    assert(0 == epoll_ctl(attr->epoll_fd, EPOLL_CTL_DEL, attr->event_fd, &ep_event));   // 取消监听event fd
-
-    // 关闭描述符
-    ev_fd_close(attr->event_fd);
-    ev_fd_close(attr->epoll_fd);
+    // 取消定时器，但是不销毁
+    if(attr->timeout && attr->timer)
+        ev_high_res_timer_stop(attr->timer);
 }
 
 /**
@@ -261,6 +282,14 @@ static void g_ev_thd_attr_hash_init()
 
 void ev_thd_attr_init(ev_thd_attr_t *attr)
 {
+    ev_sem_init(&attr->sem);        // 初始化信号量
+    if(attr->timeout)               // 如果设置了超时唤醒，创建定时器
+        attr->timer = ev_high_res_timer_create(attr->name, attr->timeout, _ev_thd_timer_cb, attr);
+
+    // 创建内核计数器，后续用于唤醒
+    attr->event_fd = eventfd(0, O_CLOEXEC | O_NONBLOCK);
+    assert(attr->event_fd > 0);
+
     ev_thd_attr_hash_add(&g_ev_thd_attr_hash_head, attr);   // 加入全局哈希表
     // 初始化各个钩子链表头部
     ev_thd_hook_list_init(&attr->ctors);
@@ -269,20 +298,15 @@ void ev_thd_attr_init(ev_thd_attr_t *attr)
     ev_thd_hook_list_init(&attr->dtors);
 }
 
-static inline void ev_thd_epoll_init(ev_thd_attr_t *attr)
+static inline void ev_thd_event_init(ev_thd_attr_t *attr)
 {
-    struct epoll_event ep_event = {};
+    // eventfd注册到event_loop进行监听
+    dbg_always("attr->event_fd %d", attr->event_fd);
+    event_loop_register_file_event_eventfd(attr->event_fd, EL_FILE_EVENT_READABLE, _ev_thd_eventfd_cb, attr);
 
-    attr->epoll_fd = epoll_create1(__O_CLOEXEC);    // 执行exec函数跳转时，fd自动关闭，防止继承
-    assert(attr->epoll_fd > 0);
-
-    attr->event_fd = eventfd(0, __O_CLOEXEC | O_NONBLOCK);  // 创建内核计数器
-    assert(attr->event_fd > 0);
-
-    // 添加epoll监听event fd
-    ep_event.data.fd = attr->event_fd;
-    ep_event.events = EPOLLIN;   // 监听可读事件
-    assert(0 == epoll_ctl(attr->epoll_fd, EPOLL_CTL_ADD, attr->event_fd, &ep_event));
+    // 启动定时器
+    if(attr->timeout && attr->timer)
+        ev_high_res_timer_start(attr->timer);
 }
 
 static void* ev_thd_routine(void *args)
@@ -296,8 +320,8 @@ static void* ev_thd_routine(void *args)
     // 运行ctor钩子
     ev_thd_hook_walk(attr, EV_THD_HOOK_TYPE_CTOR);
 
-    // 初始化epoll等组件
-    ev_thd_epoll_init(attr);
+    // 初始化event_fd, timer等组件
+    ev_thd_event_init(attr);
 
     // 设置working标志
     ATOM_STORE(&attr->working, 1, MORDER_RELEASE);
@@ -305,7 +329,7 @@ static void* ev_thd_routine(void *args)
     // 进入循环等待-工作，检查run标志，1说明线程还没结束
     while(ATOM_LOAD(&attr->run, MORDER_ACQUIRE))
     {
-        ev_thd_epoll_wait(attr);    // 进入epoll等待，这里阻塞
+        ev_thd_event_wait(attr);    // 进入等待，这里阻塞
 
         // 再次检查run标志，防止已经cancel
         if(ATOM_LOAD(&attr->run, MORDER_ACQUIRE))
@@ -326,8 +350,8 @@ static void* ev_thd_routine(void *args)
     // 设置working标志
     ATOM_STORE(&attr->working, 0, MORDER_RELEASE);
 
-    // 清理epoll资源
-    ev_thd_epoll_fini(attr);
+    // 清理eventfd资源
+    ev_thd_event_fini(attr);
 
     // 执行dtor钩子
     ev_thd_hook_walk(attr, EV_THD_HOOK_TYPE_DTOR);
@@ -360,12 +384,10 @@ void _ev_thd_wake(ev_thd_attr_t *attr)
 
     // 检查线程是否在运行
     if(!ATOM_LOAD(&attr->working, MORDER_ACQUIRE))
-    {
         return;
-    }
 
-    // 通过写event fd唤醒
-    ev_thd_epoll_wake(attr);
+    // 主动唤醒
+    ev_thd_event_wake(attr);
 }
 
 void _ev_thd_cancel(ev_thd_attr_t *attr)
@@ -373,13 +395,10 @@ void _ev_thd_cancel(ev_thd_attr_t *attr)
     assert(attr);
 
     char expected_run = 1;
-
     // 设置run标志 1->0
     while(!ATOM_CMP_XCHG_WEAK(&attr->run, &expected_run, 0, MORDER_ACQ_REL, MORDER_RELAXED))
-    {
         if(expected_run == 0)   // 本来就是0，那么不需要重复cancel
             return;
-    }
 
     // 唤醒线程，routine检查run标志0，后续结束
     _ev_thd_wake(attr);

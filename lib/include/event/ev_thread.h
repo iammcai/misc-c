@@ -25,6 +25,8 @@
 #include "plat/compiler.h"
 #include "type/type_list.h"
 #include "type/type_hash.h"
+#include "event/ev_sem.h"
+#include "event/ev_timer.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -44,8 +46,9 @@ typedef void (*ev_thd_hook_func)(void);
 typedef struct{
     const char *name;       // 属性名
     pthread_t tid;          // 线程ID
-    int epoll_fd;           // epoll fd
+
     int event_fd;           // 用于唤醒线程的event fd
+    ev_sem_t sem;           // 用于等待、唤醒的信号量
 
     char run;           // 启动标志
     char working;       // 工作标志
@@ -57,7 +60,8 @@ typedef struct{
     ev_thd_hook_list_head_t postworks;  // postwork函数链表
     ev_thd_hook_list_head_t dtors;      // dtor函数链表
 
-    int timeout;        // 超时时间
+    uint64_t timeout;               // 超时时间
+    ev_high_res_timer_t *timer;     // 用于自唤醒的定时器
 
     ev_thd_attr_hash_item_t item;   // 哈希表item
 }ev_thd_attr_t;
@@ -92,11 +96,11 @@ static ev_thd_attr_t ev_thd_attr_ ## _name = {  \
     .work = _wf,    \
     .args = _wa,    \
     .tid = 0,   \
-    .epoll_fd = -1, \
     .event_fd = -1, \
     .run = 0,   \
     .working = 0,   \
     .timeout = _timeout,    \
+    .timer = NULL,  \
 };  \
 static void ev_thd_attr_ ## _name ## _init() attr_ctor(CTOR_PRIO_MID);  \
 static void ev_thd_attr_ ## _name ## _init()    \
