@@ -52,9 +52,19 @@ typedef enum{
     EL_FILE_EVENT_WRITEABLE = 1 << 1,   // 注册了可写事件
 }el_file_event_mask_e;
 
+// file事件类型枚举
+typedef enum{
+    EL_FILE_EVENT_TYPE_NORMAL = 0,      // 普通
+    EL_FILE_EVENT_TYPE_EVENTFD,         // eventfd，内核计数器
+    EL_FILE_EVENT_TYPE_TIMERFD,         // timerfd，内核高精度定时器
+
+    EL_FILE_EVENT_TYPE_CNT,             // 用于计数
+}el_file_event_type_e;
+
 // file事件结构定义
 typedef struct{
     unsigned char mask;         // 掩码，表示监听读写事件，见el_file_event_mask_e
+    el_file_event_type_e type;  // fd类型
     el_file_event_cb read_cb;   // 可读事件回调
     el_file_event_cb write_cb;  // 可写事件回调
     void *args;                 // 回调参数
@@ -96,11 +106,25 @@ typedef struct el_s{
 /* ========================================================================== */
 
 /**
- * 外部使用，注册file事件到event loop
+ * 外部使用，注册普通file事件到event loop
  */
 #define event_loop_register_file_event(fd, mask, cb_func, args) \
-    _el_reg_fe(fd, mask, cb_func, args);    \
+    _el_reg_fe(fd, EL_FILE_EVENT_TYPE_NORMAL, mask, cb_func, args); \
 /* event_loop_register_file_event end */
+
+/**
+ * 外部使用，注册timerfd事件到event loop
+ */
+#define event_loop_register_file_event_timerfd(fd, mask, cb_func, args) \
+    _el_reg_fe(fd, EL_FILE_EVENT_TYPE_TIMERFD, mask, cb_func, args); \
+/* event_loop_register_file_event_timerfd end */
+
+/**
+ * 外部使用，注册eventfd事件到event loop
+ */
+#define event_loop_register_file_event_eventfd(fd, mask, cb_func, args) \
+    _el_reg_fe(fd, EL_FILE_EVENT_TYPE_EVENTFD, mask, cb_func, args); \
+/* event_loop_register_file_event_eventfd end */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -110,11 +134,12 @@ typedef struct el_s{
  * @brief       注册file事件到event loop
  * 
  * @param[in]   fd      - file desc
+ * @param[in]   type    - file event type
  * @param[in]   mask    - mask, read - write
  * @param[in]   cb_func - callback
  * @param[in]   args    - cb args
  */
-extern void _el_reg_fe(int fd, unsigned char mask, el_file_event_cb cb_func, void *args);
+extern void _el_reg_fe(int fd, el_file_event_type_e type, unsigned char mask, el_file_event_cb cb_func, void *args);
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -149,6 +174,18 @@ static attr_force_inline void eventfd_read_all(int eventfd)
             continue;
         break;
     }
+}
+
+/**
+ * @brief       timerfd read whole buffer
+ * 
+ * @param[in]   timerfd - timer fd
+ * 
+ * @note        和eventfd一样，直接复用
+ */
+static attr_force_inline void timerfd_read_all(int timerfd)
+{
+    eventfd_read_all(timerfd);
 }
 
 #endif

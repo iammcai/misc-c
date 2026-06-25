@@ -90,9 +90,6 @@ static attr_force_inline int _el_epoll_wait(void)
  */
 static void _el_reg_fe_handle()
 {
-    // ET模式下，一次性读完eventfd缓冲区
-    eventfd_read_all(g_event_loop.file_events_reg_event_fd);
-
     // 遍历注册队列，取出来
     el_fe_reg_item_t *it = NULL;
     ev_with_spinlock(&g_event_loop.file_events_reg_spinlock)
@@ -134,7 +131,9 @@ static void _el_reg_fe_handle()
         }
         else        // 注销
         {
-            fe->mask = EL_FILE_EVENT_NONE;      // 清除标记
+            // 从epoll移除
+            epoll_ctl(g_event_loop.epoll_fd, EPOLL_CTL_DEL, it->fd, NULL);
+            fe->mask = EL_FILE_EVENT_NONE;      // 清除数组标记
             dbg_always("deregister fd %d in loop", it->fd);
         }
         // 释放内存
@@ -157,13 +156,14 @@ static void _ev_loop_early_init() attr_ctor(CTOR_PRIO_HIGH);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void _el_reg_fe(int fd, unsigned char mask, el_file_event_cb cb_func, void *args)
+void _el_reg_fe(int fd, el_file_event_type_e type, unsigned char mask, el_file_event_cb cb_func, void *args)
 {
-    pfm_ensure_ret_void(fd >= 0 && cb_func);
+    pfm_ensure_ret_void(fd >= 0);
 
     // 申请内存，注册事件较少，直接动态申请
     el_fe_reg_item_t *it = mp_calloc(1, sizeof(el_fe_reg_item_t));
     it->fd = fd;
+    it->el_file_event.type = type;
     it->el_file_event.mask = mask;
     it->el_file_event.args = args;
     if(mask & EL_FILE_EVENT_READABLE)
@@ -204,13 +204,19 @@ static void* _el_main(void *args)
         for(; i < ready; ++ i)
         {
             int fd = g_event_loop.file_fireds[i].fd;
+            // 检查类型，看是否需要这里消耗掉可读
+            el_file_event_t *fe = g_event_loop.file_events + fd;
+            if(fe->type == EL_FILE_EVENT_TYPE_EVENTFD)
+                eventfd_read_all(fd);
+            else if(fe->type == EL_FILE_EVENT_TYPE_TIMERFD)
+                timerfd_read_all(fd);
+
             if(fd == g_event_loop.file_events_reg_event_fd)     // 注册新的事件
                 _el_reg_fe_handle();
             else if(fd >= 0 && fd < EV_LOOP_FILE_EVENT_COUNT_MAX)   // 分发事件
             {
                 //dbg_always("distribute fd %d", fd);
                 unsigned char fired_mask = g_event_loop.file_fireds[i].mask;
-                el_file_event_t *fe = g_event_loop.file_events + fd;
                 if((fired_mask & fe->mask & EL_FILE_EVENT_READABLE) && fe->read_cb)
                     fe->read_cb(fe->args);
                 if((fired_mask & fe->mask & EL_FILE_EVENT_WRITEABLE) && fe->write_cb)

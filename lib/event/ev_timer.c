@@ -267,7 +267,7 @@ ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout
     }
 
     // tfd注册到evloop
-    event_loop_register_file_event(hr_timer->tfd, EL_FILE_EVENT_READABLE, _ev_high_res_timer_el_cb, hr_timer);
+    event_loop_register_file_event_timerfd(hr_timer->tfd, EL_FILE_EVENT_READABLE, _ev_high_res_timer_el_cb, hr_timer);
 
     return hr_timer;
 

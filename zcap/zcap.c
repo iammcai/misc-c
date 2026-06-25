@@ -70,6 +70,7 @@
 
 #define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-8s%-8s\n"
 #define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-8s%-8u\n"  // 打印各类型报文数量的格式，type num
+#define ZCAP_DUMM_PKT_INFO_FMT              "if-%s,len-%-4d: %s\n"      // 打印报文信息格式
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -569,9 +570,6 @@ static void _zcap_analyze_el_cb(void *args)
 {
     zcap_t *captor = (zcap_t*)args;
 
-    // ET模式下，清空eventfd缓冲区
-    eventfd_read_all(captor->event_fd);
-
     // 从spsc队列中拿报文，计算hash分发给解析线程
     int pkt_nums = 0;
     zcap_packet_t *packet;
@@ -609,6 +607,19 @@ static void _zcap_analyze_el_cb(void *args)
 static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
 {
     zcap_stat_t *stat = &captor->stat;
+    const struct ethhdr *eth = (struct ethhdr*)packet->packet;
+
+    // 如果打开了信息调试，那么输出报文信息到CLI
+    if(ATOM_LOAD(&g_zcap_dump_pkt_info, MORDER_ACQUIRE))
+    {
+        char info[256] = {};    // 临时空间，用一下魔数
+        snprintf(info, 256, "from %02x-%02x-%02x-%02x-%02x-%02x, type %04x",
+            eth->h_source[0], eth->h_source[1], eth->h_source[2], eth->h_source[3], eth->h_source[4], eth->h_source[5],
+            ntohs(eth->h_proto)
+        );
+        safe_printf(ZCAP_DUMM_PKT_INFO_FMT, captor->if_name, packet->len, info);
+    }
+
     ev_with_mutex(&stat->mtx)
     {
         if(packet->flow_key.err_pkt)
@@ -679,7 +690,7 @@ void _zcap_init(zcap_t *captor)
 
     // 注册eventfd到ev_loop，用于通知进行analyze
     captor->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-    event_loop_register_file_event(captor->event_fd, EL_FILE_EVENT_READABLE, _zcap_analyze_el_cb, captor)
+    event_loop_register_file_event_eventfd(captor->event_fd, EL_FILE_EVENT_READABLE, _zcap_analyze_el_cb, captor)
 
     if(-1 == _zcap_socket_init(captor))     // 设置socket
         goto error;

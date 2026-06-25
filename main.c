@@ -30,16 +30,16 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-#define TEST_LIST   (0)
-#define TEST_HASH   (0)
-#define TEST_MP     (0)
-#define TEST_AQ     (0)
-#define TEST_EV_THD (0)
+#define TEST_LIST       (0)
+#define TEST_HASH       (0)
+#define TEST_MP         (0)
+#define TEST_AQ         (0)
+#define TEST_EV_THD     (0)
 #define TEST_EV_LOCK    (0)
-#define TEST_MSG_Q  (0)
-#define TEST_HEAP   (0)
+#define TEST_MSG_Q      (0)
+#define TEST_HEAP       (0)
 #define TEST_SKIPLIST   (0)
-#define TEST_THP    (0)
+#define TEST_THP        (0)
 #define TEST_EV_TIMER   (0)
 
 /* ========================================================================== */
@@ -125,7 +125,7 @@ int main()
 
 #if TEST_EV_TIMER
     //test_ev_timer();
-    //test_ev_high_res_timer();
+    test_ev_high_res_timer();
 #endif
 
     _platfrom_init();
