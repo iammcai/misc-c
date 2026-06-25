@@ -5,13 +5,14 @@
  * @brief   抓包实现
  *
  * @author  cai<sybstudy@yeah.net>
- * @date    2026-06-11
- * @version 1.0
+ * @date    2026-06-25
+ * @version 1.1
  *
  * @note    
  *
  * @history
  *   1.0 | 2026-06-11 | cai | Initial creation.
+ *   1.1 | 2026-06-25 | cai | Use event_loop and hash handle for analyzing pkt.
  */
 
 /* ========================================================================== */
@@ -22,6 +23,7 @@
 #include <linux/if_packet.h>    // for sockaddr_ll, PACKETV3
 #include <linux/if_ether.h>     // for ETH_P_ALL
 #include <netinet/in.h>         // for htons
+#include <netinet/ip.h>         // for struct iphdr
 #include <net/if.h>             // for ifreq
 #include <arpa/inet.h>
 #include <sys/ioctl.h>          // for ioctl
@@ -36,6 +38,7 @@
 #include "plat/debug.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"
+#include "event/ev_loop.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -61,6 +64,13 @@
 
 #define ZCAP_CAL_RATE_INTERVAL  (1000)  // 计算速率间隔，1s一次
 
+#define ZCAP_ANALYZE_PKTS_ONCE  (16)    // 每次最多处理16个报文，避免reactor队头阻塞
+
+#define ZCAP_HASH_Q_MASK        (ZCAP_HASH_Q_SIZE - 1)  // hash分片处理报文的队列掩码
+
+#define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-8s%-8s\n"
+#define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-8s%-8u\n"  // 打印各类型报文数量的格式，type num
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -68,9 +78,78 @@
 // 内存池，用于rx_t和alz_t之间交互报文
 declare_mem_type_fixed(zcap_pkt, sizeof(zcap_packet_t), ZCAP_ST_MP_NODE_COUNT)
 
+// 封装一下，传递给alz线程入口
+typedef struct{
+    zcap_t *cap;
+    unsigned char index;
+}alz_arg_packed;
+
 /* ========================================================================== */
 /*                        Static Function Prototypes                          */
 /* ========================================================================== */
+
+/**
+ * @brief       extract packet flow key
+ * 
+ * @param[in]   packet  - ptr to packet info
+ * 
+ * @note        提取五元组信息，用于后续哈希分流处理
+ */
+static attr_force_inline void _zcap_packet_flow_key_extract(zcap_packet_t *packet)
+{
+    // 检查报文大小是否大于l2长度
+    uint32_t len = packet->len;
+    if(len < sizeof(struct ethhdr))
+    {
+        packet->flow_key.err_pkt = 1;
+        return;
+    }
+
+    const struct ethhdr *eth = (const struct ethhdr*)packet->packet;    // l2头部
+    uint16_t ether_type = ntohs(eth->h_proto);
+    uint32_t offset = sizeof(struct ethhdr);    // 偏移，用来计算下标是否越界
+    zcap_pakcet_flow_key_t *flow_key = &packet->flow_key;
+
+    // 暂时不考虑vlan
+    if(ETH_P_IP == ether_type)
+    {
+        if(offset + sizeof(struct iphdr) > len)     // 检查l3头部是否完整
+        {
+            packet->flow_key.err_pkt = 1;
+            return;
+        }
+        const struct iphdr *ip = (const struct iphdr*)((uint8_t*)packet->packet + offset);  // l3头部
+        uint32_t ip_hdr_len = ip->ihl * 4;      // l3的长度，以4B为单位，包含头部
+        if(offset + ip_hdr_len > len)       // 检查l3是否完整
+        {
+            packet->flow_key.err_pkt = 1;
+            return;
+        }
+
+        flow_key->src_ip = ip->saddr;
+        flow_key->dst_ip = ip->daddr;
+        flow_key->protocol = ip->protocol;
+
+        if(IPPROTO_TCP == ip->protocol || IPPROTO_UDP == ip->protocol)  // 处理tcp/udp
+        {
+            const uint16_t *l4port = (const uint16_t*)((uint8_t*)ip + ip_hdr_len);
+            offset += ip_hdr_len;
+            if(offset + 4 > len)    // 检查srcport和dstport是否存在
+            {
+                packet->flow_key.err_pkt = 1;
+                return;
+            }
+
+            flow_key->src_port = ntohs(l4port[0]);
+            flow_key->dst_port = ntohs(l4port[1]);
+        }
+    }
+    else    // 非IPv4报文使用srcMac和etherType作为五元组
+    {
+        flow_key->protocol = (uint8_t)(ether_type && 0xff);
+        memcpy(&flow_key->src_ip, eth->h_source, 4);
+    }
+}
 
 /**
  * @brief       cal rate thread work func
@@ -254,13 +333,6 @@ static attr_force_inline void _zcap_clean_up(zcap_t *captor)
     unsigned char expected = 1;
     if(ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
         pthread_join(captor->rx_t, NULL);   // 等待结束
-
-    // 如果解析报文正在运行，那么结束它
-    expected = 1;
-    if(ATOM_CMP_XCHG_WEAK(&captor->analyzing, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
-    {
-        pthread_join(captor->alz_t, NULL);
-    }
 
     // 销毁消息队列
     zcap_packet_spsc_atom_queue_fini(&captor->aq_head);
@@ -450,6 +522,10 @@ static void* _zcap_routine(void *args)
                 // 移动到下一个报文
                 ppd = (struct tpacket3_hdr*)((char*)ppd + ppd->tp_next_offset);
 
+                // 过滤掉本机自环报文，src mac为本机的写入到dma的，不是真正的rx
+                if(!memcmp(pkt_data + MAC_ADDR_SIZE, captor->if_mac, MAC_ADDR_SIZE))
+                    continue;
+
                 // 构建消息，将报文发给解析线程
                 zcap_packet_t *packet = mp_fixed_node_get(zcap_pkt);
                 if(!packet)
@@ -459,8 +535,13 @@ static void* _zcap_routine(void *args)
                 }
                 memcpy(packet->packet, pkt_data, pkt_len < FRAME_SIZE ? pkt_len : FRAME_SIZE);  // 复制内容
                 packet->len = pkt_len;
+                // 预提取五元组信息，而不是在reactor cb中进行
+                _zcap_packet_flow_key_extract(packet);
                 zcap_packet_spsc_atom_queue_push(&captor->aq_head, packet);     // 入队
             }
+
+            // 通知解析
+            eventfd_write_one(captor->event_fd);
 
             // 归还Block
             pbd->hdr.bh1.block_status = TP_STATUS_KERNEL;
@@ -480,91 +561,99 @@ clean_up:
 }
 
 /**
+ * @brief       cb for zcap eventfd In event loop
+ * 
+ * @note        收block包后，通知进行分析的回调
+ */
+static void _zcap_analyze_el_cb(void *args)
+{
+    zcap_t *captor = (zcap_t*)args;
+
+    // ET模式下，清空eventfd缓冲区
+    eventfd_read_all(captor->event_fd);
+
+    // 从spsc队列中拿报文，计算hash分发给解析线程
+    int pkt_nums = 0;
+    zcap_packet_t *packet;
+    while(packet = zcap_packet_spsc_atom_queue_pop(&captor->aq_head))
+    {
+        ++ pkt_nums;
+        if(pkt_nums >= ZCAP_ANALYZE_PKTS_ONCE)
+            break;
+        // 根据flow key计算hash
+        unsigned int hash = type_hash_jhash(&packet->flow_key, sizeof(zcap_pakcet_flow_key_t), 0);
+        hash &= ZCAP_HASH_Q_MASK;
+        /*
+            dbg_always("sip %08x dip %08x pro %02x l4srcport %04x l4dstport %04x",
+                packet->flow_key.src_ip, packet->flow_key.dst_ip, packet->flow_key.protocol, packet->flow_key.src_port, packet->flow_key.dst_port);
+            dbg_always("hash q no %d", hash);
+        */
+        // 发给持有对应HashQ的线程处理
+        zcap_packet_spsc_atom_queue_push(&captor->alz[hash].alz_aq_head, packet);
+        ev_sem_post(&captor->alz[hash].alz_sem);
+    }
+
+    // 超出一次处理，自写一次eventfd，以便再次cb来消费报文
+    if(pkt_nums >= ZCAP_ANALYZE_PKTS_ONCE)
+        eventfd_write_one(captor->event_fd);
+}
+
+/**
  * @brief       analyze a packet
  * 
- * @param[in]   captor  - captor
+ * @param[in]   captor  - zcaptor
  * @param[in]   packet  - packet info
  * 
  * @note        解析单个报文
  */
-static void _zcap_analyze_a_pkt(zcap_t *captor, zcap_packet_t *packet)
+static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
 {
-    if(!captor || !packet)
-        return;
-
-    if(packet->len < sizeof(struct ethhdr))      // error pkt
-        return;
-
-    const struct ethhdr *l2 = (struct ethhdr*)packet->packet;
-
-    if(!memcmp(l2->h_source, captor->if_mac, MAC_ADDR_SIZE))
-        return;
-
-    // 可选，打印报文
-#if DUMP_PKT_DETAIL
-    dbg_major("analyze receive pkt, len %d", packet->len);
-    int i = 0;
-    for(i = 0; i < packet->len; ++ i)
-    {
-        safe_printf("%02x ", packet->packet[i]);
-        if((i+1)%32 == 0)
-            safe_printf("\n");
-        else if((i+1)%16 == 0)
-            safe_printf("  ");
-    }
-    safe_printf("\n");
-#endif
-
-    if(ATOM_LOAD(&g_zcap_dump_pkt_info, MORDER_RELAXED))
-        safe_printf("%-5s: len %-4d: src:%02x:%02x:%02x:%02x:%02x:%02x, type %s\n",
-            captor->if_name, packet->len,
-            l2->h_source[0], l2->h_source[1], l2->h_source[2], l2->h_source[3], l2->h_source[4], l2->h_source[5],
-            _zcap_get_ethertype_name(ntohs(l2->h_proto))
-        );
-
-    // 更新统计数据
     zcap_stat_t *stat = &captor->stat;
     ev_with_mutex(&stat->mtx)
     {
-        stat->count += 1;
-        stat->size += packet->len;
+        if(packet->flow_key.err_pkt)
+            ATOM_FETCH_ADD(&stat->err, 1, MORDER_ACQ_REL);
+        else if(packet->flow_key.protocol == IPPROTO_TCP)
+            ATOM_FETCH_ADD(&stat->tcp, 1, MORDER_ACQ_REL);
+        else if(packet->flow_key.protocol == IPPROTO_UDP)
+            ATOM_FETCH_ADD(&stat->udp, 1, MORDER_ACQ_REL);
+
+        ATOM_FETCH_ADD(&stat->count, 1, MORDER_ACQ_REL);
+        ATOM_FETCH_ADD(&stat->size, packet->len, MORDER_ACQ_REL);
     }
 }
 
 /**
- * @brief       analyze pkts
+ * @brief       analyze thread routine
  * 
- * @param[in]   args    - captor
+ * @param[in]   zcaptor
  * 
- * @retval      NULL
+ * @note        由evloop_cb根据hash分发过来的线程进行处理
  */
-static void* _zcap_analyze_routine(void* args)
+static void* _zcap_alz_routine(void *args)
 {
-    zcap_t *captor = (zcap_t*)args;
+    alz_arg_packed* arg = (alz_arg_packed*)args;
+    unsigned char i = arg->index;
+    zcap_t *captor = arg->cap;
 
-    // 设置启动标志
-    int expected = 0;
-    if(!ATOM_CMP_XCHG_WEAK(&captor->analyzing, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
-        return NULL;
+    mp_free(args, sizeof(alz_arg_packed));   // 释放入参
 
-    memset(&captor->stat, 0, sizeof(zcap_stat_t));   // 清空统计
-    // 初始化内存池，不用补充节点
-    mp_fixed_init(zcap_pkt)
+    // TODO: 批量处理
 
-    while(ATOM_LOAD(&captor->analyzing, MORDER_ACQUIRE))    // 主循环
+    // 内存池初始化，线程中仅释放，无需补充节点
+    mp_fixed_init(zcap_pkt);
+
+    while(ATOM_LOAD(&captor->running, MORDER_ACQUIRE))
     {
-        zcap_packet_t *packet = zcap_packet_spsc_atom_queue_pop(&captor->aq_head);
-        if(!packet)
-        {
-            usleep(1000);    // sleep 1ms，这里休眠关系不大，报文来了仍在队列里
-            continue;
-        }
-        else
-        {
-            _zcap_analyze_a_pkt(captor, packet);
-            mp_fixed_node_put(packet);
-        }
-        
+        ev_sem_wait(&captor->alz[i].alz_sem);   // 等待唤醒，内部安全
+
+        zcap_packet_t *packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head);
+        //dbg_always("alz_t no.%d receive pkts", i);
+
+        // 进行处理
+        _zcap_analyze_a_packet(captor, packet);
+
+        mp_fixed_node_put(packet);
     }
 
     return NULL;
@@ -579,15 +668,18 @@ void _zcap_init(zcap_t *captor)
     // 加到哈希表
     zcaptor_hash_add(&g_zcaptor_hash_head, captor);
 
-    // rx_t和alz_t消息队列初始化
+    // rx_t、alz_t消息队列初始化
     zcap_packet_spsc_atom_queue_init(&captor->aq_head);
-
-    // 创建解析报文线程
-    if(-1 == pthread_create(&captor->alz_t, NULL, _zcap_analyze_routine, captor))
+    unsigned char i = 0;
+    for(; i < ZCAP_HASH_Q_SIZE; ++ i)
     {
-        dbg_error("create analyze thread fail");
-        goto error;
+        zcap_packet_spsc_atom_queue_init(&(captor->alz[i].alz_aq_head));
+        ev_sem_init(&captor->alz[i].alz_sem);
     }
+
+    // 注册eventfd到ev_loop，用于通知进行analyze
+    captor->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    event_loop_register_file_event(captor->event_fd, EL_FILE_EVENT_READABLE, _zcap_analyze_el_cb, captor)
 
     if(-1 == _zcap_socket_init(captor))     // 设置socket
         goto error;
@@ -615,6 +707,16 @@ void _zcap_start(zcap_t *captor)
     if(!ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
         return;
 
+    // 创建alz线程
+    unsigned char i = 0;
+    for(; i < ZCAP_HASH_Q_SIZE; ++ i)
+    {
+        alz_arg_packed *arg = mp_calloc(1, sizeof(alz_arg_packed));
+        arg->cap = captor;
+        arg->index = i;
+        pthread_create(&captor->alz[i].alz_t, NULL, _zcap_alz_routine, arg);
+    }
+
     if(-1 == pthread_create(&captor->rx_t, NULL, _zcap_routine, captor))    // 新建抓包线程
     {
         dbg_error("create rx_t fail");
@@ -629,7 +731,16 @@ void _zcap_cancel(zcap_t *captor)
     if(ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
     {
         pthread_join(captor->rx_t, NULL);   // 等待结束
-        dbg_major("capture rx thread ok");
+        dbg_major("capture rx thread end");
+
+        // 结束解析线程
+        unsigned char i = 0;
+        for(; i < ZCAP_HASH_Q_SIZE; ++ i)
+        {
+            ev_sem_post(&captor->alz[i].alz_sem);   // 唤醒进行检查
+            pthread_join(captor->alz[i].alz_t, NULL);
+            dbg_major("alz thread %d end", i);
+        }
     }
 }
 
@@ -658,18 +769,20 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             captor->if_mac[0],captor->if_mac[1],captor->if_mac[2],
             captor->if_mac[3],captor->if_mac[4],captor->if_mac[5]
         );
-        safe_printf("runing flag: %d, analyze flag %d\n", 
-            ATOM_LOAD(&captor->running, MORDER_ACQUIRE),
-            ATOM_LOAD(&captor->analyzing, MORDER_ACQUIRE)
-        );
+        safe_printf("runing flag: %d\n\n", ATOM_LOAD(&captor->running, MORDER_ACQUIRE));
 
         ev_with_mutex(&captor->stat.mtx)
         {
             safe_printf("rx_count: %u, %.3f pps\n", captor->stat.count, captor->stat.rate_pps);
-            safe_printf("rx_size: %.3f KB, %.3f KBps\n",
+            safe_printf("rx_size: %.3f KB, %.3f KBps\n\n",
                 (double)captor->stat.size/1024,
                 captor->stat.rate_Bps/1024
             );
+
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "tcp", captor->stat.tcp);
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "udp", captor->stat.udp);
         }
         safe_printf("********************************\n\n");
 

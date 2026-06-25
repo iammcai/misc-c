@@ -40,7 +40,7 @@
 #define TEST_HEAP   (0)
 #define TEST_SKIPLIST   (0)
 #define TEST_THP    (0)
-#define TEST_EV_TIMER   (1)
+#define TEST_EV_TIMER   (0)
 
 /* ========================================================================== */
 /*                               Extern Symbols                               */
@@ -125,7 +125,7 @@ int main()
 
 #if TEST_EV_TIMER
     //test_ev_timer();
-    test_ev_high_res_timer();
+    //test_ev_high_res_timer();
 #endif
 
     _platfrom_init();

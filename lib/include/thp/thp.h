@@ -113,6 +113,13 @@ static void _thp_ ## _name ## _init(void)   \
     _thp_shutdown(&_thp_ ## _name); \
 /* thp_shutdown end */
 
+/**
+ * 外部使用，检查线程池是否运行
+ */
+#define thp_is_run(name)    \
+    _thp_is_run(&_thp_ ## _name);   \
+/* thp_is_run end */
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -163,6 +170,15 @@ extern void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args);
  * @note        关闭线程池
  */
 extern void _thp_shutdown(thp_t *thp);
+
+/**
+ * @brief       check if thp is running
+ * 
+ * @param[in]   thp - thread pool
+ * 
+ * @retval      0 - shutdown, 1 - running
+ */
+extern unsigned char _thp_is_run(thp_t *thp);
 
 /* ========================================================================== */
 /*                           Function Definition                              */

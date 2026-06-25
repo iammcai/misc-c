@@ -57,19 +57,74 @@ typedef enum{
 /* dbg end */
 #define dbg_major(fmt, args...) \
     _debug_printf(debug_level_major, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
-/* dbg end */
+/* dbg_major end */
 #define dbg_error(fmt, args...)     \
     _debug_printf(debug_level_error, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
-/* dbg end */
+/* dbg_error end */
 #define dbg_always(fmt, args...)    \
     _debug_printf(debug_level_always, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
-/* dbg end */
+/* dbg_always end */
 
 /**
  * 外部使用，安全打印
  */
 #define safe_printf(fmt, args...)   \
     _safe_printf(fmt, ##args)
+
+/**
+ * 外部使用，带调试的运行宏
+ */
+// 检查cond，不成立则返回ret
+#define pfm_ensure_ret(cond, ret)   do{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        return ret; \
+    }   \
+}while(0);  \
+/* pfm_ensure_ret end */
+// 检查cond，不成立则返回，用于void类型
+#define pfm_ensure_ret_void(cond)   do{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        return; \
+    }   \
+}while(0);  \
+/* pfm_ensure_ret_void end */
+// 检查cond，不成立则continue，用在循环中
+#define pfm_ensure_continue(cond)   \
+{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        continue;   \
+    }   \
+}   \
+/* pfm_ensure_continue end */
+// 检查cond，不成立则break，用在循环中
+#define pfm_ensure_break(cond)  \
+{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        break;  \
+    }   \
+}   \
+/* pfm_ensure_break end */
+// 检查cond，不成立则跳转到done
+#define pfm_ensure_done(cond)   do{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        goto done;  \
+    }   \
+}while(0);  \
+/* pfm_ensure_done end */
+// 检查cond，不成立则手动修改返回值，跳转到done
+#define pfm_ensure_ret_val_done(cond, ret, val) do{ \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+        (ret) = (val);  \
+        goto done;  \
+    }   \
+}while(0);  \
+/* pfm_ensure_ret_val_done end */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */

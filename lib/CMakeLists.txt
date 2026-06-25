@@ -12,6 +12,7 @@ add_library(Lib STATIC
     plat/debug.c
     thp/thp.c
     event/ev_timer.c
+    event/ev_loop.c
 )
 
 # 添加链接库

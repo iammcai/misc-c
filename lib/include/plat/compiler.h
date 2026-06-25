@@ -41,6 +41,7 @@
 
 #define attr_aligned(n)     __attribute__((aligned(n)))                     // 指定起始地址必须是n的倍数，效果就是按n字节对齐
 #define attr_cleanup(f)     __attribute__((unused, cleanup(f)))             // 指定cleanup函数，离开作用域后，自动调用f
+#define attr_packed         __attribute__((packed))                         // 紧凑排布
 
 // 构造、析构优先级，数值越小，优先级越高
 #define CTOR_PRIO_LOW_LOW  (104)

@@ -247,6 +247,11 @@ void _thp_shutdown(thp_t *thp)
     dbg("thp %s shutdown", thp->name);
 }
 
+unsigned char _thp_is_run(thp_t *thp)
+{
+    return ATOM_LOAD(&thp->shutdown, MORDER_ACQUIRE) ? 0 : 1;
+}
+
 static void* _thp_dump_cli_hook(unsigned char argc, char *argv[])
 {
     safe_printf("\n");

@@ -63,10 +63,10 @@ int test_ev_timer()
 
 int test_ev_high_res_timer()
 {
-    unsigned char i = 5;
+    unsigned char i = 1;
     ev_high_res_timer_t *timer;
 
-    for(; i < 10; ++ i)
+    for(; i < 5; ++ i)
     {
         char name[10];
         snprintf(name, 10, "hrt_%d", i);
@@ -75,7 +75,10 @@ int test_ev_high_res_timer()
     }
     ev_high_res_timer_stop(timer);
 
-    sleep(11);
+    sleep(5);
+
+    // 重新启动timer
+    ev_high_res_timer_start(timer);
 
     return 0;
 }

@@ -5,13 +5,14 @@
  * @brief   用户态定时器实现
  *
  * @author  cai<sybstudy@yeah.net>
- * @date    2026-06-17
- * @version 1.0
+ * @date    2026-06-25
+ * @version 1.1
  *
  * @note    
  *
  * @history
  *   1.0 | 2026-06-17 | cai | Initial creation.
+ *   1.1 | 2026-06-25 | cai | Use event loop for ev_high_res_timer timerfd.
  */
 
 /* ========================================================================== */
@@ -30,6 +31,7 @@
 #include "plat/debug.h"
 #include "mp/mp.h"
 #include "thp/thp.h"
+#include "event/ev_loop.h"
 
 /* ========================================================================== */
 /*                            Macro Definitions                               */
@@ -106,13 +108,6 @@ static void _low_res_clock_work(void *args);
 static attr_force_inline void _low_res_clock_init();
 
 /**
- * @brief       routine of ev high res timer fd
- * 
- * @note        用于监听epoll fd，触发定时器
- */
-static void* _ev_high_res_timer_routine(void *args);
-
-/**
  * @brief       ctor init ev timer
  * 
  * @note        （1）启动低精度定时器（2）初始化线程池
@@ -136,12 +131,8 @@ static ev_spinlock_t g_heap_spinlock = EV_SPINLOCK_INITIALIZER;
 // 线程池，用于处理定时任务，由low_res_clock管理
 static thp_t _thp_ev_timer = {};
 
-// epoll fd，管理全局timer_fd
-static int g_high_res_epoll_fd = -1;
-// 监听epoll fd的线程
-static pthread_t g_high_res_thd = 0;
 // 用于高精度定时器的线程池
-static thp_t _thp_ev_high_res_timer = {};
+static thp_t _thp_ev_high_res_timer = {.shutdown = 1,};     // 初始shutdown
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -228,6 +219,27 @@ void ev_timer_stop(ev_timer_t *timer)
     ATOM_STORE(&timer->deleted, 1, MORDER_RELEASE);
 }
 
+/**
+ * @brief       hr_timer tfd readable event, cb
+ * 
+ * @param[in]   args    - hr_timer
+ * 
+ * @note        高精度定时器到期时，ev loop调用，将回调传给线程池执行
+ */
+static void _ev_high_res_timer_el_cb(void *args)
+{
+    ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)args;
+
+    // 线程池未启动的话，初始化启动一下。这是因为thp包含mp，这个函数由ev loop调用，那边没有初始化mp相关
+    if(!_thp_is_run(&_thp_ev_high_res_timer))
+    {
+        thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
+        thp_run(ev_high_res_timer);
+    }
+
+    thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
+}
+
 ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout, ev_timer_cb_func cb, void *args)
 {
     assert(name && timeout && cb);
@@ -254,16 +266,8 @@ ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout
         goto error;
     }
 
-    // 加入epoll监听
-    struct epoll_event ev = {
-        .events = EPOLLIN | EPOLLET,
-        .data.ptr = hr_timer,       // 将timer作为参数，fd打包到里面
-    };
-    if(epoll_ctl(g_high_res_epoll_fd, EPOLL_CTL_ADD, hr_timer->tfd, &ev) < 0)
-    {
-        dbg_error("epoll add fail");
-        goto error;
-    }
+    // tfd注册到evloop
+    event_loop_register_file_event(hr_timer->tfd, EL_FILE_EVENT_READABLE, _ev_high_res_timer_el_cb, hr_timer);
 
     return hr_timer;
 
@@ -304,53 +308,6 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
         dbg_error("stop timer %s fail", hr_timer->name);
 }
 
-static void* _ev_high_res_timer_routine(void *args)
-{
-    int n = 0;
-    struct epoll_event evs[EV_HIGH_RES_TIMER_COUNT_MAX] = {};
-
-    // 初始化并启动线程池
-    thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
-    thp_run(ev_high_res_timer);
-
-    while(1)
-    {
-        // 阻塞等待直到唤醒
-        n = epoll_wait(g_high_res_epoll_fd, evs, EV_HIGH_RES_TIMER_COUNT_MAX, -1);
-        if(n < 0)
-            if(errno == EINTR)
-                continue;
-            else
-                break;
-        // 处理可读timer fd
-        int i = 0;
-        for(; i < n; ++ i)
-        {
-            while(1)    // ET epoll，读完缓冲区
-            {
-                // 读取timer_fd写的缓冲区，一次64位，tfd在ptr中
-                ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)evs[i].data.ptr;
-                uint64_t once = 0;
-                int ret = read(hr_timer->tfd, &once, sizeof(uint64_t));
-                if(ret < 0)
-                    if(errno == EAGAIN) // 读完
-                        break;
-                    else        // 异常发生
-                    {
-                        dbg_error("read %s", strerror(errno));
-                        break;
-                    }
-                // 任务交给线程池
-                dbg("handle high res timer %s", hr_timer->name);
-                thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);
-            }
-        }
-    }
-
-    dbg_error("epoll wait for ev high res clock error exit");
-    return NULL;
-}
-
 static void ev_timer_init(void)
 {
     // 更新当前时钟
@@ -359,10 +316,4 @@ static void ev_timer_init(void)
 
     ev_timer_heap_init(&g_ev_timer_heap);   // 初始化堆
     ev_thd_run(low_res_clock);      // 启动低精度时钟线程
-
-    // 创建epoll fd用于管理高精度定时任务
-    g_high_res_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    assert(g_high_res_epoll_fd >= 0);
-    // 创建线程监听epoll
-    pthread_create(&g_high_res_thd, NULL, _ev_high_res_timer_routine, NULL);
 }
