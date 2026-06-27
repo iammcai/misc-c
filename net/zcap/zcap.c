@@ -34,7 +34,7 @@
 #include <sys/mman.h>           // for mmap
 #include <sys/epoll.h>          // for epoll
 
-#include "zcap.h"
+#include "zcap/zcap.h"
 #include "plat/debug.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"

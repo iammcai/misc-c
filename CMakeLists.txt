@@ -11,7 +11,7 @@ add_executable(Main
 # 子目录
 add_subdirectory(lib)
 add_subdirectory(mgnt)
-add_subdirectory(zcap)
+add_subdirectory(net)
 add_subdirectory(test)
 
 # 头文件目录
@@ -20,6 +20,6 @@ target_link_libraries(Main PUBLIC
     -Wl,--whole-archive
     Lib
     -Wl,--no-whole-archive
-    Zcap
+    Net
     Test
 )
