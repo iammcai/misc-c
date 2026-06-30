@@ -127,14 +127,14 @@ static void _el_reg_fe_handle()
                 fe->args = it->el_file_event.args;
             fe->mask = mask;
 
-            dbg_always("register fd %d into loop done", it->fd);
+            //dbg_always("register fd %d into loop done", it->fd);
         }
         else        // 注销
         {
             // 从epoll移除
             epoll_ctl(g_event_loop.epoll_fd, EPOLL_CTL_DEL, it->fd, NULL);
             fe->mask = EL_FILE_EVENT_NONE;      // 清除数组标记
-            dbg_always("deregister fd %d in loop", it->fd);
+            //dbg_always("deregister fd %d in loop", it->fd);
         }
         // 释放内存
         mp_free(it, sizeof(el_fe_reg_item_t));
@@ -218,9 +218,9 @@ static void* _el_main(void *args)
                 //dbg_always("distribute fd %d", fd);
                 unsigned char fired_mask = g_event_loop.file_fireds[i].mask;
                 if((fired_mask & fe->mask & EL_FILE_EVENT_READABLE) && fe->read_cb)
-                    fe->read_cb(fe->args);
+                    fe->read_cb(fd, fe->args);
                 if((fired_mask & fe->mask & EL_FILE_EVENT_WRITEABLE) && fe->write_cb)
-                    fe->write_cb(fe->args);
+                    fe->write_cb(fd, fe->args);
             }
         }
     }
@@ -250,5 +250,5 @@ static void _ev_loop_early_init()
     // 创建子线程，执行event loop
     pfm_ensure_ret_void(0 == pthread_create(&g_event_loop.ev_loop_th, NULL, _el_main, NULL));
 
-    dbg_always("event loop init done");
+    dbg_major("event loop init done");
 }

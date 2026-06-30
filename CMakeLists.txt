@@ -16,7 +16,9 @@ add_subdirectory(test)
 
 # 头文件目录
 target_link_libraries(Main PUBLIC
+    -Wl,--whole-archive
     Mgnt
+    -Wl,--no-whole-archive
     -Wl,--whole-archive
     Lib
     -Wl,--no-whole-archive

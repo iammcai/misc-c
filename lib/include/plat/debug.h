@@ -74,6 +74,13 @@ typedef enum{
 /**
  * 外部使用，带调试的运行宏
  */
+// 检查cond，不成立则dbg_err
+#define pfm_ensure_dbg(cond) do{    \
+    if(!(cond)) {   \
+        dbg_error("cond %s check fail", #cond); \
+    }   \
+}while(0);  \
+/* pfm_ensure_dbg end */
 // 检查cond，不成立则返回ret
 #define pfm_ensure_ret(cond, ret)   do{ \
     if(!(cond)) {   \

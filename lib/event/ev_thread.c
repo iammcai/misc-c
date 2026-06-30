@@ -134,11 +134,12 @@ static attr_force_inline void _ev_thd_timer_cb(void *args)
 /**
  * @brief       eventfd cb for ev thd
  * 
+ * @param[in]   fd
  * @param[in]   ev_thd_attr
  * 
  * @note        ev_thd eventfd可写回调
  */
-static attr_force_inline void _ev_thd_eventfd_cb(void *args)
+static attr_force_inline void _ev_thd_eventfd_cb(int fd, void *args)
 {
     ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
     ev_sem_post(&attr->sem);    // 写sem唤醒工作线程
@@ -301,7 +302,7 @@ void ev_thd_attr_init(ev_thd_attr_t *attr)
 static inline void ev_thd_event_init(ev_thd_attr_t *attr)
 {
     // eventfd注册到event_loop进行监听
-    dbg_always("attr->event_fd %d", attr->event_fd);
+    //dbg_always("attr->event_fd %d", attr->event_fd);
     event_loop_register_file_event_eventfd(attr->event_fd, EL_FILE_EVENT_READABLE, _ev_thd_eventfd_cb, attr);
 
     // 启动定时器

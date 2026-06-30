@@ -1,6 +1,7 @@
 add_library(Mgnt STATIC
     cli/cli_trie.c
     cli/cli.c
+    web/web.c
 )
 
 target_include_directories(Mgnt PUBLIC

@@ -222,11 +222,12 @@ void ev_timer_stop(ev_timer_t *timer)
 /**
  * @brief       hr_timer tfd readable event, cb
  * 
+ * @param[in]   fd      - unused
  * @param[in]   args    - hr_timer
  * 
  * @note        高精度定时器到期时，ev loop调用，将回调传给线程池执行
  */
-static void _ev_high_res_timer_el_cb(void *args)
+static void _ev_high_res_timer_el_cb(int fd, void *args)
 {
     ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)args;
 

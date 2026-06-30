@@ -110,7 +110,7 @@ int test_ev_thd()
 
     for(i = 0; i < TEST_COUNT_MAX; ++ i)
     {
-        //ev_thd_wake(test_producer)
+        ev_thd_wake(test_producer)
         sleep(1);
     }
 

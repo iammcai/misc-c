@@ -566,7 +566,7 @@ clean_up:
  * 
  * @note        收block包后，通知进行分析的回调
  */
-static void _zcap_analyze_el_cb(void *args)
+static void _zcap_analyze_el_cb(int fd, void *args)
 {
     zcap_t *captor = (zcap_t*)args;
 

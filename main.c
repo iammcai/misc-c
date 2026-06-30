@@ -63,6 +63,11 @@ static attr_force_inline void _platfrom_init()
     // 启动
     zcap_start(eth0);
 
+    // 声明抓取接口wlan0
+    declare_zcap(wlan0);
+    // 启动
+    zcap_start(wlan0);
+
     // 初始化cli线程
     cli_init();     // cli
 

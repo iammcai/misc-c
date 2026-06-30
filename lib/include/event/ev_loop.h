@@ -23,6 +23,7 @@
 
 #include <pthread.h>
 #include <sys/epoll.h>
+#include <sys/errno.h>
 #include "plat/compiler.h"
 #include "event/ev_lock.h"
 #include "type/type_list.h"
@@ -43,7 +44,7 @@ struct el_s;
  * 
  * @note        必须轻量化，避免阻塞过久
 */
-typedef void (*el_file_event_cb)(void *client_args);
+typedef void (*el_file_event_cb)(int fd, void *client_args);
 
 // file mask 枚举定义
 typedef enum{
