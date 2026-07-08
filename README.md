@@ -1,10 +1,10 @@
 # MISC-C
 
+[![Stars](https://img.shields.io/github/stars/iammcai/misc-c?style=flat-square&cacheSeconds=3600)](https://github.com/iammcai/misc-c/stargazers)
+[![Forks](https://img.shields.io/github/forks/iammcai/misc-c?style=flat-square&cacheSeconds=3600)](https://github.com/iammcai/misc-c/forks)
+[![Last Commit](https://img.shields.io/github/last-commit/iammcai/misc-c?style=flat-square)](https://github.com/iammcai/misc-c/commits)
 [![C](https://img.shields.io/badge/C-99.5%25-00599C?style=flat-square&logo=c&logoColor=white)](https://en.wikipedia.org/wiki/C_(programming_language))
 [![CMake](https://img.shields.io/badge/CMake-0.5%25-064F8C?style=flat-square&logo=cmake&logoColor=white)](https://cmake.org/)
-[![Stars](https://img.shields.io/github/stars/iammcai/misc-c?style=flat-square)](https://github.com/iammcai/misc-c/stargazers)
-[![Forks](https://img.shields.io/github/forks/iammcai/misc-c?style=flat-square)](https://github.com/iammcai/misc-c/forks)
-[![Last Commit](https://img.shields.io/github/last-commit/iammcai/misc-c?style=flat-square)](https://github.com/iammcai/misc-c/commits)
 
 > 🚀 一套高性能、可复用的 C 语言基础设施组件库，用于个人学习与能力提升。
 
@@ -65,7 +65,8 @@
 | **线程池** | 复用线程，降低创建销毁开销，提升任务响应速度 | ✅ 完成 |
 | **高精度定时器** | 基于 `timerfd` + `epoll` 实现 | ✅ 完成 |
 | **用户态定时器** | 规避系统调用和内核上下文切换，适用于高频超时场景 | ✅ 完成 |
-| **Reactor事件调度器** | 将系统中的fd集中管理，事件统一调度。目前集中了fd事件 | 待添加定时子系统 |
+| **Reactor事件调度器** | 将系统中的fd集中管理，事件统一调度。目前集中了fd事件 | ✅ 完成 |
+| **syslog日志库** | 简易本地日志库 | ✅ 完成 |
 
 ### 管理组件
 

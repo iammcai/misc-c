@@ -25,6 +25,7 @@
 #include "test.h"
 #include "cli/cli.h"
 #include "zcap/zcap.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -58,14 +59,11 @@ static attr_force_inline void _platfrom_init()
     // 开启debug
     debug_level_set(debug_level_all);
 
-    // 声明抓取接口eth0
+    // 声明接口eth0收发
     declare_zcap(eth0);
-    // 启动
     zcap_start(eth0);
-
-    // 声明抓取接口wlan0
+    // 声明接口wlan0收发
     declare_zcap(wlan0);
-    // 启动
     zcap_start(wlan0);
 
     // 初始化cli线程
@@ -73,6 +71,9 @@ static attr_force_inline void _platfrom_init()
 
     // 关闭debug
     debug_level_set(debug_level_none);
+
+    // 日志
+    syslog_notice(SYSLOG_MODULE_SYS, "c-misc system start");
 }
 
 int main()

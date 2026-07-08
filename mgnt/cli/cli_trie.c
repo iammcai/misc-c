@@ -382,6 +382,7 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
     // 传给用户的agrv[]必须按照注册顺序
     cli_param_t *usr_param = match->params;
     unsigned char usr_param_cnt = match->params_count;
+    unsigned char real_param_cnt = 0;
     char **usr_argv = (char**)mp_calloc(usr_param_cnt, sizeof(char*));      // 给用户的argv
     unsigned char *is_fill = (unsigned char*)mp_calloc(usr_param_cnt, sizeof(unsigned char));   // 是否填充
 
@@ -421,6 +422,7 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
                 i+=1;
             }
             is_fill[j] = 1;     // 标记已填充
+            ++ real_param_cnt;
             continue;
         }
         else    // 不带标识的参数，直接填充到下一个
@@ -437,6 +439,7 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
             // 继续
             usr_argv[j] = cur_arg;
             is_fill[j] = 1;
+            ++ real_param_cnt;
             i += 1;
         }
     }
@@ -451,9 +454,9 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
         }
     }
 
-    dbg("pass param cnt %d", usr_param_cnt);
+    dbg("pass param cnt %d", real_param_cnt);
 
-    ret =  match->hook(usr_param_cnt, usr_argv);
+    ret =  match->hook(real_param_cnt, usr_argv);
 
 cleanup:
     // 释放内存

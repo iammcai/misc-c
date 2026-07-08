@@ -47,12 +47,6 @@ typedef struct{
     char ring_buffer[];         // 柔性数组，环形缓冲区
 }msg_q_t;
 
-// 消息定义
-typedef struct{
-    void *ctx;
-    msg_q_list_item_t item;
-}msg_t;
-
 // 等待类型枚举
 typedef enum{
     msg_q_no_wait,

@@ -169,7 +169,7 @@ void* _thp_thread_routine(void *args)
     // 初始化内存池，仅需要释放内存
     mp_fixed_init(thp_work_node)
 
-    dbg("thread %d in thp %s start running", (int)pthread_self(), thp->name);
+    // dbg("thread %d in thp %s start running", (int)pthread_self(), thp->name);
 
     while(1)
     {
@@ -193,7 +193,7 @@ void* _thp_thread_routine(void *args)
         task->wf(task->args);
         mp_fixed_node_put(task);
 
-        dbg("thread %d in thp %s, running a task done", (int)pthread_self(), thp->name);
+        //dbg("thread %d in thp %s, running a task done", (int)pthread_self(), thp->name);
     }
 
     dbg("thread %d in thp %s running end", (int)pthread_self(), thp->name);
@@ -221,7 +221,6 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
 
     pthread_mutex_lock(&thp->mtx);
     thp_work_list_add_tail(&thp->wl, task);
-    dbg("submit task to thread pool %s", thp->name);
     pthread_mutex_unlock(&thp->mtx);
     // 唤醒
     pthread_cond_signal(&thp->cond);

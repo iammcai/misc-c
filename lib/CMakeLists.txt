@@ -13,6 +13,7 @@ add_library(Lib STATIC
     thp/thp.c
     event/ev_timer.c
     event/ev_loop.c
+    syslog/syslog.c
 )
 
 # 添加链接库
