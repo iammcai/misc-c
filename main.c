@@ -25,6 +25,7 @@
 #include "test.h"
 #include "cli/cli.h"
 #include "zcap/zcap.h"
+#include "ftx/ftx.h"
 #include "syslog/syslog.h"
 
 /* ========================================================================== */
@@ -62,9 +63,11 @@ static attr_force_inline void _platfrom_init()
     // 声明接口eth0收发
     declare_zcap(eth0);
     zcap_start(eth0);
+    declare_ftx(eth0);
     // 声明接口wlan0收发
     declare_zcap(wlan0);
     zcap_start(wlan0);
+    declare_ftx(wlan0);
 
     // 初始化cli线程
     cli_init();     // cli

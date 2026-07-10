@@ -48,7 +48,7 @@
 #define DUMP_PKT_DETAIL (0)
 
 // 一个块的大小，mmap要求页对齐，此处设置页*1024
-#define BLOCK_SIZE      (sysconf(_SC_PAGESIZE)*1024)
+#define BLOCK_SIZE      (1U<<(12+10))       // 4MB
 // 块的数量，一共64*4MB=256MB映射
 #define BLOCK_NR        (64)
 // 帧数量
@@ -317,8 +317,16 @@ static attr_force_inline void _zcap_clean_up(zcap_t *captor)
     // 移除哈希表
     zcaptor_hash_del(&g_zcaptor_hash_head, captor);
 
+    // 如果抓包正在运行，那么结束它
+    unsigned char expected = 1;
+    if(ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
+        pthread_join(captor->rx_t, NULL);   // 等待结束
+
+    // 销毁消息队列
+    zcap_packet_spsc_atom_queue_fini(&captor->aq_head);
+
     // 取消映射
-    if(captor->ring_buffer)
+    if(MAP_FAILED != captor->ring_buffer)
         munmap(captor->ring_buffer, BLOCK_SIZE*BLOCK_NR);
     captor->ring_len = 0;
 
@@ -329,14 +337,6 @@ static attr_force_inline void _zcap_clean_up(zcap_t *captor)
         close(captor->sock_fd);
 
     ATOM_STORE(&captor->ready, 0, MORDER_RELEASE);
-
-    // 如果抓包正在运行，那么结束它
-    unsigned char expected = 1;
-    if(ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
-        pthread_join(captor->rx_t, NULL);   // 等待结束
-
-    // 销毁消息队列
-    zcap_packet_spsc_atom_queue_fini(&captor->aq_head);
 }
 
 /**
@@ -691,6 +691,8 @@ void _zcap_init(zcap_t *captor)
     // 注册eventfd到ev_loop，用于通知进行analyze
     captor->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     event_loop_register_file_event_eventfd(captor->event_fd, EL_FILE_EVENT_READABLE, _zcap_analyze_el_cb, captor)
+
+    captor->ring_buffer = MAP_FAILED;
 
     if(-1 == _zcap_socket_init(captor))     // 设置socket
         goto error;
