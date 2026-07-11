@@ -462,10 +462,6 @@ static void* _zcap_routine(void *args)
 {
     zcap_t *captor = (zcap_t*)args;
 
-    // 内存池初始化，补充节点
-    mp_fixed_init(zcap_pkt)
-    mp_fixed_supply(zcap_pkt)
-
     // 创建epoll et，监听抓包socket
     int epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if(-1 == epoll_fd)
@@ -650,9 +646,6 @@ static void* _zcap_alz_routine(void *args)
     mp_free(args, sizeof(alz_arg_packed));   // 释放入参
 
     // TODO: 批量处理
-
-    // 内存池初始化，线程中仅释放，无需补充节点
-    mp_fixed_init(zcap_pkt);
 
     while(ATOM_LOAD(&captor->running, MORDER_ACQUIRE))
     {

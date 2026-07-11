@@ -14,6 +14,7 @@
  *   1.0 | 2026-05-27 | cai | Initial creation.
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  *   1.2 | 2026-06-15 | cai | Add debug method.
+ *   1.3 | 2026-07-11 | cai | Add auto init mp.
  */
 
 /* ========================================================================== */
@@ -224,6 +225,23 @@ static attr_force_inline void mp_cli_init() attr_ctor(CTOR_PRIO_MID);
  */
 static void* _mp_show_mp_hook(unsigned char argc, char *argv[]);
 
+/**
+ * @brief       find mp fixed free list of self thread, if not exist, create it.
+ * 
+ * @param[in]   attr    - mem type attr
+ * @param[in]   supply  - if create, supply or not
+ * 
+ * @retval      ptr to free list
+ */
+static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply);
+
+/**
+ * @brief       auto init global free list hash table
+ * 
+ * @note        检查线程所见的hashtable是否初始化，没有的话，调用
+ */
+static void _g_fixed_free_list_hash_init();
+
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -289,11 +307,7 @@ void mem_type_attr_init(mem_type_attr_t *attr)
 void _mp_fixed_init(mem_type_attr_t *attr)
 {
     // 重要：检查g_fixed_free_list_hash_head是否空，是的话先初始化一下
-    {
-        fixed_free_list_head_hash_head_t empty = {};
-        if(!memcmp(&g_fixed_free_list_hash_head, &empty, sizeof(fixed_free_list_head_hash_head_t)))
-            fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
-    }
+    _g_fixed_free_list_hash_init();
 
     assert(attr && attr->name && mem_type_attr_fixed_size(attr));   // 检查参数
 
@@ -337,15 +351,43 @@ void fixed_mp_supply(mem_type_attr_t *attr)
     }
 }
 
+static void _g_fixed_free_list_hash_init()
+{
+    fixed_free_list_head_hash_head_t empty = {};
+    if(!memcmp(&g_fixed_free_list_hash_head, &empty, sizeof(fixed_free_list_head_hash_head_t)))
+        fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
+}
+
+static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply)
+{
+    assert(attr);
+
+    // 初始化哈希表，若有必要
+    _g_fixed_free_list_hash_init();
+    // 先查找哈希表中是否存在对应记录
+    fixed_free_list_t key = {.attr = attr};
+    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
+    
+    if(free_list)
+        return free_list;
+
+    // 如果不存在，说明没有显式初始化，这里初始化，并且补充节点
+    _mp_fixed_init(attr);
+    if(supply)
+        fixed_mp_supply(attr);
+
+    free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
+    assert(free_list);
+    return free_list;
+}
+
 void* _mp_fixed_node_get(mem_type_attr_t *attr)
 {
     if(!mem_type_attr_fixed_size(attr))     // 检查是否固定大小
         return NULL;
 
-    // 找到free list
-    fixed_free_list_t key = {.attr = attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    assert(free_list);
+    // 找到free list，没有的话创建
+    fixed_free_list_t *free_list = _mp_fixed_free_list_get_or_create(attr, 1);
 
     // 将local aq中的节点都归还回来
     fixed_mem_node_t *cycle_node = NULL;
@@ -386,11 +428,10 @@ void _mp_fixed_node_put(void *ptr)
 {
     assert(ptr);
     fixed_mem_node_t *node = mp_fixed_data_node(ptr);
-    assert(mem_type_attr_fixed_size(node->attr));       // 确认是否fixed
+    assert(node && mem_type_attr_fixed_size(node->attr));       // 确认是否fixed
 
-    fixed_free_list_t key = {.attr = node->attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);  // 找到freelist
-    assert(node && free_list);
+    // 找到free list，没有的话创建
+    fixed_free_list_t *free_list = _mp_fixed_free_list_get_or_create(node->attr, 0);
 
     // 本地归还 or 异地归还
     if(node->tid == free_list->cycle_aq_head.tid)

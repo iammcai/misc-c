@@ -119,10 +119,6 @@ void _thp_init(thp_t *thp)
     // 初始化工作队列
     thp_work_list_init(&thp->wl);
 
-    // 初始化内存池
-    mp_fixed_init(thp_work_node)
-    mp_fixed_supply(thp_work_node)
-
     // 限制线程数量
     if(thp->thread_count <= 0)
         thp->thread_count = 1;
@@ -165,9 +161,6 @@ void _thp_run(thp_t *thp)
 void* _thp_thread_routine(void *args)
 {
     thp_t *thp = (thp_t*)args;
-
-    // 初始化内存池，仅需要释放内存
-    mp_fixed_init(thp_work_node)
 
     // dbg("thread %d in thp %s start running", (int)pthread_self(), thp->name);
 

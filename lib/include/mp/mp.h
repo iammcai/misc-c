@@ -14,6 +14,7 @@
  *   1.0 | 2026-05-27 | cai | Initial creation.
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  *   1.2 | 2026-06-15 | cai | Add debug method.
+ *   1.3 | 2026-07-11 | cai | Add auto init mp.
  */
 
 #ifndef __MP_H__
