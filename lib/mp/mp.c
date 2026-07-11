@@ -39,6 +39,11 @@
 // 根据data获取node
 #define mp_fixed_data_node(_data)   container_of(_data, fixed_mem_node_t, data)
 
+// 打印attr的格式 标题：name,node_size,total,use,free,usage(%)
+#define MEM_ATTR_FMT_HEAD       "%-15s%-12s%-8s%-8s%-8s%-8s\n"
+// 打印attr的格式 数据：name,total,use,free,usage
+#define MEM_ATTR_FMT_DATA       "%-15s%-12d%-8d%-8d%-8d%-8.3f\n"
+
 /* ========================================================================== */
 /*                           Static Function Prototypes                       */
 /* ========================================================================== */
@@ -177,6 +182,8 @@ static attr_force_inline fixed_mem_node_t* fixed_mem_node_new(mem_type_attr_t *a
     node->attr = attr;
     node->tid = tid_get(attr);
 
+    ATOM_FETCH_ADD(&attr->allocated, 1, MORDER_ACQ_REL);        // 更新计数
+
     return node;
 }
 
@@ -301,6 +308,10 @@ static inline void g_fixed_cycle_aq_list_head_init()
 void mem_type_attr_init(mem_type_attr_t *attr)
 {
     assert(attr && attr->name);
+
+    ATOM_STORE(&attr->allocated, 0, MORDER_RELEASE);
+    ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
+
     mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
 }
 
@@ -401,6 +412,9 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
 
     fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
+    // 更新使用计数
+    ATOM_FETCH_ADD(&attr->used, 1, MORDER_ACQ_REL);
+
     #if MP_DETAIL_DUMP
     // 查看剩余百分比
     dbg_always("get a fixed node, fixed mp left %.3f", (double)fixed_free_list_count(&free_list->head)/attr->node_max_num);
@@ -438,6 +452,9 @@ void _mp_fixed_node_put(void *ptr)
         _mp_fixed_node_put_local(free_list, node);
     else
         _mp_fixed_node_put_remote(&free_list->cycle_aq_head.remote_cycle_aq_head, node);
+
+    // 更新使用计数
+    ATOM_FETCH_SUB(&node->attr->used, 1, MORDER_ACQ_REL);
 }
 
 static inline tid_t tid_new()
@@ -507,11 +524,28 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
     unsigned long calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_ACQUIRE);
     unsigned long free_size = ATOM_LOAD(&g_mp_free_size, MORDER_ACQUIRE);
 
-    safe_printf("\n********************************\n");
-    safe_printf("alloc count: %u, size: %luB\n", ATOM_LOAD(&g_mp_calloc_cnt, MORDER_ACQUIRE), calloc_size);
+
+    safe_printf("\nalloc count: %u, size: %luB\n", ATOM_LOAD(&g_mp_calloc_cnt, MORDER_ACQUIRE), calloc_size);
     safe_printf("free  count: %u, size: %luB\n", ATOM_LOAD(&g_mp_free_cnt, MORDER_ACQUIRE), free_size);
-    safe_printf("current used: %lu B, %.3f KB\n", calloc_size - free_size, (double)(calloc_size - free_size)/1024);
-    safe_printf("********************************\n\n");
+    safe_printf("current used: %lu B, %.3f KB\n\n", calloc_size - free_size, (double)(calloc_size - free_size)/1024);
+
+    safe_printf(MEM_ATTR_FMT_HEAD MEM_ATTR_FMT_HEAD, 
+        "Name", "Node_Size", "Total", "Use", "Free", "Usage(\%)",
+        "----", "---------", "-----", "---", "----", "--------"
+    );
+
+    mem_type_attr_t *attr = mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
+    while(attr)
+    {
+        ATOMIC_UINT32_T total = ATOM_LOAD(&attr->allocated, MORDER_ACQUIRE);
+        ATOMIC_UINT32_T used = ATOM_LOAD(&attr->used, MORDER_ACQUIRE);
+        safe_printf(MEM_ATTR_FMT_DATA, attr->name, attr->node_size, total, used, total-used, (double)used/total);
+        
+        attr = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
+    }
+
+    safe_printf("\n");
+
     return NULL;
 }
 

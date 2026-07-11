@@ -52,6 +52,9 @@ typedef struct{
     unsigned int node_size;             // 该类型的内存节点大小
     unsigned int node_max_num;          // 该类型的最大节点数量
     mem_type_attr_hash_item_t item;     // hash item
+
+    ATOMIC_UINT32_T allocated;          // 总共申请的数量
+    ATOMIC_UINT32_T used;               // 正在使用的数量
 }mem_type_attr_t;
 
 // 预定义固定大小内存空闲链表

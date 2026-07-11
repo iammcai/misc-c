@@ -54,8 +54,8 @@
 // 帧数量
 #define FRAME_NR        (BLOCK_SIZE*BLOCK_NR/FRAME_SIZE)
 
-// 内存池节点数量，开启MP_DETAIL_DUMP观察调整
-#define ZCAP_ST_MP_NODE_COUNT   (512)
+// 内存池节点数量，通过show mp调整
+#define ZCAP_ST_MP_NODE_COUNT   (64)
 
 // 抓包epoll超时 200ms
 #define EPOLL_TIMEOUT   (200)

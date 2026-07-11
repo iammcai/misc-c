@@ -32,7 +32,7 @@
 /* ========================================================================== */
 
 // 工作队列使用内存池的大小
-#define THP_WORK_COUNT_MAX      (1024*4)
+#define THP_WORK_COUNT_MAX      (64*4)
 
 // 打印格式：name count state
 #define THP_DUMP_HEAD_DMT   "%-12s%-8s%-12s\n"
