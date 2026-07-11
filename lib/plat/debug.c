@@ -66,7 +66,7 @@ static void _debug_init() attr_ctor(CTOR_PRIO_MID);
 /* ========================================================================== */
 
 // 全局调试等级
-static ATOMIC_UINT8_T g_debug_level = debug_level_all;
+static ATOMIC_UINT8_T g_debug_level = debug_level_none;
 // 全局互斥锁
 static ev_mutex_t g_debug_mtx = EV_MUTEX_INITIALIZER;
 // level - name 对照表

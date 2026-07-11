@@ -94,10 +94,7 @@ int main()
 #endif
 
 #if TEST_MP
-    //test_mp();
-    //test_mp_cost();
-    //test_normal_mem_cost();
-    test_mp_multi_thread();
+    test_mp();
 #endif
 
 #if TEST_AQ

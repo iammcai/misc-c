@@ -92,25 +92,6 @@ int test_type_hash();
 int test_mp();
 
 /**
- * @brief       test memory pool cost
- * 
- * @retval      test result
- */
-int test_mp_cost();
-
-/**
- * @brief       test calloc free cost
- * 
- * @retval      test result
- */
-int test_normal_mem_cost();
-
-/**
- * @brief       test mp used in multi threads
- */
-int test_mp_multi_thread();
-
-/**
  * @brief       test atom queue for spsc 
  */
 int test_aq_spsc();

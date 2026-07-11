@@ -30,8 +30,6 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-#define MP_DETAIL_DUMP  (0)     // 查看运行时情况，例如内存池剩余水位
-
 #define RECYCLE_WAKE_THRESHOLD  (64)   // 唤醒阈值
 
 // 获取node中的data给用户
@@ -43,6 +41,9 @@
 #define MEM_ATTR_FMT_HEAD       "%-15s%-12s%-8s%-8s%-8s%-8s\n"
 // 打印attr的格式 数据：name,total,use,free,usage
 #define MEM_ATTR_FMT_DATA       "%-15s%-12d%-8d%-8d%-8d%-8.3f\n"
+
+// 表示是否开启调试，开启时会添加计数等，导致性能降低
+#define MP_DBG_MODE             (0)
 
 /* ========================================================================== */
 /*                           Static Function Prototypes                       */
@@ -182,7 +183,10 @@ static attr_force_inline fixed_mem_node_t* fixed_mem_node_new(mem_type_attr_t *a
     node->attr = attr;
     node->tid = tid_get(attr);
 
-    ATOM_FETCH_ADD(&attr->allocated, 1, MORDER_ACQ_REL);        // 更新计数
+#if MP_DBG_MODE
+    // 更新分配计数
+    ATOM_FETCH_ADD(&attr->allocated, 1, MORDER_ACQ_REL);
+#endif
 
     return node;
 }
@@ -240,7 +244,7 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[]);
  * 
  * @retval      ptr to free list
  */
-static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply);
+static attr_force_inline fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply);
 
 /**
  * @brief       auto init global free list hash table
@@ -273,6 +277,12 @@ ATOMIC_UINT32_T g_mp_calloc_cnt = 0;     // 申请次数
 ATOMIC_UINT64_T g_mp_calloc_size = 0;    // 申请大小
 ATOMIC_UINT32_T g_mp_free_cnt = 0;       // 释放次数
 ATOMIC_UINT64_T g_mp_free_size = 0;      // 释放大小
+
+// 线程独立的缓存，当前attr
+static thread_local mem_type_attr_t *g_attr = NULL;
+// 线程独立的缓存，当前free_list
+static thread_local fixed_free_list_t *g_fixed_free_list = NULL;
+
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -369,9 +379,14 @@ static void _g_fixed_free_list_hash_init()
         fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
 }
 
-static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply)
+static inline fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply)
 {
     assert(attr);
+
+    if(attr == g_attr)
+        return g_fixed_free_list;
+
+    g_attr = attr;
 
     // 初始化哈希表，若有必要
     _g_fixed_free_list_hash_init();
@@ -380,7 +395,11 @@ static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *att
     fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
     
     if(free_list)
+    {
+        g_fixed_free_list = free_list;
         return free_list;
+    }
+        
 
     // 如果不存在，说明没有显式初始化，这里初始化，并且补充节点
     _mp_fixed_init(attr);
@@ -389,6 +408,9 @@ static fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *att
 
     free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
     assert(free_list);
+
+    g_fixed_free_list = free_list;
+
     return free_list;
 }
 
@@ -412,13 +434,10 @@ void* _mp_fixed_node_get(mem_type_attr_t *attr)
 
     fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
+#if MP_DBG_MODE
     // 更新使用计数
     ATOM_FETCH_ADD(&attr->used, 1, MORDER_ACQ_REL);
-
-    #if MP_DETAIL_DUMP
-    // 查看剩余百分比
-    dbg_always("get a fixed node, fixed mp left %.3f", (double)fixed_free_list_count(&free_list->head)/attr->node_max_num);
-    #endif
+#endif
 
     return mp_fixed_node_data(node);
 }
@@ -453,8 +472,10 @@ void _mp_fixed_node_put(void *ptr)
     else
         _mp_fixed_node_put_remote(&free_list->cycle_aq_head.remote_cycle_aq_head, node);
 
+#if MP_DBG_MODE
     // 更新使用计数
     ATOM_FETCH_SUB(&node->attr->used, 1, MORDER_ACQ_REL);
+#endif
 }
 
 static inline tid_t tid_new()
@@ -529,6 +550,8 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
     safe_printf("free  count: %u, size: %luB\n", ATOM_LOAD(&g_mp_free_cnt, MORDER_ACQUIRE), free_size);
     safe_printf("current used: %lu B, %.3f KB\n\n", calloc_size - free_size, (double)(calloc_size - free_size)/1024);
 
+    safe_printf("MP debug mode: [%s], Total-Use-Free-Usage invalid while close!\n\n", MP_DBG_MODE ? "open" : "close");
+
     safe_printf(MEM_ATTR_FMT_HEAD MEM_ATTR_FMT_HEAD, 
         "Name", "Node_Size", "Total", "Use", "Free", "Usage(\%)",
         "----", "---------", "-----", "---", "----", "--------"
@@ -539,7 +562,7 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
     {
         ATOMIC_UINT32_T total = ATOM_LOAD(&attr->allocated, MORDER_ACQUIRE);
         ATOMIC_UINT32_T used = ATOM_LOAD(&attr->used, MORDER_ACQUIRE);
-        safe_printf(MEM_ATTR_FMT_DATA, attr->name, attr->node_size, total, used, total-used, (double)used/total);
+        safe_printf(MEM_ATTR_FMT_DATA, attr->name, attr->node_size, total, used, total-used, total ?  (double)used/total : 0);
         
         attr = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
     }
