@@ -58,6 +58,7 @@ typedef struct{
 
     // 报文类型
     unsigned long err;          // 错包数量
+    unsigned long arp;          // arp报文数量
     unsigned long tcp;          // tcp报文数量
     unsigned long udp;          // udp报文数量
 
@@ -85,10 +86,10 @@ typedef struct{
 
 // 报文定义
 typedef struct{
-    char packet[FRAME_SIZE];    // 报文内容
     unsigned int len;           // 报文长度
     zcap_packet_spsc_atom_queue_item_t item;    // aq item
     zcap_pakcet_flow_key_t flow_key;    // 五元组信息
+    char packet[];    // 报文内容
 }zcap_packet_t;
 
 // 解析报文结构

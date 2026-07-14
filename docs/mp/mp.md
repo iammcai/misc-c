@@ -2,6 +2,8 @@
 
 ## 架构设计
 
+### 内存类型
+
 首先是一个全局的内存类型属性`mem_type_attr_t`，使用一个全局哈希表`g_mem_type_attr_hash_head`来存储所有类型。
 
 ```C
@@ -18,6 +20,8 @@ typedef struct{
 定义构造函数`g_mem_type_attr_hash_init`来确保进入`main`函数前初始化
 
 用户需要声明一个业务对应的内存类型，后续使用这个类型来进行内存申请和释放
+
+### 固定大小内存池
 
 接着定义固定大小的内存节点类型`fixed_mem_node_t`，其中使用柔性数组来存给用户的真正内存
 
@@ -48,7 +52,7 @@ typedef struct{
 
 ![mp_struct](../images/mp_struct.png)
 
-## 无锁化
+#### 无锁化
 
 以上实现的内存池是线程不安全的，并发使用需要外部使用锁
 
@@ -67,7 +71,7 @@ static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head
 
 ![mp_struct_multi_thread](../images/mp_struct_multi_thread.png)
 
-## 跨线程分配释放
+#### 跨线程分配释放
 
 以上实现了线程独立内存池，每个线程持有各自的空闲内存，在同一线程内部可以独立进行分配、释放。
 
@@ -88,21 +92,48 @@ static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head
     - 线程每1000ms自行唤醒一次；某个线程remote队列长度超过阈值128后，立即唤醒一次
 - 分配内存前，先将local队列中的内存移回到空闲链表
 
-## 最终的设计
+#### 最终的设计
 
 ![mp_struct_final](../images/mp_struct_final.png)
 
-### 使用方式
+#### 使用方式
 
 固定大小内存：
 
 1. `declare_mem_type_fixed`，全局定义内存类型
-2. 线程内部`mp_fixed_init`初始化内存池，此时还没有申请内存节点
-3. `mp_fixed_supply`申请线程内存节点，线程需要分配的话就要调用
+2. 线程内部`mp_fixed_init`初始化内存池，此时还没有申请内存节点。可选，目前已支持懒初始化
+3. `mp_fixed_supply`申请线程内存节点，线程需要分配的话就要调用。可选，目前已支持懒加载
 4. `mp_fixed_node_get`：申请内存
 5. `mp_fixed_node_put`：归还内存
 
-### 测试
+### 非固定大小内存池
+
+非固定大小内存池的架构设计与固定大小的类似，都是线程隔离，后台线程帮助跨线程回收。主要区别在于：
+
+1. 空闲节点组织使用跳表，以在分配内存时精准查找最合适的内存节点（Best Fit）
+2. 初始分配一个大块内存，分配时如果最合适的节点大小远大于所需的内存（设置一个阈值），那么进行分割
+
+#### 申请内存
+
+初始从系统申请4MB的chunk，然后在头部初始化一个内存头，加入跳表
+
+用户传入需求的size，向上按8B取整，以便后续分割节点。
+
+分配的时候，按照Best Fit原则找到节点。尝试进行以下分割，如果`New Node Data`大于阈值64B，那么就进行分割，把`New Node`加回到跳表
+
+```
+|         Node          |           New Node            |
+|-----------------------|-------------------------------|
+| Node Head | User Data | New Node Head | New Node Data |
+```
+
+#### 归还内存
+
+归还内存也是，本地申请的内存，直接加回到跳表，否则加入remote_recycle_aq等待回收
+
+#### 内存合并
+
+## 测试
 
 测试分配释放256*512B的内存，对比`calloc`和`free`
 

@@ -73,4 +73,7 @@
 #define array_size(x)   (sizeof((x))/sizeof((x)[0]))
 #endif
 
+// x向上按8取整
+#define aligned_8(x)    ((x) + 7U) & ~7U
+
 #endif

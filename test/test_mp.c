@@ -301,3 +301,55 @@ int test_mp()
 
     return 0;
 }
+
+/* ==================================== Test Non Fixed ============================================ */
+
+// 测试非定长内存池
+declare_mem_type_nonfixed(test_mp_nonfixed)
+// 内存指针
+static void *p0, *p1, *p2, *p3;
+
+// 消费
+static void* _test_mp_nonfixed_consumer(void* args)
+{
+    mp_nonfixed_node_put(p0);
+    mp_nonfixed_node_put(p1);
+    mp_nonfixed_node_put(p2);
+    mp_nonfixed_node_put(p3);
+    return NULL;
+}
+
+
+int test_mp_nonfixed()
+{
+#if 0
+    // 初始化内存池
+    mp_nonfixed_init(test_mp_nonfixed)
+    mp_nonfixed_supply(test_mp_nonfixed)
+#endif
+
+    // 申请内存
+    p0 = mp_nonfixed_node_get(test_mp_nonfixed, 64);
+    assert(p0);
+    p1 = mp_nonfixed_node_get(test_mp_nonfixed, 32);
+    assert(p1);
+    p2 = mp_nonfixed_node_get(test_mp_nonfixed, 95);
+    assert(p2);
+    p3 = mp_nonfixed_node_get(test_mp_nonfixed, 256);
+    assert(p3);
+    // 打印
+    nonfixed_mp_dump();
+
+    // 创建线程来归还
+    pthread_t consumer;
+    pthread_create(&consumer, NULL, _test_mp_nonfixed_consumer, NULL);
+    pthread_join(consumer, NULL);
+    sleep(2);   // 睡眠1s来让后台归还
+
+    // 再申请一个内存，触发回收
+    void *p4 = mp_nonfixed_node_get(test_mp_nonfixed, 512);
+    // 打印
+    nonfixed_mp_dump();
+
+    return 0;
+}

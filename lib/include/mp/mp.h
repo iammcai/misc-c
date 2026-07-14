@@ -29,6 +29,14 @@
 #include "type/type_list.h"
 #include "type/type_hash.h"
 #include "type/type_atom_queue.h"
+#include "type/type_skiplist.h"
+
+/* ========================================================================== */
+/*                             Macro Definitions                              */
+/* ========================================================================== */
+
+// 表示是否开启调试，开启时会添加计数等，导致性能降低
+#define MP_DBG_MODE             (1)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -52,36 +60,38 @@ typedef struct{
     unsigned int node_size;             // 该类型的内存节点大小
     unsigned int node_max_num;          // 该类型的最大节点数量
     mem_type_attr_hash_item_t item;     // hash item
-
     ATOMIC_UINT32_T allocated;          // 总共申请的数量
+#if MP_DBG_MODE
     ATOMIC_UINT32_T used;               // 正在使用的数量
+    ATOMIC_UINT32_T piece;              // 碎片数量，for nonfixed
+#endif
 }mem_type_attr_t;
 
 // 预定义固定大小内存空闲链表
 pre_declare_list(fixed_free)
 // 预定义固定大小内存回收原子队列
-pre_declare_spsc_atom_queue(fixed_cycle)
+pre_declare_spsc_atom_queue(fixed_recycle)
 
 // 固定大小内存节点定义
 typedef struct{
     mem_type_attr_t *attr;                  // 所属内存类型
     fixed_free_list_item_t item;            // free list item
-    fixed_cycle_spsc_atom_queue_item_t aq_item;     // cycle aq time
+    fixed_recycle_spsc_atom_queue_item_t aq_item;     // recycle aq time
     tid_t tid;                              // 内存所属的线程
     unsigned int size;                      // 用户内存大小
     char attr_aligned(8) data[];            // 柔性数组，真正给用户使用的内存区
 } attr_aligned(8) fixed_mem_node_t;
 
 // 预定义链表，存储所有回收队列
-pre_declare_list(fixed_cycle_aq)
+pre_declare_list(fixed_recycle_aq)
 
 // 回收队列定义，由全局链表组织起来
 typedef struct{
     tid_t tid;      // 回收队列所属线程
-    fixed_cycle_spsc_atom_queue_head_t local_cycle_aq_head;     // 由本线程回收的内存队列
-    fixed_cycle_spsc_atom_queue_head_t remote_cycle_aq_head;    // 由其它线程回收的内存队列
-    fixed_cycle_aq_list_item_t item;    // list item
-}fixed_cycle_aq_t;
+    fixed_recycle_spsc_atom_queue_head_t local_recycle_aq_head;     // 由本线程回收的内存队列
+    fixed_recycle_spsc_atom_queue_head_t remote_recycle_aq_head;    // 由其它线程回收的内存队列
+    fixed_recycle_aq_list_item_t item;    // list item
+}fixed_recycle_aq_t;
 
 // 预定义哈希表，用于存储所有固定大小空闲链表头
 pre_declare_hash(fixed_free_list_head)
@@ -89,10 +99,51 @@ pre_declare_hash(fixed_free_list_head)
 // 固定大小空闲内存链表头定义，哈希表存储起来
 typedef struct{
     fixed_free_list_head_t  head;   // 空闲链表头
-    fixed_cycle_aq_t cycle_aq_head; // 回收队列头
+    fixed_recycle_aq_t recycle_aq_head; // 回收队列头
     mem_type_attr_t *attr;          // 所属内存类型
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
+
+// 预定义哈希表，用来存储所有的非固定节点内存池
+pre_declare_hash(nonfixed_mp)
+// 预定义跳表，用来存储空闲的非固定内存节点
+pre_declare_skiplist(nonfixed_free)
+// 预定义spsc队列，用来存储待回收的非固定内存节点
+pre_declare_spsc_atom_queue(nonfixed_recycle)
+// 预定义链表，用来存储所有线程的非固定内存回收队列，给后台回收线程遍历用
+pre_declare_list(nonfixed_recycle_aq)
+
+// 非固定大小内存节点定义
+typedef struct{
+    mem_type_attr_t *attr;      // 所属内存类型
+    tid_t tid;                      // 逻辑tid
+    union{
+        nonfixed_free_skiplist_item_t sl_item;          // 跳表item
+        nonfixed_recycle_spsc_atom_queue_item_t aq_item;  // 回收队列item
+    }item;                          // item，内存节点要么在空闲跳表，要么在回收队列，可使用union压缩
+    unsigned char fl;               // 是否位于空闲跳表中，用于判断能否合并
+    int prev_size;                  // 前一个内存块的size
+    int size;                       // 实际可以用的内存块大小，也就是data部分
+    char attr_aligned(8) data[];    // 用户内存
+} attr_aligned(8) nonfixed_mem_node_t;
+
+// 非固定大小内存节点回收队列定义
+typedef struct{
+    tid_t tid;          // 所属线程
+    nonfixed_recycle_spsc_atom_queue_head_t local_recycle_aq;   // 需要本线程回收
+    nonfixed_recycle_spsc_atom_queue_head_t remote_recycle_aq;  // 需要其他线程回收
+    nonfixed_recycle_aq_list_item_t item;                     // 全局链表中的item
+}nonfixed_recycle_aq_t;
+
+// 非固定大小内存池定义
+typedef struct{
+    mem_type_attr_t *attr;                      // 池内节点的内存类型
+    nonfixed_free_skiplist_head_t free_sl;      // 空闲跳表头
+    nonfixed_recycle_aq_t recycle_aq;               // 待回收队列头
+    void *pool_start;
+    void *pool_end;                 // 边界
+    nonfixed_mp_hash_item_t item;               // 哈希表item
+}nonfixed_mp_t;
 
 // extern 全局统计数据
 extern ATOMIC_UINT32_T g_mp_calloc_cnt;
@@ -145,6 +196,39 @@ extern void* _mp_fixed_node_get(mem_type_attr_t *attr);
  * @param[in]   ptr     - ptr to buffer
  */
 extern void _mp_fixed_node_put(void *ptr);
+
+/**
+ * @brief       init nonfixed mem pool
+ * 
+ * @param[in]   attr    - mem type attr
+ */
+extern void _mp_nonfixed_init(mem_type_attr_t *attr);
+
+/**
+ * @brief       supply nonfixed node into pool
+ * 
+ * @param[in]   attr    - mem type attr
+ * 
+ * @note        从系统申请大块内存，加到内存池中
+ */
+extern void _mp_nonfixed_supply(mem_type_attr_t *attr);
+
+/**
+ * @brief       get node from mem pool
+ * 
+ * @param[in]   attr    - mem type attr
+ * @param[in]   size    - user need size
+ * 
+ * @retval      ptr to node
+ */
+extern void* _mp_nonfixed_node_get(mem_type_attr_t *attr, int size);
+
+/**
+ * @brief       put mem back to nonfixed mp
+ * 
+ * @param[in]   ptr - ptr to node
+ */
+extern void _mp_nonfixed_node_put(void *ptr);
 
 /**
  * @brief       call system calloc
@@ -279,6 +363,41 @@ static inline void _mem_type_attr_ ## _name ## _init()   \
 #define mp_fixed_node_put(ptr)  \
     _mp_fixed_node_put(ptr);    \
 
+/**
+ * 外部使用，声明不定长内存类型
+ */
+#define declare_mem_type_nonfixed(name) \
+    _declare_mem_type_attr(name, 0, 0, 0)   \
+/* declare_mem_type_nonfixed end */
+
+/**
+ * 外部使用，初始化非固定大小内存池
+ */
+#define mp_nonfixed_init(name)  \
+    _mp_nonfixed_init(&_mem_type_attr_ ## name);    \
+/* mp_nonfixed_init end */
+
+/**
+ * 外部使用，补充非固定大小内存节点
+ */
+#define mp_nonfixed_supply(name)    \
+    _mp_nonfixed_supply(&_mem_type_attr_ ## name);  \
+/* mp_nonfixed_supply end */
+
+/**
+ * 外部使用，申请非固定大小内存
+ */
+#define mp_nonfixed_node_get(name, size)    \
+    _mp_nonfixed_node_get(&_mem_type_attr_ ## name, size);  \
+/* mp_nonfixed_node_get end */
+
+/**
+ * 外部使用，返还内存回池子
+ */
+#define mp_nonfixed_node_put(ptr)   \
+    _mp_nonfixed_node_put(ptr); \
+/* mp_nonfixed_node_put end */
+
 /* ========================================================================== */
 /*                              Debug Function                                */
 /* ========================================================================== */
@@ -294,9 +413,17 @@ static inline void _mem_type_attr_ ## _name ## _init()   \
  */
 extern void mp_dump_fixed_free_list();
 
+/**
+ * @brief       dump all nonfixed mp
+ * 
+ * @note        调试函数，打印非固定大小内存池跳表。需要在没有内存分配和回收时使用
+ */
+extern void nonfixed_mp_dump();
+
 #else
 
 #define mp_dump_fixed_free_list()   
+#define nonfixed_mp_dump()  
 
 #endif
 

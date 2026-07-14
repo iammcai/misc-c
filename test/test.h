@@ -92,6 +92,13 @@ int test_type_hash();
 int test_mp();
 
 /**
+ * @brief       test non fixed mem pool
+ * 
+ * @note        测试非固定大小内存池
+ */
+int test_mp_nonfixed();
+
+/**
  * @brief       test atom queue for spsc 
  */
 int test_aq_spsc();
