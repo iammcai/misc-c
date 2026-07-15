@@ -1,6 +1,7 @@
 add_library(Mgnt STATIC
     cli/cli_trie.c
     cli/cli.c
+    cli/cli_gnurl.c
     web/web.c
 )
 
@@ -9,5 +10,6 @@ target_include_directories(Mgnt PUBLIC
 )
 
 target_link_libraries(Mgnt PUBLIC
+    readline
     Lib
 )

@@ -13,6 +13,7 @@
  * @history
  *   1.0 | 2026-06-09 | cai | Initial creation.
  *   1.1 | 2026-06-15 | cai | Support args pass.
+ *   2.0 | 2026-07-15 | cai | Use GUN readline.
  */
 
 #ifndef __CLI_H__

@@ -13,6 +13,7 @@
  * @history
  *   1.0 | 2026-06-10 | cai | Initial creation.
  *   1.1 | 2026-06-15 | cai | Support args pass.
+ *   1.2 | 2026-07-15 | cai | Support gnurl Tab.
  */
 
 /* ========================================================================== */
@@ -366,6 +367,67 @@ cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
     return match;
 }
 
+/**
+ * @brief       get ptr to trie item by prefix
+ * 
+ * @param[in]   prefix      - cmd line
+ * 
+ * @retval      ptr to item
+ * 
+ * @note        根据命令前缀，找到对应的trie item，支持前缀匹配
+ */
+static cli_trie_item_t* _cli_trie_item_get(const char *prefix)
+{
+    // 没有前缀，返回root
+    if(!prefix)
+        return &g_cli_trie.root;
+
+    // 将prefix转换为标准的格式，一个text数组
+    char** items = _cmd_split(prefix);
+    if(!items)
+        return NULL;
+    unsigned char items_cnt = 0;
+    while(items[items_cnt])
+        ++ items_cnt;           // 获取items个数
+
+    unsigned char i = 0;
+    cli_trie_item_t *cur_item = &g_cli_trie.root;       // 遍历指针，从root开始
+    ev_with_mutex(&g_cli_trie_mtx)
+    {
+        for(; i < items_cnt; ++ i)      // 遍历所有items
+        {
+            cli_trie_item_t *prefix_match_item = NULL;      // 可前缀匹配上的节点
+            unsigned char prefix_match_item_cnt = 0;        // 可前缀匹配上的节点数量
+
+            unsigned char j = 0;
+            for(; j < cur_item->size; ++ j)     // 遍历next数组查找
+                if(!strcmp(items[i], cur_item->next[j]->name))  // 完全匹配成功
+                    break;
+                else if(!strncmp(items[i], cur_item->next[j]->name, strlen(items[i])))  // 尝试前缀匹配
+                {
+                    ++ prefix_match_item_cnt;
+                    prefix_match_item = cur_item->next[j];
+                }
+
+            if((j == cur_item->size && !prefix_match_item_cnt) ||       // 查找失败
+                (j == cur_item->size && prefix_match_item_cnt > 1))     // 存在多个可前缀匹配
+            {
+                cur_item = NULL;
+                goto done;
+            }
+            else if(j == cur_item->size)        // 唯一前缀匹配，从这个节点继续查找
+                cur_item = prefix_match_item;
+            else
+                cur_item = cur_item->next[j];   // 完全匹配，继续查找
+        }
+    }
+    // 到这里说明找到了，返回cur_item
+
+done:
+    _cmd_split_cleanup(items);  // 清理资源
+    return cur_item;
+}
+
 void* _cli_trie_parse_execute(cli_match_info_t *match)
 {
     if(!match || !match->hook)
@@ -489,5 +551,65 @@ void* _cli_trie_excute(const char *cmd)
 
     _cmd_split_cleanup(items);
     return ret;
+}
 
+char** cli_trie_completion(const char *prefix, int start, int end, const char *text)
+{
+    char **result = NULL;
+    cli_trie_item_t *item = NULL;
+
+    //dbg_always("prefix: %s, start %d, end %d", prefix, start, end);
+
+    // 判断是否第一个单词，前面有没有空格
+    int first_text = 1;
+    int j = 0;
+    for(; j < start; ++ j)
+        if(prefix[j] != ' ')
+        {
+            first_text = 0;
+            break;
+        }
+    
+    // 啥也不输入就tab，直接返回root下挂的一层节点
+    if(first_text && start == end)
+    {
+        item = &g_cli_trie.root;
+        result = calloc(item->size+2, sizeof(char*));
+        result[0] = strdup("");
+        int k = 0;
+        for(; k < item->size; ++ k)
+            result[k+1] = strdup(item->next[k]->name);
+        return result;
+    }
+
+    if(first_text)  // tab第一个单词，直接从root开始
+        item = &g_cli_trie.root;
+    else        // tab之后的单词，需要截断掉最后一个
+    {
+        char *key = mp_calloc(start, sizeof(char));
+        memcpy(key, prefix, start);     // start前面的内存作为查找键
+        item = _cli_trie_item_get(key);
+        mp_free(key, sizeof(char)*start);
+    }
+
+    // tab失败
+    if(item == NULL || item->size == 0)
+        return NULL;
+
+    result = (char**)calloc(item->size+2, sizeof(char*));   // [0]位置为LCP，也就是text，最后一个为NULL
+    result[0] = strdup(text);
+    int i = 0;
+    int result_size = 1;    // 从1开始填充
+    for(; i < item->size; ++ i)
+        // 遍历Next，使用前缀匹配
+        if(!strncmp(text, item->next[i]->name, strlen(text)))
+            result[result_size ++] = strdup(item->next[i]->name);
+
+    if(result_size == 2)    // 如果只有一个匹配项，[0]位置需要和1一致才可以tab补全
+    {
+        free(result[0]);
+        result[0] = strdup(result[1]);
+    }
+
+    return result;
 }

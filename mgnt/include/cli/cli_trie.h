@@ -13,6 +13,7 @@
  * @history
  *   1.0 | 2026-06-10 | cai | Initial creation.
  *   1.1 | 2026-06-15 | cai | Support args pass.
+ *   1.2 | 2026-07-15 | cai | Support gnurl Tab.
  */
 
 #ifndef __CLI_TRIE_H__
@@ -104,6 +105,21 @@ extern void* _cli_trie_excute(const char *cmd);
  * @note        打印cli前缀树
  */
 extern void _cli_trie_dump();
+
+/**
+ * @brief       search in trie by prefix，find possibly text for completion
+ * 
+ * @param[in]   prefix  - prefix
+ * @param[in]   start   - last text start index
+ * @param[in]   end     - last text end index
+ * @param[in]   text    - last text
+ * 
+ * @retval      possilbly text array, end by NULL
+ * 
+ * @note        例如输入show sys，那么prefix == show sys, start == 5, end == 7
+ *              找到show节点下sys可以补全的单词数组
+ */
+extern char** cli_trie_completion(const char *prefix, int start, int end, const char *text);
 
 #endif
 /* __CLI_TRIE_H__ end */
