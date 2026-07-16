@@ -57,6 +57,13 @@ typedef void (*ev_timer_cb_func)(void *args);
 extern ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args);
 
 /**
+ * @brief       destroy an event timer
+ * 
+ * @param[in]   timer   - timer
+ */
+extern void ev_timer_destroy(ev_timer_t **timer);
+
+/**
  * @brief       start an event timer
  * 
  * @param[in]   timer  - ptr to timer
@@ -69,6 +76,17 @@ extern void ev_timer_start(ev_timer_t *timer);
  * @param[in]   timer  - ptr to timer
  */
 extern void ev_timer_stop(ev_timer_t *timer);
+
+/**
+ * @brief       get remain time till expired
+ * 
+ * @param[in]   timer   - timer
+ * 
+ * @retval      time, ms
+ * 
+ * @note        获取还有多久触发定时器
+ */
+extern uint64_t ev_timer_remain(ev_timer_t *timer);
 
 /**
  * @brief       create a high resolution timer

@@ -40,6 +40,9 @@
 // 高精度定时器监听数量
 #define EV_HIGH_RES_TIMER_COUNT_MAX     (64)
 
+// 批量处理到期定时器个数
+#define EV_TIMER_BATCH      (32)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -152,12 +155,14 @@ static void _low_res_clock_work(void *args)
 {
     uint64_t ms = _mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
+    ev_timer_t *expired_batch[EV_TIMER_BATCH] = {};
+    int batch_count = 0;
 
     ev_with_spinlock(&g_heap_spinlock)
     {
         ev_timer_t *timer;
 
-        while(timer = ev_timer_heap_top(&g_ev_timer_heap))
+        while((batch_count < EV_TIMER_BATCH) && (timer = ev_timer_heap_top(&g_ev_timer_heap)))
         {
             if(ATOM_LOAD(&timer->deleted, MORDER_ACQUIRE))  // 存在deleted标记，说明定时器被取消了
             {
@@ -173,15 +178,18 @@ static void _low_res_clock_work(void *args)
 
             dbg("timer expired, cur %lu", ms);
 
-            // 线程池异步执行任务
-            thp_submit_task(ev_timer, timer->cb, timer->args);
-
             // 定时器移出堆顶
             ev_timer_heap_pop(&g_ev_timer_heap);
             // 设置actived为0，等待重启
             ATOM_STORE(&timer->actived, 0, MORDER_RELEASE);
+
+            expired_batch[batch_count++] = timer;
         }
     }
+
+    // 锁外提交任务，避免回调函数删除定时器导致内存踩踏
+    for(int i = 0; i < batch_count; ++ i)
+        thp_submit_task(ev_timer, expired_batch[i]->cb, expired_batch[i]->args);
 }
 
 ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args)
@@ -194,6 +202,22 @@ ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args)
     timer->args = args;
 
     return timer;
+}
+
+void ev_timer_destroy(ev_timer_t **timer)
+{
+    assert(timer && *timer);
+    
+    // 如果定时器还在堆中，从堆中移除timer
+    if(ATOM_LOAD(&(*timer)->actived, MORDER_ACQUIRE))
+    {
+        ev_with_spinlock(&g_heap_spinlock)
+            ev_timer_heap_del(&g_ev_timer_heap, *timer);
+    }
+
+    // 释放内存
+    mp_free(*timer, sizeof(ev_timer_t));
+    *timer = NULL;
 }
 
 void ev_timer_start(ev_timer_t *timer)
@@ -217,6 +241,20 @@ void ev_timer_stop(ev_timer_t *timer)
     assert(timer);
     // 设置deleted标记
     ATOM_STORE(&timer->deleted, 1, MORDER_RELEASE);
+}
+
+uint64_t ev_timer_remain(ev_timer_t *timer)
+{
+    assert(timer);
+
+    ATOMIC_UINT8_T actived = ATOM_LOAD(&timer->actived, MORDER_ACQUIRE);
+    ATOMIC_UINT8_T deleted = ATOM_LOAD(&timer->deleted, MORDER_ACQUIRE);
+    
+    // 已删除或者未运行的
+    if(!actived || deleted)
+        return 0;
+    
+    return timer->expired_time - ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE);
 }
 
 /**
