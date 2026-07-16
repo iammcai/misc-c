@@ -15,6 +15,7 @@
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  *   1.2 | 2026-06-15 | cai | Add debug method.
  *   1.3 | 2026-07-11 | cai | Add auto init mp.
+ *   2.0 | 2026-07-14 | cai | Add nonfixed mp.
  */
 
 /* ========================================================================== */
@@ -49,11 +50,11 @@
 #define mp_nonfixed_data_node(_data)    container_of(_data, nonfixed_mem_node_t, data)
 
 // 打印attr的格式 标题：name,type,node_size,total,use,free,usage(%),piece
-#define MEM_ATTR_FMT_HEAD       "%-20s%-12s%-12s%-10s%-8s%-8s%-8s%-8s\n"
+#define MEM_ATTR_FMT_HEAD       "%-20s%-12s%-12s%-10s%-8s%-8s%-10s%-8s\n"
 // mp fixed 打印attr的格式 数据：name,type,total,use,free,usage
-#define MEM_ATTR_FIXED_FMT_DATA       "%-20s%-12s%-12d%-10d%-8d%-8d%-8.3f%-8s\n"
+#define MEM_ATTR_FIXED_FMT_DATA       "%-20s%-12s%-12d%-10d%-8d%-8d%-10.3f%-8s\n"
 // mp non fixed 打印attr的格式 数据：name,type,total,use,free,usage
-#define MEM_ATTR_NONFIXED_FMT_DATA    "%-20s%-12s%-12s%-10d%-8d%-8d%-8.3f%-8d\n"
+#define MEM_ATTR_NONFIXED_FMT_DATA    "%-20s%-12s%-12s%-10d%-8d%-8d%-10.3f%-8d\n"
 
 /* ========================================================================== */
 /*                           Static Function Prototypes                       */
@@ -323,14 +324,45 @@ static attr_pure_inline int _nonfixed_mem_node_valid(nonfixed_mp_t *mp, nonfixed
     return (address >= start) && (address < end);
 }
 
+/**
+ * @brief       cmp two nonfixed recycle aq
+ * 
+ * @param[in]   a1      - aq 1
+ * @param[in]   a2      - aq 2
+ * 
+ * @retval      cmp val
+ * 
+ * @note        cmp by aq tid
+ */
+static attr_pure_inline int _nonfixed_recycle_aq_cmp(nonfixed_recycle_aq_t *a1, nonfixed_recycle_aq_t *a2)
+{
+    assert(a1 && a2);
+    return a1->tid - a2->tid;
+}
+
+/**
+ * @brief       hash nonfixed recycle aq
+ * 
+ * @param[in]   a   - aq
+ * 
+ * @retval      hash val
+ * 
+ * @note        hash by tid
+ */
+static attr_pure_inline unsigned int _nonfixed_recycle_aq_hash(nonfixed_recycle_aq_t *a)
+{
+    assert(a);
+    return type_hash_jhash(&a->tid, sizeof(tid_t), 0);
+}
+
 // 定义非固定大小内存池哈希表操作
 declare_hash(nonfixed_mp, nonfixed_mp, nonfixed_mp_t, item, 1, 31, _nonfixed_mp_cmp, _nonfixed_mp_hash)
 
 // 定义非固定大小空闲跳表操作
 declare_skiplist(nonfixed_free, nonfixed_free, nonfixed_mem_node_t, item.sl_item, _nonfixed_mem_node_cmp)
 
-// 定义回收队列链表操作
-declare_list(nonfixed_recycle_aq, nonfixed_recycle_aq, nonfixed_recycle_aq_t, item)
+// 定义回收队列哈希操作
+declare_hash(nonfixed_recycle_aq, nonfixed_recycle_aq, nonfixed_recycle_aq_t, item, 1, 31, _nonfixed_recycle_aq_cmp, _nonfixed_recycle_aq_hash)
 
 // 定义回收spsc队列操作
 declare_spsc_atom_queue(nonfixed_recycle, nonfixed_recycle, nonfixed_mem_node_t, item.aq_item)
@@ -400,7 +432,7 @@ static thread_local nonfixed_mp_hash_head_t g_nonfixed_mp_hash = {};
 static thread_local int g_nonfixed_mp_hash_init_flag = 0;
 
 // 全局链表，存储所有非固定大小的回收队列
-static nonfixed_recycle_aq_list_head_t g_nonfixed_recycle_aq_list = {};
+static nonfixed_recycle_aq_hash_head_t g_nonfixed_recycle_aq_hash = {};
 
 // 缓存非固定内存池指针
 static thread_local nonfixed_mp_t *g_nonfixed_mp_cache = NULL;
@@ -666,8 +698,8 @@ static void nonfixed_mp_early_init()
     nonfixed_mp_hash_init(&g_nonfixed_mp_hash);
     g_nonfixed_mp_hash_init_flag = 1;
 
-    // 初始化存储所有recycle aq的链表
-    nonfixed_recycle_aq_list_init(&g_nonfixed_recycle_aq_list);
+    // 初始化存储所有recycle aq的哈希表
+    nonfixed_recycle_aq_hash_init(&g_nonfixed_recycle_aq_hash);
 }
 
 /**
@@ -739,7 +771,7 @@ void _mp_nonfixed_init(mem_type_attr_t *attr)
         mp->recycle_aq.tid = tid_new();                 // 获取新的tid
         nonfixed_recycle_spsc_atom_queue_init(&mp->recycle_aq.local_recycle_aq);    // 初始化本地回收队列
         nonfixed_recycle_spsc_atom_queue_init(&mp->recycle_aq.remote_recycle_aq);   // 初始化远程回收队列
-        nonfixed_recycle_aq_list_add_head(&g_nonfixed_recycle_aq_list, &mp->recycle_aq);    // AQ加入全局链表
+        nonfixed_recycle_aq_hash_add(&g_nonfixed_recycle_aq_hash, &mp->recycle_aq);    // AQ加入全局哈希表
         // mp加到哈希表中
         nonfixed_mp_hash_add(&g_nonfixed_mp_hash, mp);
     }
@@ -895,7 +927,8 @@ void* _mp_nonfixed_node_get(mem_type_attr_t *attr, int size)
     ATOM_FETCH_ADD(&attr->used, used, MORDER_RELAXED);
 #endif
 
-    // 返回给用户data部分
+    // 进行清空，再返回给用户data部分
+    memset(mp_nonfixed_node_data(node), 0, aligned_size);
     return mp_nonfixed_node_data(node);
 }
 
@@ -954,28 +987,20 @@ void _mp_nonfixed_node_put(void *ptr)
 
 static void _nonfixed_node_recycle_work(void *args)
 {
-    // 遍历全局aq链表，将remote_aq中的内存节点挂到对应tid的local_aq中
-    nonfixed_recycle_aq_t *recycle_aq = nonfixed_recycle_aq_list_first(&g_nonfixed_recycle_aq_list);
+    // 遍历全局aq哈希表，将remote_aq中的内存节点挂到对应tid的local_aq中
+    nonfixed_recycle_aq_t *recycle_aq = nonfixed_recycle_aq_hash_first(&g_nonfixed_recycle_aq_hash);
     while(recycle_aq)
     {
         nonfixed_mem_node_t *node = NULL;
         while(node = nonfixed_recycle_spsc_atom_queue_pop(&recycle_aq->remote_recycle_aq))
         {
-            nonfixed_recycle_aq_t *aq = nonfixed_recycle_aq_list_first(&g_nonfixed_recycle_aq_list);
-            while(aq)
-            {
-                if(aq->tid == node->tid)
-                {
-                    nonfixed_recycle_spsc_atom_queue_push(&aq->local_recycle_aq, node);
-                    break;
-                }
-                aq = nonfixed_recycle_aq_list_next(aq);
-            }
-            assert(aq);     // aq == NULL说明查找失败了，不应发生
+            nonfixed_recycle_aq_t key = {.tid = node->tid};
+            nonfixed_recycle_aq_t *aq = nonfixed_recycle_aq_hash_find(&g_nonfixed_recycle_aq_hash, &key);
+            assert(aq);     // 必须有aq
+            nonfixed_recycle_spsc_atom_queue_push(&aq->local_recycle_aq, node);
         }
-
         // 处理下一个aq
-        recycle_aq = nonfixed_recycle_aq_list_next(recycle_aq);
+        recycle_aq = nonfixed_recycle_aq_hash_next(&g_nonfixed_recycle_aq_hash, recycle_aq);
     }
 }
 

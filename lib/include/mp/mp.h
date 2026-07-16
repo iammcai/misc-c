@@ -15,6 +15,7 @@
  *   1.1 | 2026-06-14 | cai | Amend init, add mp_fixed_supply.
  *   1.2 | 2026-06-15 | cai | Add debug method.
  *   1.3 | 2026-07-11 | cai | Add auto init mp.
+ *   2.0 | 2026-07-14 | cai | Add nonfixed mp.
  */
 
 #ifndef __MP_H__
@@ -110,8 +111,8 @@ pre_declare_hash(nonfixed_mp)
 pre_declare_skiplist(nonfixed_free)
 // 预定义spsc队列，用来存储待回收的非固定内存节点
 pre_declare_spsc_atom_queue(nonfixed_recycle)
-// 预定义链表，用来存储所有线程的非固定内存回收队列，给后台回收线程遍历用
-pre_declare_list(nonfixed_recycle_aq)
+// 预定义哈希表，用来存储所有线程的非固定内存回收队列，给后台回收线程遍历用
+pre_declare_hash(nonfixed_recycle_aq)
 
 // 非固定大小内存节点定义
 typedef struct{
@@ -132,7 +133,7 @@ typedef struct{
     tid_t tid;          // 所属线程
     nonfixed_recycle_spsc_atom_queue_head_t local_recycle_aq;   // 需要本线程回收
     nonfixed_recycle_spsc_atom_queue_head_t remote_recycle_aq;  // 需要其他线程回收
-    nonfixed_recycle_aq_list_item_t item;                     // 全局链表中的item
+    nonfixed_recycle_aq_hash_item_t item;                       // 全局哈希表中的item
 }nonfixed_recycle_aq_t;
 
 // 非固定大小内存池定义
