@@ -50,7 +50,7 @@ typedef struct ftx_s ftx_t;
  * 外部使用，发送自定义报文
  */
 #define ftx_send(_if_name, ctx, len)    \
-    _ftx_send(#_if_name, ctx, len); \
+    _ftx_send(_if_name, ctx, len);  \
 /* ftx_send end */
 
 /**
@@ -82,6 +82,29 @@ extern void _ftx_init(char *if_name);
  * @param[in]   len     - packet length
  */
 extern void _ftx_send(char *if_name, void *ctx, unsigned int len);
+
+/**
+ * @brief       get mac addr by interface name
+ * 
+ * @param[in]   if_name     - if name
+ * 
+ * @param[out]  mac_addr    - u8 array, size is 6
+ * 
+ * @retval      0 - successful, -1 - fail
+ */
+extern int ftx_mac_get(char *if_name, uint8_t *mac_addr);
+
+
+/**
+ * @brief       get ipv4 addr by interface name
+ * 
+ * @param[in]   if_name     - if name
+ * 
+ * @param[out]  ip_addr     - uint32, net order
+ * 
+ * @retval      0 - successful, -1 - fail
+ */
+extern int ftx_ip_get(char *if_name, uint32_t *ip_addr);
 
 #endif
 /* __FTX_H__ end */

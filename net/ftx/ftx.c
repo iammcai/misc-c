@@ -67,6 +67,9 @@ struct ftx_s{
     char *if_name;    // 接口名
     int if_index;           // 接口index
     uint8_t if_mac[MAC_ADDR_SIZE];  // 接口mac
+    struct in_addr ipv4_addr;       // 接口ip，网络字节序
+    char ipv4_str[INET_ADDRSTRLEN];   // ip字符串
+
     int raw_fd;             // SOCKET_RAW 使用的fd
     struct sockaddr_ll dest;    // 缓存目的
 
@@ -162,10 +165,13 @@ static void* _ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
     while(ftxor)
     {
         safe_printf(
-            "\n********************************\nif_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\nstatus: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n", 
+            "\n********************************\nif_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n"
+            "if_ipv4: %s\n"
+            "status: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n", 
             ftxor->if_name, ftxor->if_index,
             ftxor->if_mac[0],ftxor->if_mac[1],ftxor->if_mac[2],
             ftxor->if_mac[3],ftxor->if_mac[4],ftxor->if_mac[5],
+            ftxor->ipv4_str,
             ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE) ? "ready" : "invalid",
             ATOM_LOAD(&ftxor->stat.tx_count, MORDER_ACQUIRE),
             ATOM_LOAD(&ftxor->stat.tx_size, MORDER_ACQUIRE)
@@ -225,6 +231,15 @@ void _ftx_init(char *if_name)
         goto cleanup;
     }
     memcpy(ftxor->if_mac, ifr.ifr_hwaddr.sa_data, MAC_ADDR_SIZE);
+    // 获取接口ip
+    if(0 == ioctl(ftxor->raw_fd, SIOCGIFADDR, &ifr))
+    {
+        struct sockaddr_in *ip_addr = (struct sockaddr_in *)&ifr.ifr_addr;
+        ftxor->ipv4_addr = ip_addr->sin_addr;   // 保存网络字节序
+        inet_ntop(AF_INET, &ip_addr->sin_addr, ftxor->ipv4_str, INET_ADDRSTRLEN);
+    }
+    else
+        dbg_error("ioctl get ip addr fail, err: %s", strerror(errno));
 
     // 设置发包目的
     ftxor->dest.sll_family = AF_PACKET;
@@ -310,7 +325,7 @@ static void* _ftx_tx_routine(void *args)
                 }
             }
 
-            dbg("send %d packet ok", send);
+            dbg_major("send %d packet ok", send);
 
             // 统计信息更新
             ATOM_FETCH_ADD(&ftxor->stat.tx_count, send, MORDER_ACQ_REL);
@@ -347,7 +362,35 @@ void _ftx_send(char *if_name, void *ctx, unsigned int len)
         if(msg_q_ret_ok == _msg_q_push(ftxor->tx_q, &packet, sizeof(packet)))
             break;
 
-    dbg("push msg to send packet ok");
+    dbg_major("push msg to send packet ok");
+}
+
+int ftx_mac_get(char *if_name, uint8_t *mac_addr)
+{
+    pfm_ensure_ret(mac_addr, -1);
+
+    // 获取接口
+    ftx_t key = {.if_name = if_name};
+    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    pfm_ensure_ret(ftxor, -1);
+
+    memcpy(mac_addr, ftxor->if_mac, MAC_ADDR_SIZE);
+
+    return 0;
+}
+
+int ftx_ip_get(char *if_name, uint32_t *ip_addr)
+{
+    pfm_ensure_ret(ip_addr, -1);
+
+    // 获取接口
+    ftx_t key = {.if_name = if_name};
+    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    pfm_ensure_ret(ftxor, -1);
+
+    *ip_addr = ftxor->ipv4_addr.s_addr;
+
+    return 0;
 }
 
 static void ftx_early_init(void)

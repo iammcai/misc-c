@@ -43,9 +43,67 @@
 
 #define ZCAP_HASH_Q_SIZE        (4)     // hash分片处理报文的队列数量，必须2的幂次
 
+// 过滤字段长度
+#define FIELD_DATA_SIZE     (6)
+// 过滤掩码长度
+#define FIELD_MASK_SIZE     (6)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
+
+// 匹配filter执行的回调
+typedef void (*zcap_pkt_filter_match_cb)(char *packet, int len, void *args);
+
+// 报文条件注册字段枚举
+typedef enum{
+    MAC_DA,     // 目的mac
+    MAC_SA,     // 源mac
+    LEN_TYPE,   // ether type
+    IP_DA,      // 目的ip
+    IP_SA,      // 源ip
+    PRO_TYPE,   // ip protocol
+    DPORT,      // 目的端口号
+    SPORT,      // 源端口号
+}zcap_pkt_field_e;
+
+// 报文注册字段信息，与zcap_packet_field_e对应
+typedef struct{
+    uint8_t mac_da[MAC_ADDR_SIZE];
+    uint8_t mac_sa[MAC_ADDR_SIZE];
+    uint16_t ether_type;
+    uint32_t ip_da;
+    uint32_t ip_sa;
+    uint8_t ip_pro;
+    uint16_t l4_dport;
+    uint16_t l4_sport;
+}zcap_pkt_info_t;
+
+// 预定义field链表，存储过滤项包含的字段
+pre_declare_list(zcap_pkt_field)
+
+// 报文过滤field定义
+typedef struct{
+    zcap_pkt_field_e field;
+    uint8_t data[FIELD_DATA_SIZE];      // 最多需要6B来记录
+    uint8_t mask[FIELD_MASK_SIZE];      // 掩码
+    zcap_pkt_field_list_item_t item;    // 链表item
+}zcap_pkt_field_t;
+
+// 预定义报文过滤项哈希表，存储所有注册的过滤项
+pre_declare_hash(zcap_pkt_filter)
+
+// 报文过滤项定义
+typedef struct{
+    const char *name;       // 名称
+    int enable;             // 是否开启
+    zcap_pkt_field_list_head_t fields;  // 存储fields的链表
+    zcap_pkt_filter_match_cb cb;        // 匹配执行的回调
+    void *args;         // 回调入参
+    zcap_pkt_filter_hash_item_t item;   // filter哈希表item
+    
+    ATOMIC_UINT64_T match_cnt;      // 命中次数
+}zcap_pkt_filter_t;
 
 // 预定义hash，用于存zcap_t
 pre_declare_hash(zcaptor)
@@ -58,9 +116,6 @@ typedef struct{
 
     // 报文类型
     unsigned long err;          // 错包数量
-    unsigned long arp;          // arp报文数量
-    unsigned long tcp;          // tcp报文数量
-    unsigned long udp;          // udp报文数量
 
     //以下用于速率统计
     unsigned long curr_count;   // 本次统计数量
@@ -120,6 +175,8 @@ typedef struct{
 
     int event_fd;               // 内核计数器，用于通知进行解析报文
 
+    zcap_pkt_filter_hash_head_t filters;    // 管理注册的过滤条件的哈希表
+
     zcaptor_hash_item_t item;   // hash item
 }zcap_t;
 
@@ -146,7 +203,11 @@ static zcap_t _ifname ## _zcaptor = {   \
     .event_fd = -1, \
     .alz = {},  \
 };  \
-_zcap_init(&_ifname ## _zcaptor);   \
+static void _ifname ## _zcap_init(void) attr_ctor(CTOR_PRIO_MID);   \
+static void _ifname ## _zcap_init(void) \
+{   \
+    _zcap_init(&_ifname ## _zcaptor);   \
+}   \
 /* _zcap_init end */
 
 /**
@@ -162,6 +223,33 @@ _zcap_init(&_ifname ## _zcaptor);   \
 #define zcap_cancel(_ifname)    \
     _zcap_cancel(&_ifname ## _zcaptor);
 /* zcap_cancel end */
+
+/**
+ * 外部使用，注册过滤项
+ */
+#define zcap_register_pkt_filter(_ifname, _filter_name, _cb, _args) \
+    _zcap_register_pkt_filter(_ifname, _filter_name, _cb, _args);   \
+/* zcap_register_pkt_filter end */
+
+/**
+ * 内部使用，注册过滤字段
+ */
+#define zcap_register_field(_ifname, _filter_name, field_type, data, mask)  \
+    _zcap_register_field(_ifname, _filter_name, field_type, data, mask);    
+/* zcap_register_field end */
+
+/**
+ * 外部使用，注册len type字段
+ */
+#define zcap_register_field_len_type(_ifname, _filter_name, _data, _mask) do  { \
+    uint8_t data[FIELD_DATA_SIZE];  \
+    uint8_t mask[FIELD_MASK_SIZE];  \
+    data[0] = (_data >> 8) & 0xff;  \
+    data[1] = (_data >> 0) & 0xff;  \
+    mask[0] = (_mask >> 8) & 0xff;  \
+    mask[1] = (_mask >> 0) & 0xff;  \
+    zcap_register_field(_ifname, _filter_name, LEN_TYPE, data, mask);   \
+}while(0);  \
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -188,13 +276,26 @@ extern void _zcap_start(zcap_t *captor);
  */
 extern void _zcap_cancel(zcap_t *captor);
 
-/* ========================================================================== */
-/*                          Global/Static Variables                           */
-/* ========================================================================== */
+/**
+ * @brief       register filter into zcaptor
+ * 
+ * @param[in]   if_name         - if name
+ * @param[in]   filter_name     - filter name
+ * @param[in]   cb              - match cb
+ * @param[in]   args            - cb args
+ */
+extern void _zcap_register_pkt_filter(const char *if_name, const char *filter_name, zcap_pkt_filter_match_cb cb, void *args);
 
-/* ========================================================================== */
-/*                           Function Definition                              */
-/* ========================================================================== */
+/**
+ * @brief       register field into filter
+ * 
+ * @param[in]   if_name     - if name
+ * @param[in]   filter_name - filter name
+ * @param[in]   field       - field of pkt
+ * @param[in]   data        - field data
+ * @param[in]   mask        - field mask
+ */
+extern void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt_field_e field, uint8_t *data, uint8_t *mask);
 
 #endif
 /* __ZCAP_H__ end */

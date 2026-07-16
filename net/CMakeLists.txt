@@ -1,6 +1,7 @@
 add_library(Net STATIC
     zcap/zcap.c
     ftx/ftx.c
+    nt/arp.c
 )
 
 target_include_directories(Net PUBLIC

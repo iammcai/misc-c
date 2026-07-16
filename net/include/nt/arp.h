@@ -1,55 +1,39 @@
 /*
  * Copyright (C) cai<sybstudy@yeah.net>. All rights reserved.
  *
- * @file    net.h
- * @brief   收发包公用接口头文件
+ * @file    arp.h
+ * @brief   arp相关功能头文件
  *
  * @author  cai<sybstudy@yeah.net>
- * @date    2026-07-08
+ * @date    2026-07-10
  * @version 1.0
  *
  * @note    
  *
  * @history
- *   1.0 | 2026-07-08 | cai | Initial creation.
+ *   1.0 | 2026-07-10 | cai | Initial creation.
  */
 
-#ifndef __NET_H__
-#define __NET_H__
+#ifndef __ARP_H__
+#define __ARP_H__
 
 /* ========================================================================== */
 /*                               Include Files                                */
 /* ========================================================================== */
 
-#include <stdint.h>
-#include <arpa/inet.h>
-#include "plat/compiler.h"
-
-/* ========================================================================== */
-/*                             Macro Definitions                              */
-/* ========================================================================== */
-
-// MAC地址长度
-#define MAC_ADDR_SIZE   (6)
-// IPV4地址长度
-#define IPV4_ADDR_SIZE  (4)
-
-// IPV4类型
-#define IPV4    (0x0800)
-// ARP类型
-#define ARP     (0x0806)
+#include "net.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-// l2结构，暂不考虑vlan
-typedef struct{
-    uint8_t mac_da[MAC_ADDR_SIZE];
-    uint8_t mac_sa[MAC_ADDR_SIZE];
-    uint16_t ether_type;
-}attr_packed pkthdr_l2_t;
-_Static_assert(sizeof(pkthdr_l2_t) == 14, "sizeof pkthdr_l2_t must be 14");
+/* ========================================================================== */
+/*                             Macro Definitions                              */
+/* ========================================================================== */
+
+/* ========================================================================== */
+/*                             Global Variables                               */
+/* ========================================================================== */
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -60,4 +44,4 @@ _Static_assert(sizeof(pkthdr_l2_t) == 14, "sizeof pkthdr_l2_t must be 14");
 /* ========================================================================== */
 
 #endif
-/* __NET_H__ end */
+/* #ifndef __ARP_H_ end */

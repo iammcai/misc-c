@@ -90,6 +90,42 @@ typedef struct{
 /* ========================================================================== */
 
 /**
+ * @brief       cmp two pkt filter
+ * 
+ * @param[in]   f1  - filter 1
+ * @param[in]   f2  - filter 2
+ * 
+ * @retval      cmp val
+ * 
+ * @note        cmp by name
+ */
+static attr_pure_inline int _zcap_pkt_filter_cmp(zcap_pkt_filter_t *f1, zcap_pkt_filter_t *f2)
+{
+    assert(f1 && f1->name && f2 && f2->name);
+    return strcmp(f1->name, f2->name);
+}
+
+/**
+ * @brief       hash pkt filter
+ * 
+ * @param[in]   filter
+ * 
+ * @retval      hash val
+ * 
+ * @note        hash by name
+ */
+static attr_pure_inline unsigned int _zcap_pkt_filter_hash(zcap_pkt_filter_t *filter)
+{
+    assert(filter && filter->name);
+    return type_hash_jhash(filter->name, strlen(filter->name), 0);
+}
+
+// 定义field链表操作
+declare_list(zcap_pkt_field, zcap_pkt_field, zcap_pkt_field_t, item)
+// 定义filter哈希表操作
+declare_hash(zcap_pkt_filter, zcap_pkt_filter, zcap_pkt_filter_t, item, 1, 31, _zcap_pkt_filter_cmp, _zcap_pkt_filter_hash)
+
+/**
  * @brief       extract packet flow key
  * 
  * @param[in]   packet  - ptr to packet info
@@ -593,6 +629,138 @@ static void _zcap_analyze_el_cb(int fd, void *args)
 }
 
 /**
+ * @brief       提取报文信息，用来匹配过滤器
+ * 
+ * @param[in]   packet
+ * 
+ * @param[out]  info    - packet info
+ */
+static void _zcap_pkt_info_extract(zcap_packet_t *packet, zcap_pkt_info_t *info)
+{
+    // 错包不做解析
+    if(packet->flow_key.err_pkt)
+        return;
+
+    memset(info, 0, sizeof(zcap_pkt_info_t));
+
+    // 提取l2信息
+    uint32_t len = packet->len;
+    const struct ethhdr *eth = (const struct ethhdr*)packet->packet;    // l2头部
+    memcpy(info->mac_da, eth->h_dest, MAC_ADDR_SIZE);
+    memcpy(info->mac_sa, eth->h_source, MAC_ADDR_SIZE);
+    info->ether_type = ntohs(eth->h_proto);
+
+    uint32_t offset = sizeof(struct ethhdr);    // 偏移，用来计算下标是否越界
+
+    // 暂时不考虑vlan
+    if(ETH_P_IP == info->ether_type)
+    {
+        const struct iphdr *ip = (const struct iphdr*)((uint8_t*)packet->packet + offset);  // l3头部
+        uint32_t ip_hdr_len = ip->ihl * 4;      // l3的长度，以4B为单位，包含头部
+
+        uint32_t ip_da_h = ntohl(ip->daddr);
+        uint32_t ip_sa_h = ntohl(ip->saddr);
+
+        info->ip_pro = ip->protocol;
+
+        if(IPPROTO_TCP == ip->protocol || IPPROTO_UDP == ip->protocol)  // 处理tcp/udp
+        {
+            info->l4_sport = packet->flow_key.src_port;
+            info->l4_dport = packet->flow_key.dst_port;
+        }
+    }
+}
+
+/**
+ * @brief       check if packet field match info
+ * 
+ * @param[in]   field   - packet field
+ * @param[in]   info    - packet info, extract by _zcap_pkt_info_extract
+ * 
+ * @retval      1 - match, 0 - not match
+ */
+static int _zcap_pkt_filed_match(zcap_pkt_field_t *field, zcap_pkt_info_t *info)
+{
+    switch(field->field)
+    {
+        case MAC_DA:
+        {
+            uint8_t key[FIELD_DATA_SIZE] = {};
+            int i = 0;
+            for(; i < FIELD_DATA_SIZE; ++ i)
+                key[i] = field->data[i] & field->mask[i];
+            if(!memcmp(key, info->mac_da, MAC_ADDR_SIZE))
+                return 1;
+            break;
+        }
+        case MAC_SA:
+        {
+            uint8_t key[FIELD_DATA_SIZE] = {};
+            int i = 0;
+            for(; i < FIELD_DATA_SIZE; ++ i)
+                key[i] = field->data[i] & field->mask[i];
+            if(!memcmp(key, info->mac_sa, MAC_ADDR_SIZE))
+                return 1;
+            break;
+        }
+        case LEN_TYPE:
+        {
+            uint16_t key = (uint16_t)((field->data[0] & field->mask[0]) << 8) | (field->data[1] & field->mask[1]);
+            if(key == info->ether_type)
+                return 1;
+            break;
+        }
+        case IP_DA:
+        {
+            uint8_t key[IPV4_ADDR_SIZE] = {};
+            int i = 0;
+            for(; i < IPV4_ADDR_SIZE; ++ i)
+                key[i] = field->data[i] & field->mask[i];
+            uint32_t ip_da_h = (key[0] << 24) | (key[1] << 16) | (key[2] << 8) | key[3];
+            if(ip_da_h == info->ip_da)
+                return 1;
+            break;
+        }
+        case IP_SA:
+        {
+            uint8_t key[IPV4_ADDR_SIZE] = {};
+            int i = 0;
+            for(; i < IPV4_ADDR_SIZE; ++ i)
+                key[i] = field->data[i] & field->mask[i];
+            uint32_t ip_sa_h = (key[0] << 24) | (key[1] << 16) | (key[2] << 8) | key[3];
+            if(ip_sa_h == info->ip_sa)
+                return 1;
+            break;
+        }
+        case PRO_TYPE:
+        {
+            uint8_t key = field->data[0] & field->mask[0];
+            if(key == info->ip_pro)
+                return 1;
+            break;
+        }
+        case DPORT:
+        {
+            uint16_t key = ((field->data[0] & field->mask[0]) << 8) | (field->data[1] & field->mask[1]);
+            if(key == info->l4_dport)
+                return 1;
+            break;
+        }
+        case SPORT:
+        {
+            uint16_t key = ((field->data[0] & field->mask[0]) << 8) | (field->data[1] & field->mask[1]);
+            if(key == info->l4_sport)
+                return 1;
+            break;
+        }
+        default:
+            return 0;
+    }
+
+    return 0;
+}
+
+/**
  * @brief       analyze a packet
  * 
  * @param[in]   captor  - zcaptor
@@ -621,18 +789,38 @@ static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
         // 五元组信息统计
         if(packet->flow_key.err_pkt)
             ATOM_FETCH_ADD(&stat->err, 1, MORDER_ACQ_REL);
-        else if(packet->flow_key.protocol == IPPROTO_TCP)
-            ATOM_FETCH_ADD(&stat->tcp, 1, MORDER_ACQ_REL);
-        else if(packet->flow_key.protocol == IPPROTO_UDP)
-            ATOM_FETCH_ADD(&stat->udp, 1, MORDER_ACQ_REL);
-
-        // arp信息统计
-        pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
-        if(ntohs(l2->ether_type) == ARP)
-            ATOM_FETCH_ADD(&stat->arp, 1, MORDER_RELAXED);
 
         ATOM_FETCH_ADD(&stat->count, 1, MORDER_ACQ_REL);
         ATOM_FETCH_ADD(&stat->size, packet->len, MORDER_ACQ_REL);
+    }
+
+    // 提取过滤器所需要的信息
+    zcap_pkt_info_t packet_info = {};
+    _zcap_pkt_info_extract(packet, &packet_info);
+
+    // 遍历注册的过滤条件，执行回调
+    zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
+    while(filter)
+    {
+        // 遍历field链表，逐个检查字段是否满足
+        int match = 1;
+        zcap_pkt_field_t *field = zcap_pkt_field_list_first(&filter->fields);
+        while(field)
+        {
+            match = _zcap_pkt_filed_match(field, &packet_info);
+            if(!match)
+                break;
+            // 检查下一个field
+            field = zcap_pkt_field_list_next(field);
+        }
+        if(match)
+        {
+            filter->cb(packet->packet, packet->len, filter->args);
+            ATOM_FETCH_ADD(&filter->match_cnt, 1, MORDER_RELAXED);      // 命中计数++
+        }
+
+        // 继续检查下一个过滤器
+        filter = zcap_pkt_filter_hash_next(&captor->filters, filter);
     }
 }
 
@@ -679,6 +867,9 @@ void _zcap_init(zcap_t *captor)
 {
     // 加到哈希表
     zcaptor_hash_add(&g_zcaptor_hash_head, captor);
+
+    // 初始化过滤哈希表
+    zcap_pkt_filter_hash_init(&captor->filters);
 
     // rx_t、alz_t消息队列初始化
     zcap_packet_spsc_atom_queue_init(&captor->aq_head);
@@ -758,6 +949,54 @@ void _zcap_cancel(zcap_t *captor)
     }
 }
 
+void _zcap_register_pkt_filter(const char *if_name, const char *filter_name, zcap_pkt_filter_match_cb cb, void *args)
+{
+    assert(if_name && filter_name && cb);
+
+    // 查找zcaptor
+    zcap_t captor_key = {.if_name = if_name};
+    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    assert(zcaptor);
+
+    zcap_pkt_filter_t key = {.name = filter_name};
+    zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_find(&zcaptor->filters, &key);
+    if(filter)      // 存在的话不做修改
+        return;
+
+    filter = (zcap_pkt_filter_t*)mp_calloc(1, sizeof(zcap_pkt_filter_t));
+    filter->name = mp_strdup(filter_name);
+    filter->enable = 1;     // 默认使能
+    filter->cb = cb;
+    filter->args = args;
+    // 初始化field链表
+    zcap_pkt_field_list_init(&filter->fields);
+    // filter加入哈希表
+    zcap_pkt_filter_hash_add(&zcaptor->filters, filter);
+}
+
+void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt_field_e field, uint8_t *data, uint8_t *mask)
+{
+    assert(if_name && filter_name && data && mask);
+
+    // 查找zcaptor
+    zcap_t captor_key = {.if_name = if_name};
+    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    assert(zcaptor);
+
+    // 查找过滤器
+    zcap_pkt_filter_t key = {.name = filter_name};
+    zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_find(&zcaptor->filters, &key);
+    assert(filter);
+
+    // 构造新的field
+    zcap_pkt_field_t *new_field = (zcap_pkt_field_t*)mp_calloc(1, sizeof(zcap_pkt_field_t));
+    new_field->field = field;
+    memcpy(new_field->data, data, FIELD_DATA_SIZE);
+    memcpy(new_field->mask, mask, FIELD_MASK_SIZE);
+    // 字段添加到链表中
+    zcap_pkt_field_list_add_tail(&filter->fields, new_field);
+}
+
 static inline void zcap_global_init()
 {
     // 注册cli
@@ -795,10 +1034,17 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
 
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "arp", captor->stat.arp);
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "tcp", captor->stat.tcp);
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "udp", captor->stat.udp);
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "ERROR", captor->stat.err);
         }
+        
+        // 打印注册的过滤项
+        zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
+        while(filter)
+        {
+            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, filter->name, ATOM_LOAD(&filter->match_cnt, MORDER_RELAXED));
+            filter = zcap_pkt_filter_hash_next(&captor->filters, filter);
+        }
+
         safe_printf("********************************\n\n");
 
         captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);

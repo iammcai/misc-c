@@ -48,6 +48,10 @@
 /*                               Extern Symbols                               */
 /* ========================================================================== */
 
+// 声明接口抓包
+declare_zcap(eth0)
+declare_zcap(wlan0)
+
 /* ========================================================================== */
 /*                         Private Function Implementations                   */
 /* ========================================================================== */
@@ -60,12 +64,10 @@ static attr_force_inline void _platfrom_init()
     // 开启debug
     debug_level_set(debug_level_all);
 
-    // 声明接口eth0收发
-    declare_zcap(eth0);
+    // 启动接口收发包
     zcap_start(eth0);
     declare_ftx(eth0);
-    // 声明接口wlan0收发
-    declare_zcap(wlan0);
+    // 启动接口wlan0收发
     zcap_start(wlan0);
     declare_ftx(wlan0);
 
@@ -94,7 +96,7 @@ int main()
 #endif
 
 #if TEST_MP
-    test_mp();
+    test_mp_nonfixed();
 #endif
 
 #if TEST_AQ
