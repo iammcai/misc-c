@@ -24,6 +24,8 @@
 #include "net.h"
 #include "plat/compiler.h"
 #include "type/type_hash.h"
+#include "plat/debug.h"
+#include "mp/mp.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -72,7 +74,7 @@ typedef struct ftx_s ftx_t;
  * 
  * @note        内部使用，初始化发包管理结构
  */
-extern void _ftx_init(char *if_name);
+extern void _ftx_init(const char *if_name);
 
 /**
  * @brief       send packet
@@ -81,7 +83,7 @@ extern void _ftx_init(char *if_name);
  * @param[in]   ctx     - packet
  * @param[in]   len     - packet length
  */
-extern void _ftx_send(char *if_name, void *ctx, unsigned int len);
+extern void _ftx_send(const char *if_name, void *ctx, unsigned int len);
 
 /**
  * @brief       get mac addr by interface name
@@ -90,10 +92,9 @@ extern void _ftx_send(char *if_name, void *ctx, unsigned int len);
  * 
  * @param[out]  mac_addr    - u8 array, size is 6
  * 
- * @retval      0 - successful, -1 - fail
+ * @retval      error code
  */
-extern int ftx_mac_get(char *if_name, uint8_t *mac_addr);
-
+extern error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr);
 
 /**
  * @brief       get ipv4 addr by interface name
@@ -102,9 +103,9 @@ extern int ftx_mac_get(char *if_name, uint8_t *mac_addr);
  * 
  * @param[out]  ip_addr     - uint32, net order
  * 
- * @retval      0 - successful, -1 - fail
+ * @retval      error code
  */
-extern int ftx_ip_get(char *if_name, uint32_t *ip_addr);
+extern error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr);
 
 #endif
 /* __FTX_H__ end */

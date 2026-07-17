@@ -88,7 +88,7 @@ static attr_pure_inline int _ev_timer_cmp(ev_timer_t *t1, ev_timer_t *t2)
     return 0;
 }
 
-static attr_force_inline uint64_t _mono_time_get()
+uint64_t mono_time_get()
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -153,7 +153,7 @@ static inline void _low_res_clock_init()
 
 static void _low_res_clock_work(void *args)
 {
-    uint64_t ms = _mono_time_get();
+    uint64_t ms = mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
     ev_timer_t *expired_batch[EV_TIMER_BATCH] = {};
     int batch_count = 0;
@@ -350,7 +350,7 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
 static void ev_timer_init(void)
 {
     // 更新当前时钟
-    uint64_t ms = _mono_time_get();
+    uint64_t ms = mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
 
     ev_timer_heap_init(&g_ev_timer_heap);   // 初始化堆

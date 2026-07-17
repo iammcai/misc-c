@@ -33,8 +33,8 @@
 
 #define RECYCLE_WAKE_THRESHOLD  (64)   // 唤醒阈值
 
-// 非固定大小内存池大小4MB
-#define NONFIXED_MP_MEM_SIZE    (4 << 20)
+// 非固定大小内存池大小64KB
+#define NONFIXED_MP_MEM_SIZE    (64 << 10)
 
 // 非固定大小内存碎片阈值，64B给用户使用
 #define NONFIXED_MP_MEM_PIECE   (64)
@@ -1024,7 +1024,7 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
     safe_printf("MP debug mode: [%s], Use-Free-Usage-Piece invalid while close!\n\n", MP_DBG_MODE ? "open" : "close");
 
     safe_printf(MEM_ATTR_FMT_HEAD MEM_ATTR_FMT_HEAD, 
-        "Name", "Type", "Node_Size", "Total", "Use", "Free", "Usage(\%)", "piece",
+        "Name", "Type", "Node_Size", "Total", "Use", "Free", "Usage(%%)", "piece",
         "----", "----", "---------", "-----", "---", "----", "--------",  "-----"
     );
 
@@ -1039,13 +1039,13 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
 #endif
             if(mem_type_attr_fixed_size(attr))
 #if MP_DBG_MODE
-                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total : 0, "/");
+                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total*100 : 0, "/");
 #else
                 safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, 0, 0, 0.0, "/");
 #endif
             else
 #if MP_DBG_MODE
-                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, used, total-used, total ? (double)used/total : 0, ATOM_LOAD(&attr->piece, MORDER_RELAXED));
+                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, used, total-used, total ? (double)used/total*100 : 0, ATOM_LOAD(&attr->piece, MORDER_RELAXED));
 #else
                 safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, 0, 0, 0.0, 0);
 #endif

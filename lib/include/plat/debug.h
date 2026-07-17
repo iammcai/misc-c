@@ -39,6 +39,20 @@ typedef enum{
     debug_level_cnt,
 }debug_level_e;
 
+// 错误码枚举
+typedef enum{
+    ERR_NO_ERROR = 0,               // 无错误
+    ERR_BAD_PARAM,                  // 参数错误
+    ERR_NO_MEM,                     // 内存不足
+
+    // nt模块
+    ERR_NT_START = 1000,            // net tool错误码起始
+    ERR_NT_IF_ERROR,                // 接口错误
+    ERR_NT_ARP_CACHE_NOT_EXIST,     // arp cache不存在
+    ERR_NT_ARP_SEND_FAIL,           // 发送arp失败
+    ERR_NT_PING_DMAC_UNKNOWN,       // ping目的mac未知
+}error_code_e;
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */

@@ -28,7 +28,6 @@
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
 #include "ftx/ftx.h"
-#include "plat/debug.h"
 #include "mp/mp.h"
 #include "msg_q/msg_q.h"
 #include "cli/cli.h"
@@ -52,7 +51,7 @@
 
 // 报文信息
 typedef struct{
-    uint8_t packet[FTX_FRAME_SIZE]; // 报文内容
+    char *packet;       // 报文内容，需要动态申请
     uint16_t len;       // 有效长度
 }ftx_packet_t;
 
@@ -64,7 +63,7 @@ typedef struct{
 
 // ftx管理结构定义
 struct ftx_s{
-    char *if_name;    // 接口名
+    const char *if_name;    // 接口名
     int if_index;           // 接口index
     uint8_t if_mac[MAC_ADDR_SIZE];  // 接口mac
     struct in_addr ipv4_addr;       // 接口ip，网络字节序
@@ -88,6 +87,9 @@ struct ftx_s{
 
 // 全局哈希表，管理所有ftxor
 static ftx_hash_head_t g_ftx_hash = {};
+
+// 声明发包使用的nonfixed attr
+declare_mem_type_nonfixed(ftx)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -142,7 +144,7 @@ static attr_force_inline void _ftx_cleanup(ftx_t *ftxor)
     }
 
     // 释放内存
-    mp_free(ftxor->if_name, strlen(ftxor->if_name));
+    mp_free((char*)ftxor->if_name, strlen(ftxor->if_name));
     mp_free(ftxor, sizeof(ftx_t));
 }
 
@@ -194,7 +196,7 @@ static void ftx_early_init(void) attr_ctor(CTOR_PRIO_MID);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void _ftx_init(char *if_name)
+void _ftx_init(const char *if_name)
 {
     // 检查是否已存在
     ftx_t key = {.if_name = if_name};
@@ -285,8 +287,6 @@ static void* _ftx_tx_routine(void *args)
         mmsg[i].msg_hdr.msg_namelen = sizeof(ftxor->dest);
         mmsg[i].msg_hdr.msg_iov = &iov[i];
         mmsg[i].msg_hdr.msg_iovlen = 1;
-
-        iov[i].iov_base = packet_batch[i].packet;       // 永远指向packet内容
     }
 
     while(ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE))
@@ -294,12 +294,14 @@ static void* _ftx_tx_routine(void *args)
         // 阻塞等待消息
         pendings = 0;
         _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_wait_forever, &packet_batch[pendings]);
+        iov[pendings].iov_base = packet_batch[pendings].packet;
         iov[pendings].iov_len = packet_batch[pendings].len;
 
         // 非阻塞取完所有剩余信息，最多一次拿64个
         pendings ++;
         while(pendings < FTX_TX_MSGQ_SIZE && msg_q_ret_ok == _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_no_wait, &packet_batch[pendings]))
         {
+            iov[pendings].iov_base = packet_batch[pendings].packet; // 设置报文内容
             iov[pendings].iov_len = packet_batch[pendings].len;     // 更新长度
             ++ pendings;
         }
@@ -329,11 +331,14 @@ static void* _ftx_tx_routine(void *args)
 
             // 统计信息更新
             ATOM_FETCH_ADD(&ftxor->stat.tx_count, send, MORDER_ACQ_REL);
-            // 统计数据
+            // 统计数据，释放内存
             int i = 0;
             uint64_t size = 0;
             for(; i < send; ++ i)
+            {
                 size += pkt_ptr[i].len;
+                mp_nonfixed_node_put(pkt_ptr[i].packet);
+            }
             ATOM_FETCH_ADD(&ftxor->stat.tx_size, size, MORDER_ACQ_REL);
 
             pkt_ptr += send;
@@ -347,15 +352,23 @@ static void* _ftx_tx_routine(void *args)
     return NULL;
 }
 
-void _ftx_send(char *if_name, void *ctx, unsigned int len)
+void _ftx_send(const char *if_name, void *ctx, unsigned int len)
 {
+    assert(if_name && ctx);
+
     // 获取接口
     ftx_t key = {.if_name = if_name};
     ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
-    pfm_ensure_ret_void(ftxor);
+    if(!ftxor)
+    {
+        mp_nonfixed_node_put(ctx);  // 释放内存
+        return;
+    }
 
-    ftx_packet_t packet = {.len = len};
-    memcpy(packet.packet, ctx, len);
+    ftx_packet_t packet = {
+        .packet = ctx, 
+        .len = len
+    };
 
     // 推送到消息队列中
     while(ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE))
@@ -365,32 +378,32 @@ void _ftx_send(char *if_name, void *ctx, unsigned int len)
     dbg_major("push msg to send packet ok");
 }
 
-int ftx_mac_get(char *if_name, uint8_t *mac_addr)
+error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr)
 {
-    pfm_ensure_ret(mac_addr, -1);
+    pfm_ensure_ret(mac_addr, ERR_BAD_PARAM);
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
     ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
-    pfm_ensure_ret(ftxor, -1);
+    pfm_ensure_ret(ftxor, ERR_NT_IF_ERROR);
 
     memcpy(mac_addr, ftxor->if_mac, MAC_ADDR_SIZE);
 
-    return 0;
+    return ERR_NO_ERROR;
 }
 
-int ftx_ip_get(char *if_name, uint32_t *ip_addr)
+error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr)
 {
-    pfm_ensure_ret(ip_addr, -1);
+    pfm_ensure_ret(ip_addr, ERR_BAD_PARAM);
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
     ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
-    pfm_ensure_ret(ftxor, -1);
+    pfm_ensure_ret(ftxor, ERR_NT_IF_ERROR);
 
     *ip_addr = ftxor->ipv4_addr.s_addr;
 
-    return 0;
+    return ERR_NO_ERROR;
 }
 
 static void ftx_early_init(void)

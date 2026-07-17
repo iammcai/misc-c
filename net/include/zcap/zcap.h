@@ -251,6 +251,17 @@ static void _ifname ## _zcap_init(void) \
     zcap_register_field(_ifname, _filter_name, LEN_TYPE, data, mask);   \
 }while(0);  \
 
+/**
+ * 外部使用，注册ip protocol字段
+ */
+#define zcap_register_field_pro_type(_ifname, _filter_name, _data, _mask) do  { \
+    uint8_t data[FIELD_DATA_SIZE];  \
+    uint8_t mask[FIELD_MASK_SIZE];  \
+    data[0] = (_data) & 0xff;   \
+    mask[0] = (_mask) & 0xff;   \
+    zcap_register_field(_ifname, _filter_name, PRO_TYPE, data, mask);   \
+}while(0);  \
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */

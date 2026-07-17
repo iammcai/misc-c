@@ -46,6 +46,13 @@ typedef void (*ev_timer_cb_func)(void *args);
 /* ========================================================================== */
 
 /**
+ * @brief`      get system mono time
+ * 
+ * @retval      ms
+ */
+extern uint64_t mono_time_get();
+
+/**
  * @brief       create an event timer
  * 
  * @param[in]   timeout     - timeout, ms

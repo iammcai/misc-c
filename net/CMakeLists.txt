@@ -2,6 +2,7 @@ add_library(Net STATIC
     zcap/zcap.c
     ftx/ftx.c
     nt/arp.c
+    nt/ping.c
 )
 
 target_include_directories(Net PUBLIC
@@ -11,4 +12,5 @@ target_include_directories(Net PUBLIC
 target_link_libraries(Net PUBLIC
     Lib
     Mgnt
+    m
 )

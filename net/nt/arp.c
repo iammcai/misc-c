@@ -99,6 +99,9 @@ static arp_reply_cache_hash_head_t g_arp_reply_cache = {};
 // 读写锁，保护cache hash
 static ev_rwlock_t g_arp_reply_cache_rwlock = {};
 
+// 发包内存类型
+declare_mem_type_nonfixed_extern(ftx)
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -140,24 +143,25 @@ declare_hash(arp_reply_cache, arp_reply_cache, arp_reply_cache_t, item, 1, 31, _
 /**
  * @brief       build arp request packet
  * 
+ * @param[in]   buf     - packet buffer
+ * @param[in]   if_name - interface name
+ * @param[in]   dip     - dst ip, net order
+ * 
+ * @retval      error code
+ * 
  * @note        构建arp请求报文
  */
-static int _arp_request_build(char *buf, char *if_name, struct in_addr *dip)
+static error_code_e _arp_request_build(char *buf, const char *if_name, struct in_addr *dip)
 {
     struct in_addr addr = {};
     uint8_t if_mac[MAC_ADDR_SIZE] = {};
 
-    if(0 != ftx_mac_get(if_name, if_mac))
-    {
-        safe_printf("-arp: No mac for Interface Name: %s\n", if_name);
-        return -1;
-    }
+    if(ERR_NO_ERROR != ftx_mac_get(if_name, if_mac))
+        return ERR_NT_IF_ERROR;
+
     uint32_t if_ip = 0;
-    if(0 != ftx_ip_get(if_name, &if_ip))
-    {
-        safe_printf("-arp: No ip for Interface Name: %s\n", if_name);
-        return -1;
-    }
+    if(ERR_NO_ERROR != ftx_ip_get(if_name, &if_ip))
+        return ERR_NT_IF_ERROR;
 
     // 构造L2内容
     pkthdr_l2_t *l2 = (pkthdr_l2_t*)buf;
@@ -183,7 +187,7 @@ static int _arp_request_build(char *buf, char *if_name, struct in_addr *dip)
     arp->target_ip[2] = (uint8_t)(dip_host >> 8);
     arp->target_ip[3] = (uint8_t)(dip_host >> 0);
 
-    return 0;
+    return ERR_NO_ERROR;
 }
 
 /**
@@ -208,10 +212,11 @@ static void arp_early_init(void) attr_ctor(CTOR_PRIO_LOW);
 
 static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
 {
-    uint8_t buf[ARP_STANDER_SIZE] = {};
+    uint8_t *buf = NULL;
+
     struct in_addr dst = {};
-    char *if_name = argv[1];
-    char *dip_str = argv[0];
+    const char *if_name = argv[1];
+    const char *dip_str = argv[0];
 
     // 检查获取目的ip，网络字节序
     if(1 != inet_pton(AF_INET, dip_str, &dst))
@@ -219,10 +224,24 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
         safe_printf("-arp: Bad Target IP: %s\n", dip_str);
         return NULL;
     }
-    if(0 == _arp_request_build(buf, if_name, &dst))
+
+    buf = mp_nonfixed_node_get(ftx, sizeof(uint8_t) * ARP_STANDER_SIZE);
+    if(!buf)
+    {
+        safe_printf("-arp: System no memory\n");
+        return NULL;
+    }
+
+    if(ERR_NO_ERROR == _arp_request_build(buf, if_name, &dst))
     {
         ftx_send(if_name, buf, ARP_STANDER_SIZE);
         safe_printf("-arp: Send Arp Request OK... Wait %ds\n", ARP_PROBE_WAIT_INTERVAL);
+    }
+    else
+    {
+        mp_nonfixed_node_put(buf);      // 释放内存
+        safe_printf("-arp: Interface error: %s\n", if_name);
+        return NULL;
     }
 
     // 等待1s
@@ -372,6 +391,41 @@ static void* _arp_show_cache_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
+error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)
+{
+    assert(mac);
+
+    // 在哈希表中查找
+    arp_reply_cache_t key = {.ip = ip};
+    arp_reply_cache_t *cache = NULL;
+    ev_with_rdlock(&g_arp_reply_cache_rwlock)
+        cache = arp_reply_cache_hash_find(&g_arp_reply_cache, &key);
+    
+    if(!cache)
+        return ERR_NT_ARP_CACHE_NOT_EXIST;
+
+    memcpy(mac, cache->mac, MAC_ADDR_SIZE);
+    return ERR_NO_ERROR;
+}
+
+error_code_e arp_request_send(const char *if_name, uint32_t dst_ip)
+{
+    uint8_t *buffer = (uint8_t*)mp_nonfixed_node_get(ftx, ARP_STANDER_SIZE * sizeof(uint8_t));
+    if(!buffer)
+        return ERR_NO_MEM;
+
+    struct in_addr addr = {.s_addr = htonl(dst_ip)};
+
+    if(ERR_NO_ERROR != _arp_request_build(buffer, if_name, &addr))
+    {
+        mp_nonfixed_node_put(buffer);
+        return ERR_NT_ARP_SEND_FAIL;
+    }
+
+    ftx_send(if_name, buffer, ARP_STANDER_SIZE);
+    return ERR_NO_ERROR;
+}
+
 static void arp_early_init(void)
 {
     // 初始化arp reply cache
@@ -389,4 +443,7 @@ static void arp_early_init(void)
     // 注册arp抓取
     zcap_register_pkt_filter("eth0", "arp", _arp_zcap_filter_cb, NULL);
     zcap_register_field_len_type("eth0", "arp", 0x0806, 0xffff);
+
+    zcap_register_pkt_filter("wlan0", "arp", _arp_zcap_filter_cb, NULL);
+    zcap_register_field_len_type("wlan0", "arp", 0x0806, 0xffff);
 }
