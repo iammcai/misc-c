@@ -475,13 +475,13 @@ void mem_type_attr_init(mem_type_attr_t *attr)
 {
     assert(attr && attr->name);
 
-    ATOM_STORE(&attr->allocated, 0, MORDER_RELEASE);
+        ATOM_STORE(&attr->allocated, 0, MORDER_RELEASE);
 #if MP_DBG_MODE
-    ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
+        ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
 #endif
 
-    mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
-}
+        mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
+    }
 
 void _mp_fixed_init(mem_type_attr_t *attr)
 {
@@ -656,7 +656,7 @@ static inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t ti
     {
         if(fl->recycle_aq_head.tid == tid)
             return fl;
-        fl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
+        fl = fixed_free_list_head_hash_next(&g_fixed_free_list_hash_head, fl);
     }
     return NULL;
 }
@@ -1030,26 +1030,26 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
 
     // mem type attr
 
-    mem_type_attr_t *attr = mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
-    while(attr)
-    {
-        total = ATOM_LOAD(&attr->allocated, MORDER_ACQUIRE);
+        mem_type_attr_t *attr = mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
+        while(attr)
+        {
+            total = ATOM_LOAD(&attr->allocated, MORDER_ACQUIRE);
 #if MP_DBG_MODE
-        used = ATOM_LOAD(&attr->used, MORDER_ACQUIRE);
+            used = ATOM_LOAD(&attr->used, MORDER_ACQUIRE);
 #endif
-        if(mem_type_attr_fixed_size(attr))
+            if(mem_type_attr_fixed_size(attr))
 #if MP_DBG_MODE
-            safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total : 0, "/");
+                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total : 0, "/");
 #else
-            safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, 0, 0, 0.0, "/");
+                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, 0, 0, 0.0, "/");
 #endif
-        else
+            else
 #if MP_DBG_MODE
-            safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, used, total-used, total ? (double)used/total : 0, ATOM_LOAD(&attr->piece, MORDER_RELAXED));
+                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, used, total-used, total ? (double)used/total : 0, ATOM_LOAD(&attr->piece, MORDER_RELAXED));
 #else
-            safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, 0, 0, 0.0, 0);
+                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, 0, 0, 0.0, 0);
 #endif
-        attr = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
+            attr = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
     }
 
     safe_printf("\n");

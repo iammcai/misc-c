@@ -313,7 +313,7 @@ static attr_force_inline void mp_free(void *ptr, unsigned int size)
 
 // 内部使用，定义内存类型，定义变量并构造加入hash
 #define _declare_mem_type_attr(_name, _flag, _node_size, _node_max_num)  \
-static mem_type_attr_t _mem_type_attr_ ## _name = {  \
+mem_type_attr_t _mem_type_attr_ ## _name = {    \
     .name = #_name, \
     .flag = _flag,  \
     .node_size = _node_size,    \
@@ -365,11 +365,18 @@ static inline void _mem_type_attr_ ## _name ## _init()   \
     _mp_fixed_node_put(ptr);    \
 
 /**
- * 外部使用，声明不定长内存类型
+ * 外部使用，声明不定长内存类型，对于同个name，全局调用一次
  */
 #define declare_mem_type_nonfixed(name) \
     _declare_mem_type_attr(name, 0, 0, 0)   \
 /* declare_mem_type_nonfixed end */
+
+/**
+ * 外部使用，声明不定长内存类型
+ */
+#define declare_mem_type_nonfixed_extern(name) \
+    extern mem_type_attr_t _mem_type_attr_ ## name; \
+/* declare_mem_type_nonfixed_extern end */
 
 /**
  * 外部使用，初始化非固定大小内存池
