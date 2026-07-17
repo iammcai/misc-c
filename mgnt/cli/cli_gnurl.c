@@ -28,6 +28,15 @@
 
 // 记录历史cli的最大数量
 #define CLI_GNURL_HISTORY_CAPACITY  (512)
+// 历史记录的文件路径
+#define CLI_GNURL_HISTORY_PATH      "../mgnt/cli/history.txt"
+
+/* ========================================================================== */
+/*                              Static Variables                              */
+/* ========================================================================== */
+
+// 上一次写入文件的位置
+static int s_last_synced_len = 0;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -69,7 +78,16 @@ void cli_gnurl_add_history(const char *input)
 
     HIST_ENTRY *last = history_get(history_length);     // 获取最近的一条历史
     if(!last || 0 != strcmp(last->line, input))         // 不重复才添加历史
+    {
         add_history(input);
+        int new_entry = history_length - s_last_synced_len;
+        if(new_entry > 0)
+        {
+            append_history(new_entry, CLI_GNURL_HISTORY_PATH);
+            s_last_synced_len = history_length;
+        }
+    }
+        
 }
 
 static inline char **_cli_gnurl_completion(const char *text, int start, int end)
@@ -82,6 +100,10 @@ void cli_gnurl_init()
 {
     // 设置历史记录最大数量
     cli_gnurl_history_capacity_set(CLI_GNURL_HISTORY_CAPACITY);
+
+    // 从文件读取历史记录
+    read_history(CLI_GNURL_HISTORY_PATH);
+    s_last_synced_len = history_length;
 
     rl_completion_append_character = ' ';       // 补全自动加空格
     rl_attempted_completion_function = _cli_gnurl_completion;   // 指定高级补全函数
