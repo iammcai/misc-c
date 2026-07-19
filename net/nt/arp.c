@@ -85,10 +85,20 @@ typedef struct{
 // ARP Probe等待时长，单位s
 #define ARP_PROBE_WAIT_INTERVAL     (1)
 
+// ARP Scan发包间隔，2ms, 500pps
+#define ARP_SCAN_SEND_INTERVAL      (2)
+// ARP Scan等待
+#define ARP_SCAN_WAIT_TIME_SEC      (2)
+
+// ARP cache table 打印表头
+#define ARP_REPLY_CACHE_FMT_HEAD    "%-18s%-32s\n"
 // ARP reply cache 打印格式，ip mac agingtime
 #define ARP_REPLY_CACHE_FMT         "%-16s%-20s%-16s\n"
 // ARP reply cache 数据打印格式
 #define ARP_REPLY_CACHE_FMT_DATA    "%-16s%-20s%-16.3f\n"
+
+// ARP扫描结果打印格式
+#define ARP_SCAN_FMT                "%-16s%-20s\n"
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -263,6 +273,105 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
+static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
+{
+    const char *cidr_addr = argv[0];
+    const char *if_name = argv[1];
+    uint32_t dip_net = 0;
+    uint8_t prefix = 0;
+
+    // 检查CIDR地址是否合法，解析ip和prefix
+    if(ERR_NO_ERROR != cidr_parse(cidr_addr, &dip_net, &prefix))
+    {
+        safe_printf("-arp: Bad CIDR address range: %s\n", argv[0]);
+        return NULL;
+    }
+    if(prefix == 31 || prefix == 32)
+    {
+        safe_printf("-arp: Bad CIDR prefix for arp scan: %d\n", prefix);
+        return NULL;
+    }
+    uint32_t dip = ntohl(dip_net);
+
+    // 检查接口，获取src_mac和sip字段
+    uint8_t src_mac[MAC_ADDR_SIZE];
+    uint32_t sip_net = 0;
+    if(ERR_NO_ERROR != ftx_mac_get(if_name, src_mac) || ERR_NO_ERROR != ftx_ip_get(if_name, &sip_net))
+    {
+        safe_printf("-arp: Bad Interface: %s\n", if_name);
+        return NULL;
+    }
+    uint32_t sip = htonl(sip_net);
+
+    // 构造arp发送
+    char *packet = mp_nonfixed_node_get(ftx, ARP_STANDER_SIZE);
+    // l2
+    pkthdr_l2_t *l2 = (pkthdr_l2_t*)packet;
+    memcpy(l2->mac_sa, src_mac, MAC_ADDR_SIZE);
+    memset(l2->mac_da, 0xff, MAC_ADDR_SIZE);
+    l2->ether_type = htons(ARP);
+    // arp
+    pkthdr_arp_t *arp = (pkthdr_arp_t*)(packet+sizeof(pkthdr_l2_t));
+    arp->hw_type = htons(ARP_HW_TYPE_ETH);
+    arp->pro_type = htons(ARP_PRO_TYPE);
+    arp->hw_len = ARP_HW_LEN;
+    arp->pro_len = ARP_PRO_LEN;
+    arp->op_code = htons(ARP_REQUEST);
+    memcpy(arp->sender_mac, src_mac, MAC_ADDR_SIZE);
+    arp->sender_ip[0] = (sip >> 24) & 0xff;
+    arp->sender_ip[1] = (sip >> 16) & 0xff;
+    arp->sender_ip[2] = (sip >> 8)  & 0xff;
+    arp->sender_ip[3] = (sip >> 0)  & 0xff;
+    memset(arp->target_mac, 0, MAC_ADDR_SIZE);
+
+    // 计算范围
+    uint32_t mask = (prefix == 0) ? 0U : (~0U << (32 - prefix));
+    uint32_t network = dip & mask;          // 网络地址
+    uint32_t broadcast = network | ~mask;   // 广播地址
+    uint32_t dip_start = network + 1;
+    uint32_t dip_end = broadcast - 1;
+
+    safe_printf("-arp: Start Send Arp Rquest...\n");
+
+    for(uint32_t dip = dip_start; dip <= dip_end; ++ dip)
+    {
+        arp->target_ip[0] = (dip >> 24) & 0xff;
+        arp->target_ip[1] = (dip >> 16) & 0xff;
+        arp->target_ip[2] = (dip >> 8)  & 0xff;
+        arp->target_ip[3] = (dip >> 0)  & 0xff;
+        ftx_send(if_name, packet, ARP_STANDER_SIZE);
+        // 限制速率，休眠1ms
+        usleep(ARP_SCAN_SEND_INTERVAL * 1000);
+    }
+
+    safe_printf("-arp: Send Arp Request OK, wait %d s for replying...\n", ARP_SCAN_WAIT_TIME_SEC);
+    sleep(ARP_SCAN_SEND_INTERVAL);
+
+    // 收集arp cache，打印结果
+    safe_printf("\n" ARP_SCAN_FMT, "ipv4 addr", "mac addr");
+    safe_printf(     ARP_SCAN_FMT, "---------", "--------");
+    arp_reply_cache_t *cache = NULL;
+    for(uint32_t dip = dip_start; dip <= dip_end; ++ dip)
+    {
+        arp_reply_cache_t key = {.ip = dip};
+        ev_with_rdlock(&g_arp_reply_cache_rwlock)
+            cache = arp_reply_cache_hash_find(&g_arp_reply_cache, &key);
+        if(cache)
+        {
+            char ip_str[INET_ADDRSTRLEN] = {};
+            char mac_str[18] = {};
+            uint32_t ip_net = htonl(cache->ip);
+            inet_ntop(AF_INET, &ip_net, ip_str, sizeof(ip_str));
+            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", 
+                cache->mac[0], cache->mac[1], cache->mac[2], cache->mac[3], cache->mac[4], cache->mac[5]);
+            safe_printf(ARP_SCAN_FMT, ip_str, mac_str);
+        }
+    }
+    safe_printf("\n");
+
+    return NULL;
+}
+
 /**
  * @brief       del arp reply cache from hashtable
  * 
@@ -366,8 +475,11 @@ static void _arp_zcap_filter_cb(char *packet, int size, void *args)
  */
 static void* _arp_show_cache_cli_hook(unsigned char argc, char *argv[])
 {
-    safe_printf( "\n" ARP_REPLY_CACHE_FMT, "ipv4 address", "mac address", "aging time(s)");
-    safe_printf(      ARP_REPLY_CACHE_FMT, "------------", "-----------", "-------------");
+    safe_printf("\n");
+    safe_printf(ARP_REPLY_CACHE_FMT_HEAD, "", "Arp Cache Table");
+    safe_printf("%s", "--------------------------------------------------\n");
+    safe_printf(ARP_REPLY_CACHE_FMT, "ipv4 address", "mac address", "aging time(s)");
+    safe_printf(ARP_REPLY_CACHE_FMT, "------------", "-----------", "-------------");
 
     char ip_str[INET_ADDRSTRLEN] = {};
     char mac_str[18] = {};
@@ -387,6 +499,7 @@ static void* _arp_show_cache_cli_hook(unsigned char argc, char *argv[])
             cache = arp_reply_cache_hash_next(&g_arp_reply_cache, cache);
         }
     }
+    safe_printf("%s", "--------------------------------------------------\n\n");
 
     return NULL;
 }
@@ -438,6 +551,12 @@ static void arp_early_init(void)
         {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"}
     };
     cli_register("arp probe", "send arp probe", param0, _arp_probe_cli_hook);
+    // 注册cli，进行arp扫描
+    cli_param_t param1[] = {
+        {.required = 1, .type = PARAM_POS, .help = "CIDR format: ip/mask, e.g. 192.168.0.1/24"},
+        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+    };
+    cli_register("arp scan", "arp scan", param1, _arp_scan_cli_hook);
     cli_register("show arp cache", "dump arp cache", NULL, _arp_show_cache_cli_hook);
 
     // 注册arp抓取

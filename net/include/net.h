@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <ctype.h>
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "mp/mp.h"
@@ -132,6 +133,67 @@ static uint16_t calc_checksum(const void *buf, size_t len)
 
     // 取反码并转为网络字节序返回
     return htons((uint16_t)(~sum));
+}
+
+/**
+ * @brief       check if CIDR format valid, parse it
+ * 
+ * @param[in]   cidr    - cidr string, such as 192.168.0.0/24
+ * 
+ * @param[out]  ip      - ip addr
+ * @param[out]  prefix  - prefix
+ * 
+ * @retval      error code
+ */
+static error_code_e cidr_parse(const char *cidr, uint32_t *ip, uint8_t *prefix)
+{
+    if(!ip || !prefix)
+        return ERR_BAD_PARAM;
+
+    if(!cidr || *cidr == '\0')
+        return ERR_NT_CIDR_INVALID;
+
+    // 分离ip和前缀长度
+    const char *slash = strchr(cidr, '/');  // 获取`/`指针
+    if(!slash)
+        return ERR_NT_CIDR_INVALID;
+    if(NULL != strchr(slash+1, '/'))        // 检查'/'是否唯一
+        return ERR_NT_CIDR_INVALID;
+    size_t ip_len = slash - cidr;
+    if(ip_len == 0 || ip_len >= INET_ADDRSTRLEN)
+        return ERR_NT_CIDR_INVALID;
+    char ip_str[INET_ADDRSTRLEN];           // ip字符串
+    memcpy(ip_str, cidr, ip_len);
+    ip_str[ip_len] = '\0';
+
+    // 通过inet_pton校验语义
+    struct in_addr addr;
+    // inet_pton 会严格拒绝 "192.168.01.1"(前导零)、"192.168.0."(尾点) 等畸形格式
+    if(inet_pton(AF_INET, ip_str, &addr) != 1)
+        return ERR_NT_CIDR_INVALID;
+    *ip = addr.s_addr;
+
+    // 检查前缀长度
+    const char *prefix_str = slash + 1;
+    if(*prefix_str == '\0')
+        return ERR_NT_CIDR_INVALID;
+
+    if(prefix_str[0] == '0' && prefix_str[1] != '\0')   // 检查前导0
+        return ERR_NT_CIDR_INVALID;
+
+    if(prefix_str[0] < '1' || prefix_str[0] > '9')
+        return ERR_NT_CIDR_INVALID;
+    if(prefix_str[1] != '\0' && (prefix_str[1] < '0' || prefix_str[1] > '9'))
+        return ERR_NT_CIDR_INVALID;
+    if(prefix_str[1] != '0' && prefix_str[2] != '\0')
+        return ERR_NT_CIDR_INVALID;
+
+    int prefix_len = atoi(prefix_str);
+    if(prefix_len < 0 || prefix_len > 32)
+        return ERR_NT_CIDR_INVALID;
+    *prefix = prefix_len;
+
+    return ERR_NO_ERROR;
 }
 
 #endif
