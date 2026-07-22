@@ -27,6 +27,8 @@
 #define attr_force_inline   inline __attribute__((unused, always_inline))
 #define attr_pure_inline    inline __attribute__((unused, always_inline, pure))
 #define attr_const_inline   inline __attribute__((unused, always_inline, const))
+#define attr_hot            __attribute__((hot))                            // 热路径
+#define attr_cold_noinline  __attribute__((cold, noinline))                 // 标记冷路径，不内联
 // ctor/dtor 避免vscode intellisense检查报错，实际gcc编译支持参数
 #ifdef __INTELLISENSE__
 #define attr_ctor(x)        
@@ -75,5 +77,13 @@
 
 // x向上按8取整
 #define aligned_8(x)    ((x) + 7U) & ~7U
+
+// 分支预测加速
+#ifndef likely
+#define likely(x)   __builtin_expect(!!(x), 1)
+#endif
+#ifndef unlikely
+#define unlikely(x) __builtin_expect(!!(x), 0)
+#endif
 
 #endif

@@ -39,6 +39,7 @@
 #include "cli/cli.h"
 #include "event/ev_thread.h"
 #include "event/ev_loop.h"
+#include "mp/mp_slab.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -77,7 +78,7 @@
 /* ========================================================================== */
 
 // 内存池，用于rx_t和alz_t之间交互报文
-declare_mem_type_nonfixed(zcap_pkt)
+declare_mem_type_slab(zcap_pkt)
 
 // 封装一下，传递给alz线程入口
 typedef struct{
@@ -560,12 +561,13 @@ static void* _zcap_routine(void *args)
                     continue;
 
                 // 构建消息，将报文发给解析线程
-                zcap_packet_t *packet = mp_nonfixed_node_get(zcap_pkt, sizeof(zcap_packet_t)+pkt_len);
+                zcap_packet_t *packet = mp_slab_node_get(zcap_pkt, sizeof(zcap_packet_t)+pkt_len);
                 if(!packet)
                 {
                     dbg_error("no mem for packet node, packet loss");
                     continue;
                 }
+                memset(packet, 0, sizeof(zcap_packet_t)+pkt_len);
                 memcpy(packet->packet, pkt_data, pkt_len);  // 复制内容
                 packet->len = pkt_len;
                 // 预提取五元组信息，而不是在reactor cb中进行
@@ -848,7 +850,7 @@ static void* _zcap_alz_routine(void *args)
         {
             pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
             _zcap_analyze_a_packet(captor, packet);
-            mp_nonfixed_node_put(packet);
+            mp_slab_node_put(packet);
             processed++;
         }
 

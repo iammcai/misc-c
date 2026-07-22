@@ -52,8 +52,7 @@ static int g_slab_size_arr[SLAB_SIZE_CNT] = {
 };
 // 内存节点数量数组，与slab_size_e对应
 static int g_slab_count_arr[SLAB_SIZE_CNT] = {
-//    128, 128, 256, 256, 512, 1024, 256, 128, 64, 64, 32
-    5000, 5000, 5000, 5000, 5000, 5000, 5000, 0, 0, 0, 0      // for test
+    128, 128, 256, 256, 512, 1024, 256, 128, 64, 64, 32
 };
 
 // 线程独立哈希表，记录本线程所有slab内存池
@@ -144,7 +143,7 @@ declare_ev_thd(slab_mp_recycle, _slab_mp_recycle_work_func, NULL, 1000)
 /**
  * @brief       size 2 free list slot
  * 
- * @param[in]   size    - mem node size
+ * @param[in]   size    - mem node size，没有对齐
  * 
  * @retval      slot of free list array
  * 
@@ -153,14 +152,10 @@ declare_ev_thd(slab_mp_recycle, _slab_mp_recycle_work_func, NULL, 1000)
  */
 static attr_force_inline int _slab_mp_size_2_slot(int size)
 {
-    // 边界处理：小于等于8直接返回0，大于9216返回非法值
-    if (size <= 8)
-        return SLAB_SIZE_8;
-    if (size > 9216)
-        return SLAB_SIZE_CNT;
+    uint32_t v = aligned_8(size);
 
-    uint32_t v = (uint32_t)(size - 1);
-    return 31 - __builtin_clz(v) - 2; // log2(size-1) - 2, 因为slot0=8=2^3
+    int slot = 29 - __builtin_clz(v | 1);
+    return (v <= 8) ? SLAB_SIZE_8 : slot;
 }
 
 /**
@@ -202,7 +197,6 @@ static void _slab_mp_recycle_work_func(void *args)
             slab_recycle_aq_t key = {.tid = node->tid};
             slab_recycle_aq_t *target_aq = slab_recycle_aq_hash_find(&g_recycle_aq_hash, &key);
             slab_recycle_spsc_atom_queue_push(&target_aq->local_aq, node);
-            ////dbg_always("recycle ev_thd trans a node");
         }
         aq = slab_recycle_aq_hash_next(&g_recycle_aq_hash, aq);
     }
@@ -225,7 +219,7 @@ void _mp_slab_init(mem_type_attr_t *attr)
         mp = mp_calloc(1, sizeof(slab_mp_t));
         mp->attr = attr;
 
-        // 初始化空闲链表头
+        // 初始化空闲链表
         for(int i = 0; i < SLAB_SIZE_CNT; ++ i)
             slab_free_mem_list_init(&mp->free_lists[i]);
 
@@ -259,10 +253,10 @@ void _mp_slab_supply(mem_type_attr_t *attr)
             // 初始化属性
             slab_mem_node_t *node = (slab_mem_node_t*)(chunk + j*size);
             node->attr = attr;
-            node->size = g_slab_size_arr[i];
+            node->slot = i;
             node->tid = mp->recycle.tid;        // 设置tid
             // 加到链表
-            slab_free_mem_list_add_tail(&mp->free_lists[i], node);
+            slab_free_mem_list_add_head(&mp->free_lists[i], node);
         }
         ATOM_FETCH_ADD(&attr->allocated, count*g_slab_size_arr[i], MORDER_RELAXED);   // 添加统计，不包含头部
 #if MP_DBG_MODE
@@ -274,11 +268,11 @@ void _mp_slab_supply(mem_type_attr_t *attr)
 static slab_mp_t* _slab_mp_find_or_create(mem_type_attr_t *attr, int supply)
 {
     // 查看是否缓存命中
-    if(attr == attr_cache && slab_mp_cache)
+    if(likely(attr == attr_cache))
         return slab_mp_cache;
 
     // 如果hash还没初始化，调用
-    if(!g_slab_mp_hash_init_flag)
+    if(unlikely(!g_slab_mp_hash_init_flag))
     {
         slab_mp_hash_init(&g_slab_mp_hash);
         g_slab_mp_hash_init_flag = 1;
@@ -286,45 +280,87 @@ static slab_mp_t* _slab_mp_find_or_create(mem_type_attr_t *attr, int supply)
     // 在hash中查找mp
     slab_mp_t key = {.attr = attr};
     slab_mp_t *mp = slab_mp_hash_find(&g_slab_mp_hash, &key);
-    if(mp)
-        slab_mp_cache = mp;
-    else
+    if(unlikely(!mp))
     {
         _mp_slab_init(attr);        // 初始化
         if(supply)                  // 补充内存
             _mp_slab_supply(attr);
         mp = slab_mp_hash_find(&g_slab_mp_hash, &key);
-        attr_cache = attr;
-        slab_mp_cache = mp;
     }
+    slab_mp_cache = mp;
     attr_cache = attr;
 
     return mp;
 }
 
-void* _mp_slab_node_get(mem_type_attr_t *attr, int size)
+/**
+ * @brief       fast get node
+ * 
+ * @param[in]   attr    - attr
+ * @param[in]   size    - size
+ * 
+ * @retval      data
+ */
+static attr_force_inline void* _mp_slab_node_get_fast(mem_type_attr_t *attr, int size)
 {
-    slab_mp_t *mp = _slab_mp_find_or_create(attr, 1);
-    int slot = _slab_mp_size_2_slot(aligned_8(size));
+    // 直接检查cache，初始化等放在slow路径
+    if(unlikely(attr != attr_cache))
+        return NULL;
+
+    // cache命中，获取内存
+    slab_mp_t *mp = slab_mp_cache;
+    int slot = _slab_mp_size_2_slot(size);
 
     slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
-    if (!node) {
+    if(likely(node))
+    {
+#if MP_DBG_MODE
+        ATOM_FETCH_ADD(&attr->used, g_slab_size_arr[slot], MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->slab_used[slot], 1, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
+#endif
+        return (void*)((char*)node + sizeof(slab_mem_node_t));
+    }
+
+    return NULL;
+}
+
+/**
+ * @brief       slow get node
+ * 
+ * @param[in]   attr    - attr
+ * @param[in]   size    - size
+ * 
+ * @retval      data
+ * 
+ * @note        慢路径，不做内联，完整走一次
+ */
+static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, int size)
+{
+    slab_mp_t *mp = _slab_mp_find_or_create(attr, 1);
+    int slot = _slab_mp_size_2_slot(size);
+
+    slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
+    if(unlikely(!node))
+    {
         // 从 local_aq 回收一批
         int batch = 0;
         slab_mem_node_t *recycle_node;
-        while (batch < MP_SLAB_RECYCLE_BATCH &&
-               (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq))) {
-            int s = _slab_mp_size_2_slot(recycle_node->size);
-            slab_free_mem_list_add_head(&mp->free_lists[s], recycle_node);
+        while(batch < MP_SLAB_RECYCLE_BATCH &&
+               (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
+        {
+            slab_free_mem_list_add_head(&mp->free_lists[recycle_node->slot], recycle_node);
             batch++;
 #if MP_DBG_MODE
-            ATOM_FETCH_SUB(&recycle_node->attr->used, recycle_node->size, MORDER_RELAXED);
-            ATOM_FETCH_SUB(&recycle_node->attr->slab_used[s], 1, MORDER_RELAXED);
+            ATOM_FETCH_SUB(&recycle_node->attr->used, recycle_node->slot * g_slab_size_arr[recycle_node->slot], MORDER_RELAXED);
+            ATOM_FETCH_SUB(&recycle_node->attr->slab_used[recycle_node->slot], 1, MORDER_RELAXED);
 #endif
         }
         // 再次尝试
         node = slab_free_mem_list_pop(&mp->free_lists[slot]);
-        if (!node) {
+        if(!node)
+        {
             dbg_error("slot %d no memory", slot);
             return NULL;
         }
@@ -340,6 +376,15 @@ void* _mp_slab_node_get(mem_type_attr_t *attr, int size)
     return slab_node_data(node);
 }
 
+void* _mp_slab_node_get(mem_type_attr_t *attr, int size)
+{
+    void *ptr = _mp_slab_node_get_fast(attr, size);
+    if(ptr)
+        return ptr;
+
+    return _mp_slab_node_get_slow(attr, size);
+}
+
 /**
  * @brief       put slab node locally
  * 
@@ -350,17 +395,12 @@ void* _mp_slab_node_get(mem_type_attr_t *attr, int size)
  */
 static attr_force_inline void _mp_slab_node_put_local(slab_mp_t *mp, slab_mem_node_t *node)
 {
-    int slot = _slab_mp_size_2_slot(node->size);
-    slab_free_mem_list_head_t *fl = &mp->free_lists[slot];
-
     // 本地直接加到空闲链表
-    slab_free_mem_list_add_head(fl, node);
-
-    //dbg_always("put locally");
+    slab_free_mem_list_add_head(&mp->free_lists[node->slot], node);
 
 #if MP_DBG_MODE
-    ATOM_FETCH_SUB(&node->attr->used, node->size, MORDER_RELAXED);
-    ATOM_FETCH_SUB(&node->attr->slab_used[slot], 1, MORDER_RELAXED);
+    ATOM_FETCH_SUB(&node->attr->used, node->slot * g_slab_size_arr[node->slot], MORDER_RELAXED);
+    ATOM_FETCH_SUB(&node->attr->slab_used[node->slot], 1, MORDER_RELAXED);
 #endif
 }
 

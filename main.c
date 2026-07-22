@@ -27,6 +27,7 @@
 #include "zcap/zcap.h"
 #include "ftx/ftx.h"
 #include "syslog/syslog.h"
+#include "mp/mp_slab.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -35,6 +36,7 @@
 #define TEST_LIST       (0)
 #define TEST_HASH       (0)
 #define TEST_MP         (0)
+#define TEST_MP_SLAB    (0)
 #define TEST_AQ         (0)
 #define TEST_EV_THD     (0)
 #define TEST_EV_LOCK    (0)
@@ -96,7 +98,13 @@ int main()
 #endif
 
 #if TEST_MP
-    test_mp_nonfixed();
+    //test_mp();
+    test_nonfixed_mp_cost();
+#endif
+
+#if TEST_MP_SLAB
+    //test_slab_mp_function();
+    test_slab_mp_cost();
 #endif
 
 #if TEST_AQ

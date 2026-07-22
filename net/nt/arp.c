@@ -28,6 +28,7 @@
 #include "type/type_hash.h"
 #include "event/ev_lock.h"
 #include "event/ev_timer.h"
+#include "mp/mp_slab.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -109,8 +110,8 @@ static arp_reply_cache_hash_head_t g_arp_reply_cache = {};
 // 读写锁，保护cache hash
 static ev_rwlock_t g_arp_reply_cache_rwlock = {};
 
-// 发包内存类型
-declare_mem_type_nonfixed_extern(ftx)
+// 声明发包内存池
+declare_mem_type_slab_extern(ftx)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -235,12 +236,13 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
         return NULL;
     }
 
-    buf = mp_nonfixed_node_get(ftx, sizeof(uint8_t) * ARP_STANDER_SIZE);
+    buf = mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!buf)
     {
         safe_printf("-arp: System no memory\n");
         return NULL;
     }
+    memset(buf, 0, ARP_STANDER_SIZE);
 
     if(ERR_NO_ERROR == _arp_request_build(buf, if_name, &dst))
     {
@@ -249,7 +251,7 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
     }
     else
     {
-        mp_nonfixed_node_put(buf);      // 释放内存
+        mp_slab_node_put(buf);      // 释放内存
         safe_printf("-arp: Interface error: %s\n", if_name);
         return NULL;
     }
@@ -304,7 +306,13 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
     uint32_t sip = htonl(sip_net);
 
     // 构造arp发送
-    char *packet = mp_nonfixed_node_get(ftx, ARP_STANDER_SIZE);
+    char *packet = mp_slab_node_get(ftx, ARP_STANDER_SIZE);
+    if(!packet)
+    {
+        safe_printf("-arp: No avilable memory.\n");
+        return NULL;
+    }
+    memset(packet, 0, ARP_STANDER_SIZE);
     // l2
     pkthdr_l2_t *l2 = (pkthdr_l2_t*)packet;
     memcpy(l2->mac_sa, src_mac, MAC_ADDR_SIZE);
@@ -523,15 +531,16 @@ error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)
 
 error_code_e arp_request_send(const char *if_name, uint32_t dst_ip)
 {
-    uint8_t *buffer = (uint8_t*)mp_nonfixed_node_get(ftx, ARP_STANDER_SIZE * sizeof(uint8_t));
+    uint8_t *buffer = (uint8_t*)mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!buffer)
         return ERR_NO_MEM;
+    memset(buffer, 0, ARP_STANDER_SIZE);
 
     struct in_addr addr = {.s_addr = htonl(dst_ip)};
 
     if(ERR_NO_ERROR != _arp_request_build(buffer, if_name, &addr))
     {
-        mp_nonfixed_node_put(buffer);
+        mp_slab_node_put(buffer);
         return ERR_NT_ARP_SEND_FAIL;
     }
 

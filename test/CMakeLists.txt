@@ -2,6 +2,7 @@ add_library(Test STATIC
     test_type_list.c
     test_type_hash.c
     test_mp.c
+    test_mp_slab.c
     test_aq.c
     test_ev_thd.c
     test_ev_lock.c

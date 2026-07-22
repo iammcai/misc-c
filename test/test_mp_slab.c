@@ -40,10 +40,11 @@
 #define TEST_COUNT      (10)
 
 // 测试slab的节点次数
-#define TEST_SLAB_NODE_COUNT    (5000)
+#define TEST_SLAB_NODE_COUNT    (1000)
 
 #define TEST_SLAB_OPS_PER_PRODUCER      TEST_SLAB_NODE_COUNT
-#define TEST_SLAB_PRODUCER_COUNT        (4)
+// 生产者线程个数
+#define TEST_SLAB_PRODUCER_COUNT        (1)
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -88,7 +89,6 @@ static double _test_single_mp_get()
 
     test_with_clock(s,e,t,
         {
-            for(int j = 0; j < 10000; ++ j)
                 for(i = 0; i < TEST_SLAB_NODE_COUNT; ++ i)
                 {
                     signle_mp_ptrs[i] = mp_slab_node_get(test_slab, node_size[i]);
@@ -110,14 +110,13 @@ static double _test_single_malloc()
 
     test_with_clock(s,e,t,
         {
-            for(int j = 0; j < 10000; ++ j)
-                for(i = 0; i < TEST_SLAB_NODE_COUNT; ++ i)
-                {
-                    signle_sys_ptrs[i] = malloc(node_size[i]);
-                    if(!signle_sys_ptrs[i])
-                        safe_printf("Error occur in calloc\n");
-                    free(signle_sys_ptrs[i]);  
-                }
+            for(i = 0; i < TEST_SLAB_NODE_COUNT; ++ i)
+            {
+                signle_sys_ptrs[i] = malloc(node_size[i]);
+                if(!signle_sys_ptrs[i])
+                    safe_printf("Error occur in calloc\n");
+                free(signle_sys_ptrs[i]);  
+            }
         }
     );
 
@@ -310,17 +309,17 @@ void test_slab_mp_cost()
     mp_slab_supply(test_slab)
     // 随机序列生成，表示申请内存大小，范围[1, 512]
     for (int i = 0; i < TEST_SLAB_NODE_COUNT; i++)
-        node_size[i] = rand_normal_centered(1,512,256,100);
+        node_size[i] = rand_normal_centered(1,1024,512,100);
 
     // 测试单线程mp一次性分配+释放，ping-pong模式，申请-释放交替
     double single_mp_get_pingpong_cost = _test_single_mp_get();
     safe_printf("[1] Alloc + Free, Ping-Pong\r\n");
-    safe_printf("    MP: %.3f us, %.3f ops/us\n", single_mp_get_pingpong_cost, (double)TEST_SLAB_NODE_COUNT*10000/single_mp_get_pingpong_cost);
+    safe_printf("    MP: %.3f us, %.3f ops/us\n", single_mp_get_pingpong_cost, (double)TEST_SLAB_NODE_COUNT/single_mp_get_pingpong_cost);
     // 测试单线程sycalloc一次性分配+释放
     double _tsingle_malloc_pingpong_cost = _test_single_malloc();
-    safe_printf("    SYS: %.3f us, %.3f ops/us\n", _tsingle_malloc_pingpong_cost, (double)TEST_SLAB_NODE_COUNT*10000/_tsingle_malloc_pingpong_cost);
+    safe_printf("    SYS: %.3f us, %.3f ops/us\n", _tsingle_malloc_pingpong_cost, (double)TEST_SLAB_NODE_COUNT/_tsingle_malloc_pingpong_cost);
     safe_printf("    Speedup: %.03f x\n", _tsingle_malloc_pingpong_cost / single_mp_get_pingpong_cost);
-#if 0
+#if 1
     // 测试跨线程分配-释放
     safe_printf("--- Multi-thread tests ---\n");
     safe_printf("[2] %d Producers + 1 Consumer\r\n", TEST_SLAB_PRODUCER_COUNT);

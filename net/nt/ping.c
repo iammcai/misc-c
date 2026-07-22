@@ -26,6 +26,7 @@
 #include "ftx/ftx.h"
 #include "zcap/zcap.h"
 #include "event/ev_timer.h"
+#include "mp/mp_slab.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -97,11 +98,11 @@ typedef struct{
 /*                             Global Variables                               */
 /* ========================================================================== */
 
-// 发包内存类型
-declare_mem_type_nonfixed_extern(ftx)
-
 // 全局会话，唯一一个
 static icmp_session_t g_icmp_session = {};
+
+// 声明发包内存池
+declare_mem_type_slab_extern(ftx)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -288,16 +289,17 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     {
         // 构造icmp报文发送
         int icmp_len = PKT_HDR_L2_SIZE + PKT_HDR_IPV4_SIZE + PKT_HDR_ICMP_SIZE + ICMP_PAYLOAD_SIZE;
-        packet = (uint8_t*)mp_nonfixed_node_get(ftx, sizeof(uint8_t) * icmp_len);
+        packet = (uint8_t*)mp_slab_node_get(ftx, icmp_len);
         if(!packet)
         {
             safe_printf("-ping: System no memory.\n");
             break;
         }
+        memset(packet, 0, icmp_len);
 
         if(ERR_NO_ERROR != _ping_icmp_echo_request_build(packet, dst_mac, if_mac, dst_ip_host, if_ip_host, seq))
         {
-            mp_nonfixed_node_put(packet);
+            mp_slab_node_put(packet);
             safe_printf("-ping: Icmp echo-request packet build fail.\n");
             break;
         }
@@ -353,7 +355,7 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     double rtt_variance = rtt_diff_sum / received;
     rtt_mdev = sqrt(rtt_variance);
     // 打印数据
-    safe_printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
+    safe_printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
 
     return NULL;
 }

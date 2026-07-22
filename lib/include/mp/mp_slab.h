@@ -45,7 +45,7 @@ typedef struct{
         slab_free_mem_list_item_t fl_item;      // 空闲链表item
         slab_recycle_spsc_atom_queue_item_t aq_item;    // 回收队列item
     }item;
-    int size;                   // 用户使用内存大小
+    uint8_t slot;   // 所处的槽位
 } attr_aligned(8) slab_mem_node_t;
 
 // 跨线程回收队列定义
