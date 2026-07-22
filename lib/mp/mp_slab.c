@@ -31,6 +31,9 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
+// 魔数
+#define SLAB_NODE_MAGIC         (0xDEADBEEF)
+
 // 根据slab_node获取data
 #define slab_node_data(node)    (char*)((char*)node + sizeof(slab_mem_node_t))
 // 根据data反推slab_node头部
@@ -38,9 +41,6 @@
 
 // 回收阈值
 #define MP_SLAB_RECYCLE_THRESHOLD       (64)
-
-// 回收一批的大小
-#define MP_SLAB_RECYCLE_BATCH           (64)
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -252,6 +252,7 @@ void _mp_slab_supply(mem_type_attr_t *attr)
         {
             // 初始化属性
             slab_mem_node_t *node = (slab_mem_node_t*)(chunk + j*size);
+            node->magic = SLAB_NODE_MAGIC;
             node->attr = attr;
             node->slot = i;
             node->tid = mp->recycle.tid;        // 设置tid
@@ -315,10 +316,10 @@ static attr_force_inline void* _mp_slab_node_get_fast(mem_type_attr_t *attr, int
     if(likely(node))
     {
 #if MP_DBG_MODE
-        ATOM_FETCH_ADD(&attr->used, g_slab_size_arr[slot], MORDER_RELAXED);
-        ATOM_FETCH_ADD(&attr->slab_used[slot], 1, MORDER_RELAXED);
-        ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
-        ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
+    ATOM_FETCH_ADD(&attr->used, g_slab_size_arr[slot], MORDER_RELAXED);
+    ATOM_FETCH_ADD(&attr->slab_used[slot], 1, MORDER_RELAXED);
+    ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
+    ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
 #endif
         return (void*)((char*)node + sizeof(slab_mem_node_t));
     }
@@ -344,11 +345,11 @@ static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, in
     slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
     if(unlikely(!node))
     {
-        // 从 local_aq 回收一批
+        // 从 local_aq 回收一批，最多该批次1/2
         int batch = 0;
+        int bacth_cnt = g_slab_count_arr[node->slot] >> 1;
         slab_mem_node_t *recycle_node;
-        while(batch < MP_SLAB_RECYCLE_BATCH &&
-               (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
+        while(batch < bacth_cnt && (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
         {
             slab_free_mem_list_add_head(&mp->free_lists[recycle_node->slot], recycle_node);
             batch++;
@@ -430,6 +431,11 @@ void _mp_slab_node_put(void *ptr)
         return;
 
     slab_mem_node_t* node = slab_data_node(ptr);     // 假定用户按规范传入mp_slab_node_get返回的指针
+    if(node->magic != SLAB_NODE_MAGIC)
+    {
+        dbg_error("bad slab node!!!");
+        return;
+    }
 
     // 找到对应mp，支持懒加载
     slab_mp_t *mp = _slab_mp_find_or_create(node->attr, 0);

@@ -25,6 +25,14 @@ target_link_libraries(Main PUBLIC
     Test
 )
 
+target_link_options(Main PRIVATE
+    "LINKER:--whole-archive"
+    $<TARGET_FILE:Mgnt>
+    $<TARGET_FILE:Lib>
+    $<TARGET_FILE:Net>
+    "LINKER:--no-whole-archive"
+)
+
 # 控制asan启用，默认关闭
 option(ENABLE_ASAN "Enable AddressSanitizer for debugging" OFF)
 

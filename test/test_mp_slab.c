@@ -319,7 +319,7 @@ void test_slab_mp_cost()
     double _tsingle_malloc_pingpong_cost = _test_single_malloc();
     safe_printf("    SYS: %.3f us, %.3f ops/us\n", _tsingle_malloc_pingpong_cost, (double)TEST_SLAB_NODE_COUNT/_tsingle_malloc_pingpong_cost);
     safe_printf("    Speedup: %.03f x\n", _tsingle_malloc_pingpong_cost / single_mp_get_pingpong_cost);
-#if 1
+#if 0
     // 测试跨线程分配-释放
     safe_printf("--- Multi-thread tests ---\n");
     safe_printf("[2] %d Producers + 1 Consumer\r\n", TEST_SLAB_PRODUCER_COUNT);

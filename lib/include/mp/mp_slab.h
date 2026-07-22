@@ -39,6 +39,7 @@ pre_declare_spsc_atom_queue(slab_recycle)
 
 // slab内存节点定义
 typedef struct{
+    uint32_t magic;             // 魔数
     mem_type_attr_t *attr;      // 所属内存池
     tid_t tid;                  // 所属线程
     union{

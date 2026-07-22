@@ -573,7 +573,6 @@ static void* _zcap_routine(void *args)
                 // 预提取五元组信息，而不是在reactor cb中进行
                 _zcap_packet_flow_key_extract(packet);
                 zcap_packet_spsc_atom_queue_push(&captor->aq_head, packet);     // 入队
-                pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
             }
 
             // 通知解析
