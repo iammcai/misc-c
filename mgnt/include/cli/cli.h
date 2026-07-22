@@ -70,7 +70,7 @@ extern int cli_param_parse_str_2_u32(const char *str);
  * 
  * @note        启动cli服务
  */
-extern void cli_init();
+extern void cli_module_init();
 
 #endif
 /* __CLI_H__ end */

@@ -239,13 +239,6 @@ static void _syslog_flush_thd_wf(void *args)
     _syslog_flush_file(1);  // 内部需要上锁
 }
 
-/**
- * @brief       syslog early init
- * 
- * @note        create consumer thread, register cli...
- */
-static void syslog_early_init(void) attr_ctor(CTOR_PRIO_LOW);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -359,7 +352,7 @@ static void* _syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
-static void syslog_early_init(void)
+void syslog_module_init(void)
 {
     memset(&g_syslog_ring, 0, sizeof(syslog_ring_t));
     ev_rwlock_init(&g_syslog_ring.lock);    // 初始化读写锁
@@ -386,5 +379,8 @@ static void syslog_early_init(void)
     if(g_syslog_ring.fd < 0)
         dbg_error("syslog open file %s fail", SYSLOG_FLUSH_PATH);
     // 启动刷盘
+    ev_thd_register(syslog_flush);
     ev_thd_run(syslog_flush);
+
+    dbg_major("syslog module init ok");
 }

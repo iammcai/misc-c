@@ -139,6 +139,11 @@ typedef struct el_s{
 /* ========================================================================== */
 
 /**
+ * @brief       init ev loop module
+ */
+extern void ev_loop_module_init();
+
+/**
  * @brief       注册file事件到event loop
  * 
  * @param[in]   fd      - file desc

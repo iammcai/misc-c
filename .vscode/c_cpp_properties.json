@@ -3,11 +3,25 @@
         {
             "name": "Linux",
             "includePath": [
+                // 1. 最关键的内核通用头文件
+                "/usr/src/linux-headers-6.12.75+rpt-rpi-2712/include",
+                // 2. 架构相关的头文件 (树莓派5是ARM64)
+                "/usr/src/linux-headers-6.12.75+rpt-rpi-2712/arch/arm64/include",
+                // 3. 自动生成的架构头文件
+                "/usr/src/linux-headers-6.12.75+rpt-rpi-2712/arch/arm64/include/generated",
+                // 4. UAPI (用户态API) 头文件
+                // "/usr/src/linux-headers-6.12.75+rpt-rpi-2712/include/uapi",
+                // "/usr/src/linux-headers-6.12.75+rpt-rpi-2712/arch/arm64/include/uapi",
+                // 5. 项目源码路径
                 "${workspaceFolder}/**"
             ],
             "defines": [
                 "_POSIX_C_SOURCE=199309L",
-                "_GNU_SOURCE"
+                "_GNU_SOURCE",
+                // 内核使用
+                "__KERNEL__",
+                "MODULE",
+                "__GNUC__"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c17",

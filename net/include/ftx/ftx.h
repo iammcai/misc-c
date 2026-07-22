@@ -62,10 +62,17 @@ typedef struct ftx_s ftx_t;
 /**
  * 外部使用，发送UDP报文
  */
+#define ftx_send_udp(_if_name, dip, dport, ctx, len)    \
+    _ftx_send_udp(_if_name, dip, dport, ctx, len);  \
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       init ftx module
+ */
+extern void ftx_module_init(void);
 
 /**
  * @brief       init a ftxor
@@ -84,6 +91,19 @@ extern void _ftx_init(const char *if_name);
  * @param[in]   len     - packet length
  */
 extern void _ftx_send(const char *if_name, void *ctx, unsigned int len);
+
+/**
+ * @brief       send udp packet
+ * 
+ * @param[in]   if_name     - interface name
+ * @param[in]   dip         - dest ip, host order
+ * @param[in]   dport       - dest port, host order
+ * @param[in]   ctx         - udp payload
+ * @param[in]   len         - length of ctx
+ * 
+ * @note        使用sendto发送，暂不使用sendmsg
+ */
+extern void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx, unsigned int len);
 
 /**
  * @brief       get mac addr by interface name

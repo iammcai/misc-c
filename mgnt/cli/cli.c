@@ -25,6 +25,7 @@
 #include "cli/cli_gnurl.h"
 #include "event/ev_lock.h"
 #include "mp/mp.h"
+#include "event/ev_sem.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -74,12 +75,16 @@ static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])
 // 执行监听输入、任务处理的线程
 static pthread_t cli_stask_tid;
 
+extern ev_sem_t g_platform_init_ok;
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
 static void* _cli_routine(void *args)
 {
+    ev_sem_wait(&g_platform_init_ok);
+
     dbg_major("CLI start...");
     while(1)
     {
@@ -128,7 +133,7 @@ static void* _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
-void cli_init()
+void cli_module_init()
 {
     // 初始化gnureadline
     cli_gnurl_init();
@@ -143,4 +148,6 @@ void cli_init()
 
     // 创建线程执行监听cli输入
     pthread_create(&cli_stask_tid, NULL, _cli_routine, NULL);
+
+    dbg_major("cli module init ok");
 }

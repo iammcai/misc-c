@@ -185,9 +185,7 @@ typedef struct{
 /* ========================================================================== */
 
 /**
- *  外部使用，声明抓包，然后初始化
- * 1. 定义全局static zcap_t 类型变量
- * 2. 执行初始化函数
+ *  外部使用，声明抓包类型变量
  */
 #define declare_zcap(_ifname) \
 static zcap_t _ifname ## _zcaptor = {   \
@@ -203,12 +201,14 @@ static zcap_t _ifname ## _zcaptor = {   \
     .event_fd = -1, \
     .alz = {},  \
 };  \
-static void _ifname ## _zcap_init(void) attr_ctor(CTOR_PRIO_MID);   \
-static void _ifname ## _zcap_init(void) \
-{   \
-    _zcap_init(&_ifname ## _zcaptor);   \
-}   \
 /* _zcap_init end */
+
+/**
+ * 外部使用，注册接口抓包
+ */
+#define zcap_register(_ifname)  \
+    _zcap_register(&_ifname ## _zcaptor);       \
+/* zcap_register */
 
 /**
  * 外部使用，启动抓包
@@ -262,9 +262,42 @@ static void _ifname ## _zcap_init(void) \
     zcap_register_field(_ifname, _filter_name, PRO_TYPE, data, mask);   \
 }while(0);  \
 
+/**
+ * 外部使用，注册dst port字段
+ */
+#define zcap_register_field_l4_dport(_ifname, _filter_name, _data, _mask) do  { \
+    uint8_t data[FIELD_DATA_SIZE];  \
+    uint8_t mask[FIELD_MASK_SIZE];  \
+    data[0] = (_data >> 8) & 0xff;  \
+    mask[0] = (_mask >> 8) & 0xff;  \
+    data[1] = (_data) & 0xff;       \
+    mask[1] = (_mask) & 0xff;       \
+    zcap_register_field(_ifname, _filter_name, DPORT, data, mask);  \
+}while(0);  \
+/* zcap_register_field_l4_dport end */
+
+/**
+ * 外部使用，注册src port字段
+ */
+#define zcap_register_field_l4_sport(_ifname, _filter_name, _data, _mask) do  { \
+    uint8_t data[FIELD_DATA_SIZE];  \
+    uint8_t mask[FIELD_MASK_SIZE];  \
+    data[0] = (_data >> 8) & 0xff;  \
+    mask[0] = (_mask >> 8) & 0xff;  \
+    data[1] = (_data) & 0xff;       \
+    mask[1] = (_mask) & 0xff;       \
+    zcap_register_field(_ifname, _filter_name, SPORT, data, mask);  \
+}while(0);  \
+/* zcap_register_field_l4_dport end */
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       zcap module init
+ */
+extern void zcap_module_init();
 
 /**
  * @brief       内部使用，初始化抓包组件，未启动
@@ -272,6 +305,16 @@ static void _ifname ## _zcap_init(void) \
  * @param[in]   captor  - captor
  */
 extern void _zcap_init(zcap_t *captor);
+
+/**
+ * @brief       register captor
+ * 
+ * @param[in]   captor
+ */
+static attr_force_inline void _zcap_register(zcap_t *captor)
+{
+    _zcap_init(captor);
+}
 
 /**
  * @brief       启动抓包线程

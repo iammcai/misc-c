@@ -81,12 +81,14 @@ static thp_t _thp_ ## _name = { \
     .cond = PTHREAD_COND_INITIALIZER,   \
     .shutdown = 1,  \
 };  \
-static void _thp_ ## _name ## _init(void) attr_ctor(CTOR_PRIO_LOW); \
-static void _thp_ ## _name ## _init(void)   \
-{   \
-    _thp_init(&_thp_ ## _name); \
-}   \
 /* declare_thp end */
+
+/**
+ * 外部使用，注册thp
+ */
+#define thp_register(_name) \
+    _thp_register(&_thp_ ## _name); \
+/* thp_register end */
 
 /**
  * 外部使用，线程池开启工作
@@ -125,6 +127,11 @@ static void _thp_ ## _name ## _init(void)   \
 /* ========================================================================== */
 
 /**
+ * @brief       init thp module
+ */
+extern void thp_module_init(void);
+
+/**
  * @brief       init thp var
  * 
  * @param[in]   thp - thread pool
@@ -132,6 +139,16 @@ static void _thp_ ## _name ## _init(void)   \
  * @note        初始化thp，加入哈希表
  */
 extern void _thp_init(thp_t *thp);
+
+/**
+ * @brief       register thp
+ * 
+ * @param[in]   thp
+ */
+static attr_force_inline void _thp_register(thp_t *thp)
+{
+    _thp_init(thp);
+}
 
 /**
  * @brief       外部使用，线程池初始化

@@ -3,6 +3,7 @@ add_library(Net STATIC
     ftx/ftx.c
     nt/arp.c
     nt/ping.c
+    nt/tftp.c
 )
 
 target_include_directories(Net PUBLIC

@@ -21,7 +21,7 @@
 #include <string.h>
 #include "thp/thp.h"
 #include "cli/cli.h"
-#include "mp/mp.h"
+#include "mp/mp_slab.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -46,7 +46,7 @@
 static thp_hash_head_t g_thp_hash = {};
 
 // 全局内存池，用于线程池任务节点
-declare_mem_type_fixed(thp_work_node, sizeof(thp_work_t), THP_WORK_COUNT_MAX)
+declare_mem_type_slab(thp_work_node)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -101,13 +101,6 @@ static void* _thp_thread_routine(void *args);
  */
 static void* _thp_dump_cli_hook(unsigned char argc, char *argv[]);
 
-/**
- * @brief       thread pool init ctor
- * 
- * @note        初始化哈希表，注册cli
- */
-static void thp_init_early(void) attr_ctor(CTOR_PRIO_MID);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -147,22 +140,27 @@ void _thp_run(thp_t *thp)
     assert(thp);
 
     unsigned char expected = 1;
-    if(ATOM_CMP_XCHG_WEAK(&thp->shutdown, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
+    while (1)
     {
-        // 申请线程id数组空间
-        thp->thread_array = (pthread_t*)mp_calloc(thp->thread_count, sizeof(pthread_t));
-        // 创建工作线程
-        unsigned char i = 0;
-        for(i = 0; i < thp->thread_count; ++ i)
-            assert(-1 != pthread_create(&thp->thread_array[i], NULL, _thp_thread_routine, thp));
+        if(ATOM_CMP_XCHG_WEAK(&thp->shutdown, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
+            break; // CAS 成功
+        // CAS 失败，检查 expected 是否变为 0（说明已被其他线程启动）
+        if(expected == 0)
+        {
+            return;
+        }
     }
+    // 申请线程id数组空间
+    thp->thread_array = (pthread_t*)mp_calloc(thp->thread_count, sizeof(pthread_t));
+    // 创建工作线程
+    unsigned char i = 0;
+    for(i = 0; i < thp->thread_count; ++ i)
+        assert(-1 != pthread_create(&thp->thread_array[i], NULL, _thp_thread_routine, thp));
 }
 
 void* _thp_thread_routine(void *args)
 {
     thp_t *thp = (thp_t*)args;
-
-    // dbg("thread %d in thp %s start running", (int)pthread_self(), thp->name);
 
     while(1)
     {
@@ -184,7 +182,7 @@ void* _thp_thread_routine(void *args)
         pthread_mutex_unlock(&thp->mtx);
 
         task->wf(task->args);
-        mp_fixed_node_put(task);
+        mp_slab_node_put(task);
 
         //dbg("thread %d in thp %s, running a task done", (int)pthread_self(), thp->name);
     }
@@ -206,7 +204,7 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
 
     thp_work_t *task;
     do{
-        task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
+        task = mp_slab_node_get(thp_work_node, sizeof(thp_work_t));    // 尝试获取内存
     }while(!task);
 
     task->wf = wf;
@@ -258,9 +256,13 @@ static void* _thp_dump_cli_hook(unsigned char argc, char *argv[])
     safe_printf("\n");
 }
 
-static void thp_init_early(void)
+void thp_module_init(void)
 {
     thp_hash_init(&g_thp_hash);
 
     cli_register("show thread pool", "show all thread pools info", NULL, _thp_dump_cli_hook);
+
+    mem_type_attr_register(thp_work_node);
+
+    dbg_major("thp module init ok");
 }

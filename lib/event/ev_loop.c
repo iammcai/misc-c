@@ -126,8 +126,6 @@ static void _el_reg_fe_handle()
             if(fe->args == NULL || it->el_file_event.args != NULL)
                 fe->args = it->el_file_event.args;
             fe->mask = mask;
-
-            //dbg_always("register fd %d into loop done", it->fd);
         }
         else        // 注销
         {
@@ -144,13 +142,6 @@ static void _el_reg_fe_handle()
             it = el_fe_reg_list_pop(&g_event_loop.file_events_reg_list);
     }
 }
-
-/**
- * @brief       event loop ctor init
- * 
- * @note        构造初始化，主要是g_event_loop变量初始化
- */
-static void _ev_loop_early_init() attr_ctor(CTOR_PRIO_HIGH);
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -228,7 +219,7 @@ static void* _el_main(void *args)
     return NULL;
 }
 
-static void _ev_loop_early_init()
+void ev_loop_module_init()
 {
     g_event_loop.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 

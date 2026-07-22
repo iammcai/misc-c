@@ -171,6 +171,18 @@ extern ATOMIC_UINT64_T g_mp_free_size;
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+/**
+ * @brief       init mem type attr module
+ * 
+ * @note        从mp_module_init分离出来
+ */
+extern void mem_type_attr_module_init();
+
+/**
+ * @brief       init mp module
+ */
+extern void mp_module_init();
+
 // 定义固定大小内存空闲链表操作
 declare_list(fixed_free, fixed_free, fixed_mem_node_t, item)
 
@@ -357,6 +369,16 @@ static attr_force_inline void mp_free(void *ptr, unsigned int size)
     }
 }
 
+/**
+ * @brief       register mem type attr
+ * 
+ * @param[in]   attr
+ */
+static void _mem_type_attr_register(mem_type_attr_t *attr)
+{
+    mem_type_attr_init(attr);
+}
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
@@ -369,12 +391,14 @@ mem_type_attr_t _mem_type_attr_ ## _name = {    \
     .node_size = _node_size,    \
     .node_max_num = _node_max_num   \
 };  \
-static attr_force_inline void _mem_type_attr_ ## _name ## _init() attr_ctor(CTOR_PRIO_LOW);  \
-static inline void _mem_type_attr_ ## _name ## _init()   \
-{   \
-    mem_type_attr_init(&_mem_type_attr_ ## _name);    \
-}   \
 /* _declare_mem_type_attr end */
+
+/**
+ * 外部使用，注册内存类型
+ */
+#define mem_type_attr_register(_name)   \
+    _mem_type_attr_register(&_mem_type_attr_ ## _name); \
+/* mem_type_attr_register end */
 
 /**
  * 外部使用，声明一类固定大小的内存类型

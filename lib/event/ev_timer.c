@@ -110,32 +110,22 @@ static void _low_res_clock_work(void *args);
  */
 static attr_force_inline void _low_res_clock_init();
 
-/**
- * @brief       ctor init ev timer
- * 
- * @note        （1）启动低精度定时器（2）初始化线程池
- */
-static void ev_timer_init(void) attr_ctor(CTOR_PRIO_LOW_LOW);
-
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
 
 // 低精度时钟更新线程，每100ms唤醒一次
 declare_ev_thd(low_res_clock, _low_res_clock_work, NULL, 100)
-// 注册ctor钩子，用于初始化线程池使用的内存池
-declare_ev_thd_ctor(low_res_clock, _low_res_clock_init)
 // 当前时间，ms表示
 static ATOMIC_UINT64_T g_curr_ms = 0;
 // 最小堆，管理定时器
 static ev_timer_heap_head_t g_ev_timer_heap = {};
 // 自旋锁，用来保护堆
 static ev_spinlock_t g_heap_spinlock = EV_SPINLOCK_INITIALIZER;
-// 线程池，用于处理定时任务，由low_res_clock管理
-static thp_t _thp_ev_timer = {};
 
-// 用于高精度定时器的线程池
-static thp_t _thp_ev_high_res_timer = {.shutdown = 1,};     // 初始shutdown
+declare_thp(ev_timer, THREAD_POOL_TH_COUNT_MAX)
+
+declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -146,7 +136,6 @@ declare_heap(ev_timer, ev_timer, ev_timer_t, item, 1, 1024, _ev_timer_cmp)
 
 static inline void _low_res_clock_init()
 {
-    thp_init(&_thp_ev_timer, "ev_timer", THREAD_POOL_TH_COUNT_MAX);
     // 启动
     thp_run(ev_timer);
 }
@@ -269,14 +258,11 @@ static void _ev_high_res_timer_el_cb(int fd, void *args)
 {
     ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)args;
 
-    // 线程池未启动的话，初始化启动一下。这是因为thp包含mp，这个函数由ev loop调用，那边没有初始化mp相关
-    if(!_thp_is_run(&_thp_ev_high_res_timer))
-    {
-        thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
-        thp_run(ev_high_res_timer);
-    }
+    //dbg_always("High res timer callback for %s", hr_timer->name);
 
-    thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
+    //thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
+    // TODO: need fix
+    hr_timer->cb(hr_timer->args);
 }
 
 ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout, ev_timer_cb_func cb, void *args)
@@ -347,12 +333,25 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
         dbg_error("stop timer %s fail", hr_timer->name);
 }
 
-static void ev_timer_init(void)
+void ev_timer_module_init(void)
 {
     // 更新当前时钟
     uint64_t ms = mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
 
-    ev_timer_heap_init(&g_ev_timer_heap);   // 初始化堆
-    ev_thd_run(low_res_clock);      // 启动低精度时钟线程
+    // 初始化线程池
+    thp_init(&_thp_ev_timer, "ev_timer", THREAD_POOL_TH_COUNT_MAX);
+    thp_run(ev_timer);
+
+    // 高精度定时器专用线程池
+    thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
+    thp_run(ev_high_res_timer);
+
+    ev_timer_heap_init(&g_ev_timer_heap);
+
+    ev_thd_register(low_res_clock);
+    declare_ev_thd_ctor(low_res_clock, _low_res_clock_init);
+    ev_thd_run(low_res_clock);
+
+    dbg_major("ev timer module init ok");
 }

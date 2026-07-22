@@ -125,4 +125,9 @@ extern void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer);
  */
 extern void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer);
 
+/**
+ * @brief       init ev timer module
+ */
+extern void ev_timer_module_init();
+
 #endif

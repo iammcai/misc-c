@@ -47,13 +47,6 @@ static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char
  */
 static attr_pure_inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[]);
 
-/**
- * @brief       debug early init
- * 
- * @note        register cli
- */
-static void _debug_init() attr_ctor(CTOR_PRIO_MID);
-
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
@@ -182,7 +175,7 @@ static inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[])
     return NULL;
 }
 
-static void _debug_init()
+void debug_init()
 {
     cli_param_t set_param[] = {
         {
@@ -195,4 +188,6 @@ static void _debug_init()
 
     cli_register("debug level set", "set debug level", set_param, cli_set_debug_level_hook);
     cli_register("debug level get", "get debug level", NULL, cli_get_debug_level_hook);
+
+    dbg_major("debug module init ok");
 }

@@ -204,6 +204,7 @@ static void _zcap_rate_cal_wf(void *args);
 static zcaptor_hash_head_t g_zcaptor_hash_head = {};
 // 全局事件线程，用于统计速率统计
 declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, ZCAP_CAL_RATE_INTERVAL)
+
 // 控制是否打印报文简要信息
 static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
 
@@ -295,22 +296,6 @@ static void _zcap_rate_cal_wf(void *args)
         captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);       // 继续下一个
     }
 }
-
-/**
- * @brief       构造初始化全局hashtable
- */
-static attr_force_inline void g_zcaptor_hash_init() attr_ctor(CTOR_PRIO_HIGH);
-static attr_force_inline void g_zcaptor_hash_init()
-{
-    zcaptor_hash_init(&g_zcaptor_hash_head);
-}
-
-/**
- * @brief       ctor init zcap module
- * 
- * @note        构造函数，全局初始化
- */
-static attr_force_inline void zcap_global_init() attr_ctor(CTOR_PRIO_MID);
 
 /**
  * @brief       cli hook for: show zcaptor
@@ -864,6 +849,27 @@ static void* _zcap_alz_routine(void *args)
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+void zcap_module_init()
+{
+    zcaptor_hash_init(&g_zcaptor_hash_head);
+
+    // mem type attr注册
+    mem_type_attr_register(zcap_pkt);
+
+    // 注册cli
+    cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook);
+    cli_param_t dump_pkt_param[] = {
+        {.required = 1, .short_name = 't', .type = PARAM_VALUE, .help = "means dump period(s)"},
+    };
+    cli_register("zcaptor dump packet", "dump info of rx packet during a preiod", dump_pkt_param, zcap_dump_pkt_cli_hook);
+
+    // 启动zcap cal rate线程
+    ev_thd_register(zcap_rate_cal);
+    ev_thd_run(zcap_rate_cal);
+
+    dbg_major("zcap module init ok");
+}
+
 void _zcap_init(zcap_t *captor)
 {
     // 加到哈希表
@@ -996,19 +1002,6 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
     memcpy(new_field->mask, mask, FIELD_MASK_SIZE);
     // 字段添加到链表中
     zcap_pkt_field_list_add_tail(&filter->fields, new_field);
-}
-
-static inline void zcap_global_init()
-{
-    // 注册cli
-    cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook);
-    cli_param_t dump_pkt_param[] = {
-        {.required = 1, .short_name = 't', .type = PARAM_VALUE, .help = "means dump period(s)"},
-    };
-    cli_register("zcaptor dump packet", "dump info of rx packet during a preiod", dump_pkt_param, zcap_dump_pkt_cli_hook);
-
-    // 启动zcap cal rate线程
-    ev_thd_run(zcap_rate_cal);
 }
 
 static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])

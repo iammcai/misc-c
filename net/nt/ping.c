@@ -215,11 +215,6 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[]);
  */
 static void _ping_icmp_filter_cb(char *packet, int len, void *args);
 
-/**
- * @brief       ctor init ping
- */
-static void ping_early_init() attr_ctor(CTOR_PRIO_LOW);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -387,7 +382,7 @@ static void _ping_icmp_filter_cb(char *packet, int len, void *args)
     }
 }
 
-static void ping_early_init()
+void ping_module_init()
 {
     // 初始化会话
     memset(&g_icmp_session, 0, sizeof(icmp_session_t));
@@ -410,4 +405,6 @@ static void ping_early_init()
     zcap_register_pkt_filter("wlan0", "icmp", _ping_icmp_filter_cb, NULL);
     zcap_register_field_len_type("wlan0", "icmp", 0x0800, 0xffff);
     zcap_register_field_pro_type("wlan0", "icmp", 0x1, 0xff);
+
+    dbg_major("ping module init ok");
 }

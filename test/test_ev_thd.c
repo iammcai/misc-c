@@ -83,6 +83,7 @@ static void dtor2(void)
 /* ========================================================================== */
 
 declare_ev_thd(test_producer, producer, NULL, EV_THD_WAITFOREVER);
+#if 0
 declare_ev_thd_ctor(test_producer, ctor1)
 declare_ev_thd_prework(test_producer, pre1)
 declare_ev_thd_postwork(test_producer, post1)
@@ -91,6 +92,7 @@ declare_ev_thd_ctor(test_producer, ctor2)
 declare_ev_thd_prework(test_producer, pre2)
 declare_ev_thd_postwork(test_producer, post2)
 declare_ev_thd_dtor(test_producer, dtor2)
+#endif
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */

@@ -28,7 +28,7 @@
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
 #include "ftx/ftx.h"
-#include "mp/mp.h"
+#include "mp/mp_slab.h"
 #include "msg_q/msg_q.h"
 #include "cli/cli.h"
 
@@ -72,6 +72,8 @@ struct ftx_s{
     int raw_fd;             // SOCKET_RAW 使用的fd
     struct sockaddr_ll dest;    // 缓存目的
 
+    int udp_fd;             // UDP socket
+
     msg_q_t *tx_q;          // 消息队列，存储发包信息
     pthread_t tx_tid;       // 发包线程
     ftx_stats_t stat;       // 统计数据
@@ -88,8 +90,8 @@ struct ftx_s{
 // 全局哈希表，管理所有ftxor
 static ftx_hash_head_t g_ftx_hash = {};
 
-// 声明发包使用的nonfixed attr
-declare_mem_type_nonfixed(ftx)
+// 声明发包使用的slab attr
+declare_mem_type_slab(ftx)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -130,6 +132,24 @@ static attr_pure_inline unsigned int _ftx_hash(ftx_t *f)
 declare_hash(ftx, ftx, ftx_t, item, 2, 31, _ftx_cmp, _ftx_hash);
 
 /**
+ * @brief       init raw socket for ftxor
+ * 
+ * @param[in]   ftxor
+ * 
+ * @retval      error code
+ */
+static error_code_e _ftx_raw_socket_init(ftx_t *ftxor);
+
+/**
+ * @brief       init udp socket for ftxor
+ * 
+ * @param[in]   ftxor
+ * 
+ * @retval      error code
+ */
+static error_code_e _ftx_udp_socket_init(ftx_t *ftxor);
+
+/**
  * @brief       clean up ftxor
  * 
  * @param[in]   ftxor   - ftx or
@@ -137,10 +157,15 @@ declare_hash(ftx, ftx, ftx_t, item, 2, 31, _ftx_cmp, _ftx_hash);
 static attr_force_inline void _ftx_cleanup(ftx_t *ftxor)
 {
     // 关闭socket
-    if(ftxor->raw_fd)
+    if(ftxor->raw_fd >= 0)
     {
         close(ftxor->raw_fd);
         ftxor->raw_fd = -1;
+    }
+    if(ftxor->udp_fd >= 0)
+    {
+        close(ftxor->raw_fd);
+        ftxor->udp_fd = -1;
     }
 
     // 释放内存
@@ -187,34 +212,20 @@ static void* _ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
     return NULL;
 }
 
-/**
- * @brief       ctor init ftx module
- */
-static void ftx_early_init(void) attr_ctor(CTOR_PRIO_MID);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void _ftx_init(const char *if_name)
+static error_code_e _ftx_raw_socket_init(ftx_t *ftxor)
 {
-    // 检查是否已存在
-    ftx_t key = {.if_name = if_name};
-    ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);
-    if(result)
-        return;
-
-    ftx_t *ftxor = mp_calloc(1, sizeof(ftx_t));
-    ftxor->if_name = mp_strdup(if_name);    // 动态申请字符串空间
-    ftxor->raw_fd = -1;
-    ftxor->if_index = -1;
+    pfm_ensure_ret(ftxor, ERR_BAD_PARAM);
 
     // 创建socket
     ftxor->raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
     if(ftxor->raw_fd < 0)
     {
         dbg_error("create raw socket fail");
-        goto cleanup;
+        return ERR_FTX_SOCKET_FAIL;
     }
 
     // 获取接口索引并绑定
@@ -223,14 +234,14 @@ void _ftx_init(const char *if_name)
     if(ioctl(ftxor->raw_fd, SIOCGIFINDEX, &ifr) < 0)
     {
         dbg_error("get if index fail");
-        goto cleanup;
+        return ERR_FTX_IOCTL_FAIL;
     }
     ftxor->if_index = ifr.ifr_ifindex;
     // 获取接口mac
     if(-1 == ioctl(ftxor->raw_fd, SIOCGIFHWADDR, &ifr))
     {
         dbg_error("ioctl get hwaddr fail");
-        goto cleanup;
+        return ERR_FTX_IOCTL_FAIL;
     }
     memcpy(ftxor->if_mac, ifr.ifr_hwaddr.sa_data, MAC_ADDR_SIZE);
     // 获取接口ip
@@ -253,6 +264,67 @@ void _ftx_init(const char *if_name)
     int txbuf_size = FTX_TX_BUFFER_SIZE;
     if(setsockopt(ftxor->raw_fd, SOL_SOCKET, SO_SNDBUF, &txbuf_size, sizeof(txbuf_size)) < 0)
         dbg_error("set tx buffer size fail");
+
+    return ERR_NO_ERROR;
+}
+
+static error_code_e _ftx_udp_socket_init(ftx_t *ftxor)
+{
+    pfm_ensure_ret(ftxor, ERR_BAD_PARAM);
+
+    // 创建udp socket
+    ftxor->udp_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(ftxor->udp_fd < 0)
+    {
+        dbg_error("create udp socket fail");
+        return ERR_FTX_SOCKET_FAIL;
+    }
+
+    // socket绑定到指定网卡
+    if(setsockopt(ftxor->udp_fd, SOL_SOCKET, SO_BINDTOIFINDEX, &ftxor->if_index, sizeof(ftxor->if_index)) < 0)
+    {
+        dbg_error("bind udp socket fail");
+        return ERR_FTX_SOCKET_FAIL;
+    }
+
+    // 绑定接口IP，端口自动选择
+    struct sockaddr_in addr = {0};
+    if(0 != ftxor->ipv4_addr.s_addr)
+    {
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(0);   // 自动选择端口
+        memcpy(&addr.sin_addr, &ftxor->ipv4_addr, sizeof(struct in_addr));
+        if(bind(ftxor->udp_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+        {
+            dbg_error("bind udp socket fail");
+            return ERR_FTX_SOCKET_FAIL;
+        }
+    }
+
+    return ERR_NO_ERROR;
+}
+
+void _ftx_init(const char *if_name)
+{
+    // 检查是否已存在
+    ftx_t key = {.if_name = if_name};
+    ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);
+    if(result)
+        return;
+
+    ftx_t *ftxor = mp_calloc(1, sizeof(ftx_t));
+    ftxor->if_name = mp_strdup(if_name);    // 动态申请字符串空间
+    ftxor->raw_fd = -1;
+    ftxor->if_index = -1;
+    ftxor->udp_fd = -1;
+
+    // 设置raw socket
+    if(ERR_NO_ERROR != _ftx_raw_socket_init(ftxor))
+        goto cleanup;
+
+    // 设置UDP socket
+    if(ERR_NO_ERROR != _ftx_udp_socket_init(ftxor))
+        goto cleanup;
 
     // 设置标志
     ATOM_STORE(&ftxor->status, 1, MORDER_RELEASE);
@@ -337,7 +409,7 @@ static void* _ftx_tx_routine(void *args)
             for(; i < send; ++ i)
             {
                 size += pkt_ptr[i].len;
-                mp_nonfixed_node_put(pkt_ptr[i].packet);
+                mp_slab_node_put(pkt_ptr[i].packet);
             }
             ATOM_FETCH_ADD(&ftxor->stat.tx_size, size, MORDER_ACQ_REL);
 
@@ -361,7 +433,7 @@ void _ftx_send(const char *if_name, void *ctx, unsigned int len)
     ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
     if(!ftxor)
     {
-        mp_nonfixed_node_put(ctx);  // 释放内存
+        mp_slab_node_put(ctx);  // 释放内存
         return;
     }
 
@@ -376,6 +448,54 @@ void _ftx_send(const char *if_name, void *ctx, unsigned int len)
             break;
 
     dbg_major("push msg to send packet ok");
+}
+
+void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx, unsigned int len)
+{
+    assert(if_name && dip && dport && ctx && len);
+
+    // 获取ftxor
+    ftx_t key = {.if_name = if_name};
+    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    if(!ftxor)
+    {
+        dbg_error("Find ftxor fail");
+        return;
+    }
+    if(!ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE))
+    {
+        dbg_error("Ftxor status not ok");
+        return;
+    }
+
+    struct sockaddr_in dest_addr = {};
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(dport);
+    dest_addr.sin_addr.s_addr = htonl(dip);
+
+    ssize_t sent_bytes = sendto(ftxor->udp_fd, ctx, len, 0, &dest_addr, sizeof(dest_addr));
+    if(sent_bytes < 0)
+    {
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            dbg("udp socket busy");
+            return;
+        }
+        dbg_error("udp sendto fail: %s", strerror(errno));
+        return;
+    }
+
+    if(sent_bytes != len)
+        dbg_error("sendto truncated, expected: %zu, sent %zu", len, sent_bytes);
+
+    ATOM_FETCH_ADD(&ftxor->stat.tx_count, 1, MORDER_ACQ_REL);
+    int len_tot = len + sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t) + sizeof(pkthdr_udp_t); // 计算总长度
+    ATOM_FETCH_ADD(&ftxor->stat.tx_size, len_tot, MORDER_ACQ_REL);
+
+    // 释放内存
+    mp_slab_node_put(ctx);
+
+    return;
 }
 
 error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr)
@@ -406,11 +526,15 @@ error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr)
     return ERR_NO_ERROR;
 }
 
-static void ftx_early_init(void)
+void ftx_module_init(void)
 {
     // 初始化哈希表
     ftx_hash_init(&g_ftx_hash);
 
+    mem_type_attr_register(ftx);
+
     // 注册cli查看ftxor
     cli_register("show ftxor", "dump all ftxor", NULL, _ftxor_dump_cli_hook);
+
+    dbg_major("ftx module init ok");
 }

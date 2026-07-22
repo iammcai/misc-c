@@ -42,11 +42,15 @@
 #define PKT_HDR_L2_SIZE (14)
 // ipv4 Header长度
 #define PKT_HDR_IPV4_SIZE   (20)
+// UDP头部长度
+#define PKT_HDR_UDP_SIZE    (8)
 
 // IPV4类型
 #define IPV4    (0x0800)
 // ARP类型
 #define ARP     (0x0806)
+// UDP类型
+#define UDP     (0x11)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -74,6 +78,15 @@ typedef struct{
     uint32_t dst_addr;
 }attr_packed pkthdr_ipv4_t;
 _Static_assert(sizeof(pkthdr_ipv4_t) == PKT_HDR_IPV4_SIZE, "sizeof pkthdr_ipv4_t must be 20");
+
+// UDP头部
+typedef struct{
+    uint16_t sport;             // 源端口
+    uint16_t dport;             // 目的端口
+    uint16_t len;               // UDP头部+负载长度
+    uint16_t checksum;          // 校验和
+}attr_packed pkthdr_udp_t;
+_Static_assert(sizeof(pkthdr_udp_t) == PKT_HDR_UDP_SIZE, "sizeof pkthdr_udp_t must be 8");
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */

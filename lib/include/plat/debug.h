@@ -45,6 +45,11 @@ typedef enum{
     ERR_BAD_PARAM,                  // 参数错误
     ERR_NO_MEM,                     // 内存不足
 
+    // ftx模块
+    ERR_FTX_START = 900,            // ftx错误码起始
+    ERR_FTX_SOCKET_FAIL,            // socket操作错误
+    ERR_FTX_IOCTL_FAIL,             // io ctl操作错误
+
     // nt模块
     ERR_NT_START = 1000,            // net tool错误码起始
     ERR_NT_IF_ERROR,                // 接口错误
@@ -151,6 +156,11 @@ typedef enum{
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       init debug module
+ */
+extern void debug_init();
 
 /**
  * @brief       debug printf

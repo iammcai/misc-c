@@ -54,7 +54,7 @@
 // 测试使用的内存池
 declare_mem_type_fixed(test_mp, TEST_FIXED_NODE_SIZE, TEST_FIXED_NODE_COUNT)
 // 多线程使用
-declare_mem_type_fixed(test_mp_multi, TEST_FIXED_NODE_SIZE, TEST_FIXED_OPS_PER_PRODUCER)
+declare_mem_type_fixed(test_mp_multi_fixed, TEST_FIXED_NODE_SIZE, TEST_FIXED_OPS_PER_PRODUCER)
 
 // mp单线程测试分配的指针
 static void* signle_mp_ptrs[TEST_FIXED_NODE_COUNT] = {};
@@ -136,14 +136,14 @@ static void* _test_multi_mp_producer(void *args)
     int i = 0;
 
     // 初始化内存池，补充
-    mp_fixed_init(test_mp_multi);
-    mp_fixed_supply(test_mp_multi);
+    mp_fixed_init(test_mp_multi_fixed);
+    mp_fixed_supply(test_mp_multi_fixed);
 
     pthread_barrier_wait(&barrier_mp);      // 等待屏障
 
     for(i = 0; i < TEST_FIXED_OPS_PER_PRODUCER; ++ i)
     {
-        void *ptr = mp_fixed_node_get(test_mp_multi);
+        void *ptr = mp_fixed_node_get(test_mp_multi_fixed);
         if(!ptr)
            safe_printf("Error occur in mp_fixed_node_get\n"); 
         // 推送到消息队列

@@ -44,6 +44,7 @@ typedef enum{
 // 日志模块id枚举
 typedef enum{
     SYSLOG_MODULE_SYS = 0,
+    SYSLOG_MODULE_WEB,
 
     SYSLOG_MODULE_MAX,          // 计数
 }syslog_module_e;
@@ -67,6 +68,7 @@ static const char* syslog_facility_str[SYSLOG_FACILITY_MAX] = {
 // 日志模块对应字符串
 static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "system",
+    "web",
 };
 
 /* ========================================================================== */
@@ -139,6 +141,11 @@ static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       init syslog module
+ */
+extern void syslog_module_init(void);
 
 /**
  * @brief       push syslog entry into msg_q

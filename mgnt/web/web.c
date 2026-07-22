@@ -30,6 +30,7 @@
 #include "msg_q/msg_q.h"
 #include "event/ev_thread.h"
 #include "plat/debug.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -129,13 +130,6 @@ static void _web_handle_get(int fd, const char *path);
  */
 static void _web_ev_thd_work(void *args);
 
-/**
- * @brief       ctor init web module
- * 
- * @note        构造初始化web，启动服务
- */
-static void web_early_init() attr_ctor(CTOR_PRIO_LOW);
-
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -144,6 +138,7 @@ static void web_early_init() attr_ctor(CTOR_PRIO_LOW);
 static web_t g_web_mgnt = {};
 // 处理web事件的线程
 declare_ev_thd(web, _web_ev_thd_work, NULL, -1);
+
 // msgq，用于ev_loop和web之间
 declare_msg_q(web, WEB_MSGQ_SIZE, sizeof(int))
 
@@ -179,8 +174,6 @@ static void _web_ev_thd_work(void *args)
 
 static inline void _web_handle_new_conn()
 {
-    dbg("handle new connection");
-    
     struct sockaddr_in client_addr = {};
     socklen_t addr_len = sizeof(client_addr);
     int client_fd = accept(g_web_mgnt.sock_fd, (struct sockaddr*)&client_addr, &addr_len);
@@ -188,6 +181,8 @@ static inline void _web_handle_new_conn()
 
     // 将新的fd注册到evloop中
     event_loop_register_file_event(client_fd, EL_FILE_EVENT_READABLE, _web_el_cb, NULL);
+
+    syslog_notice(SYSLOG_MODULE_WEB, "user login web");
 }
 
 static void _web_handle_msg(int fd)
@@ -364,9 +359,10 @@ static void _web_handle_get(int fd, const char *path)
     //dbg_always("file %s sent to fd %d", full_path, fd);
 }
 
-static void web_early_init()
+void web_module_init()
 {
     // 启动解析线程
+    ev_thd_register(web);
     ev_thd_run(web)
 
     // 创建socket

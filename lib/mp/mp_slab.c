@@ -168,20 +168,6 @@ static attr_force_inline int _slab_mp_size_2_slot(int size)
  */
 static attr_force_inline slab_mp_t* _slab_mp_find_or_create(mem_type_attr_t *attr, int supply);
 
-/**
- * @brief       ctor init ev thd
- * 
- * @note        启动回收线程，ev_thd接口使用MID，这里必须比MID等级低
- */
-static void mp_slab_ev_thd_init() attr_ctor(CTOR_PRIO_LOW);
-
-/**
- * @brief       ctor init slab mp
- * 
- * @note        构造初始化slab mp相关
- */
-static void mp_slab_early_init() attr_ctor(CTOR_PRIO_HIGH);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -474,12 +460,7 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
 }
 #endif
 
-static void mp_slab_ev_thd_init()
-{
-    ev_thd_run(slab_mp_recycle);
-}
-
-static void mp_slab_early_init()
+void mp_slab_module_init()
 {
     // 初始化全局recycle_aq_hash
     slab_recycle_aq_hash_init(&g_recycle_aq_hash);
@@ -488,4 +469,10 @@ static void mp_slab_early_init()
     // 注册调试cli
     cli_register("debug show mp slab", "debug dump slab type mempool", NULL, _mp_slab_show_cli_hook);
 #endif
+
+    // 启动后台回收
+    ev_thd_register(slab_mp_recycle);
+    ev_thd_run(slab_mp_recycle);
+
+    dbg_major("mp slab module init ok");
 }

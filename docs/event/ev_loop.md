@@ -213,15 +213,12 @@ static void _el_reg_fe_handle()
             if(fe->args == NULL || it->el_file_event.args != NULL)
                 fe->args = it->el_file_event.args;
             fe->mask = mask;
-
-            dbg_always("register fd %d into loop done", it->fd);
         }
         else        // 注销
         {
             // 从epoll移除
             epoll_ctl(g_event_loop.epoll_fd, EPOLL_CTL_DEL, it->fd, NULL);
             fe->mask = EL_FILE_EVENT_NONE;      // 清除数组标记
-            dbg_always("deregister fd %d in loop", it->fd);
         }
         // 释放内存
         mp_free(it, sizeof(el_fe_reg_item_t));

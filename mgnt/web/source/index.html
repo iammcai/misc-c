@@ -1,11 +1,48 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Test Page</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MISC-C-WEB</title>
+    <!-- 引用 CSS -->
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <h1>Hello, World!</h1>
-    <p>This is a test page served by c-misc web server.</p>
+
+    <!-- 卡片容器：整个内容被包裹在 .container 中 -->
+    <div class="container">
+        <!-- 主标题 -->
+        <h1>
+            <span>Welcome</span> To MISC-C-WEB
+        </h1>
+        
+        <!-- 内容区域 -->
+        <div class="content">
+            <p>这里是MISC-C项目的web管理页面。</p>
+        </div>
+
+        <!-- 内部模块网格 -->
+        <div class="card-grid">
+            <div class="card-item" style="order: 1;">
+                <h3>模块 A</h3>
+                <p>这是第一个内部卡片，它有独立的阴影和边框。</p>
+            </div>
+            <div class="card-item" style="order: 2;">
+                <h3>模块 B</h3>
+                <p>第二个卡片，默认与其他卡片横向排列。</p>
+            </div>
+            <div class="card-item" style="order: 3;">
+                <h3>模块 C</h3>
+                <p>第三个卡片，同样具有独立的样式。</p>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <div class="footer">
+            &copy; 2026 MISC-C-WEB · V 1.0
+        </div>
+
+    </div>
+
 </body>
 </html>

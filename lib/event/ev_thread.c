@@ -126,6 +126,7 @@ static attr_force_inline void ev_thd_hook_walk(ev_thd_attr_t *attr, ev_thd_hook_
 static attr_force_inline void _ev_thd_timer_cb(void *args)
 {
     ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
+
     ev_sem_post(&attr->sem);    // 写sem唤醒工作线程
     // 重新启动定时器
     ev_high_res_timer_start(attr->timer);
@@ -268,18 +269,17 @@ declare_hash(ev_thd_attr, ev_thd_attr, ev_thd_attr_t, item, 1, 31, ev_thd_attr_c
 
 // 全局哈希表，存储所有事件线程属性
 static ev_thd_attr_hash_head_t g_ev_thd_attr_hash_head = {};
-/**
- * @brief       ctor init g_ev_thd_attr_hash_head
- */
-static void g_ev_thd_attr_hash_init() attr_ctor(CTOR_PRIO_HIGH);
-static void g_ev_thd_attr_hash_init()
-{
-    ev_thd_attr_hash_init(&g_ev_thd_attr_hash_head);
-}
 
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
+
+void ev_thd_module_init()
+{
+    ev_thd_attr_hash_init(&g_ev_thd_attr_hash_head);
+
+    dbg_major("event thread init ok");
+}
 
 void ev_thd_attr_init(ev_thd_attr_t *attr)
 {

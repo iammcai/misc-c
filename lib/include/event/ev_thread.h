@@ -27,6 +27,7 @@
 #include "type/type_hash.h"
 #include "event/ev_sem.h"
 #include "event/ev_timer.h"
+#include "plat/atom.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -50,8 +51,8 @@ typedef struct{
     int event_fd;           // 用于唤醒线程的event fd
     ev_sem_t sem;           // 用于等待、唤醒的信号量
 
-    char run;           // 启动标志
-    char working;       // 工作标志
+    ATOMIC_UINT8_T run;           // 启动标志
+    ATOMIC_UINT8_T working;       // 工作标志
 
     ev_thd_hook_list_head_t ctors;      // ctor函数链表
     ev_thd_hook_list_head_t preworks;   // prework函数链表
@@ -102,12 +103,14 @@ static ev_thd_attr_t ev_thd_attr_ ## _name = {  \
     .timeout = _timeout,    \
     .timer = NULL,  \
 };  \
-static void ev_thd_attr_ ## _name ## _init() attr_ctor(CTOR_PRIO_MID);  \
-static void ev_thd_attr_ ## _name ## _init()    \
-{   \
-    ev_thd_attr_init(&ev_thd_attr_ ## _name); \
-}   \
 /* declare_ev_thd end */
+
+/**
+ * 外部使用，注册事件线程属性到框架中
+ */
+#define ev_thd_register(_name)   \
+    _ev_thd_register(&ev_thd_attr_ ## _name);   \
+/* ev_thd_register end */
 
 /**
  * 外部使用，启动一个线程，随后等待唤醒
@@ -134,48 +137,32 @@ static void ev_thd_attr_ ## _name ## _init()    \
  * 外部使用，注册ctor钩子
  */
 #define declare_ev_thd_ctor(name, _hook_func)   \
-static ev_thd_hook_t ev_thd_ctor_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
-static void ev_thd_ctor_hook_ ## name ## _ ##_hook_func ## _reg() attr_ctor(CTOR_PRIO_LOW);   \
-static void ev_thd_ctor_hook_ ## name ## _ ##_hook_func ## _reg() \
-{   \
+    static ev_thd_hook_t ev_thd_ctor_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
     ev_thd_hook_reg(&ev_thd_attr_ ## name, &ev_thd_ctor_hook_ ## name ## _ ##_hook_func, EV_THD_HOOK_TYPE_CTOR); \
-}   \
 /* ev_thd_hook_ctor_reg */
 
 /**
  * 外部使用，注册prework钩子
  */
 #define declare_ev_thd_prework(name, _hook_func)   \
-static ev_thd_hook_t ev_thd_prework_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
-static void ev_thd_prework_hook_ ## name ## _ ##_hook_func ## _reg() attr_ctor(CTOR_PRIO_LOW);   \
-static void ev_thd_prework_hook_ ## name ## _ ##_hook_func ## _reg() \
-{   \
+    static ev_thd_hook_t ev_thd_prework_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
     ev_thd_hook_reg(&ev_thd_attr_ ## name, &ev_thd_prework_hook_ ## name ## _ ##_hook_func, EV_THD_HOOK_TYPE_PREWORK); \
-}   \
 /* ev_thd_hook_prework_reg */
 
 /**
  * 外部使用，注册postwork钩子
  */
 #define declare_ev_thd_postwork(name, _hook_func)   \
-static ev_thd_hook_t ev_thd_postwork_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
-static void ev_thd_postwork_hook_ ## name ## _ ##_hook_func ## _reg() attr_ctor(CTOR_PRIO_LOW);   \
-static void ev_thd_postwork_hook_ ## name ## _ ##_hook_func ## _reg() \
-{   \
+    static ev_thd_hook_t ev_thd_postwork_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
     ev_thd_hook_reg(&ev_thd_attr_ ## name, &ev_thd_postwork_hook_ ## name ## _ ##_hook_func, EV_THD_HOOK_TYPE_POSTWORK); \
-}   \
 /* ev_thd_hook_postwork_reg */
 
 /**
  * 外部使用，注册dtor钩子
  */
 #define declare_ev_thd_dtor(name, _hook_func)   \
-static ev_thd_hook_t ev_thd_dtor_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
-static void ev_thd_dtor_hook_ ## name ## _ ##_hook_func ## _reg() attr_ctor(CTOR_PRIO_LOW);   \
-static void ev_thd_dtor_hook_ ## name ## _ ##_hook_func ## _reg() \
-{   \
+    static ev_thd_hook_t ev_thd_dtor_hook_ ## name ## _ ##_hook_func = { .hook_func = _hook_func };   \
     ev_thd_hook_reg(&ev_thd_attr_ ## name, &ev_thd_dtor_hook_ ## name ## _ ##_hook_func, EV_THD_HOOK_TYPE_DTOR); \
-}   \
 /* ev_thd_hook_dtor_reg */
 
 /* ========================================================================== */
@@ -183,11 +170,26 @@ static void ev_thd_dtor_hook_ ## name ## _ ##_hook_func ## _reg() \
 /* ========================================================================== */
 
 /**
+ * @brief       init event thread module
+ */
+extern void ev_thd_module_init();
+
+/**
  * @brief       init ev thd attr, add into global hash
  * 
  * @param[in]   attr    - ev thd attr
  */
 extern void ev_thd_attr_init(ev_thd_attr_t *attr);
+
+/**
+ * @brief       register ev thd attr
+ * 
+ * @param[in]   attr
+ */
+static void _ev_thd_register(ev_thd_attr_t *attr)
+{
+    ev_thd_attr_init(attr);
+}
 
 /**
  * @brief       run an ev thd

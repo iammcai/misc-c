@@ -201,44 +201,11 @@ static attr_force_inline fixed_mem_node_t* fixed_mem_node_new(mem_type_attr_t *a
 }
 
 /**
- * @brief       init gloabl variable: g_mem_type_attr_hash_head
- * 
- * @note        CTOR
- */
-static attr_force_inline void g_mem_type_attr_hash_init() attr_ctor(CTOR_PRIO_MID);
-
-/**
- * @brief       init gloabl variable: g_fixed_free_list_hash_head
- * 
- * @note        CTOR
- */
-static attr_force_inline void g_fixed_free_list_head_hash_init() attr_ctor(CTOR_PRIO_MID);
-
-/**
- * @brief       init global variable: g_fixed_recycle_aq_list_head
- * 
- * @note        CTOR
- */
-static attr_force_inline void g_fixed_recycle_aq_list_head_init() attr_ctor(CTOR_PRIO_MID);
-
-/**
  * @brief       recycle fixed node work func
  * 
  * @note        固定大小节点内存回收线程的工作函数
  */
 static attr_force_inline void fixed_node_recycle_work(void *args);
-
-/**
- * @brief       init recycle thread
- * 
- * @note        CTOR，启动回收线程
- */
-static attr_force_inline void fixed_node_recycle_init() attr_ctor(CTOR_PRIO_LOW);
-
-/**
- * @brief       ctor register mp cli
- */
-static attr_force_inline void mp_cli_init() attr_ctor(CTOR_PRIO_MID);
 
 /**
  * @brief       cli hook for: show mp
@@ -384,20 +351,6 @@ static nonfixed_mp_t* _nonfixed_mp_find_or_create(mem_type_attr_t *attr, int sup
  */
 static void _nonfixed_node_recycle_work(void *args);
 
-/**
- * @brief       ctor init non fixed mp
- * 
- * @note        构造初始化nonfixed mp相关
- */
-static void nonfixed_mp_early_init() attr_ctor(CTOR_PRIO_HIGH);
-
-/**
- * @brief       ctor run ev thd for nonfixed recycle
- * 
- * @note        declare_ev_thd使用MID，这里必须使用比他低的
- */
-static void nonfixed_recycle_thd_init() attr_ctor(CTOR_PRIO_LOW);
-
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -414,7 +367,6 @@ static tid_t g_tid = 0;
 static fixed_recycle_aq_list_head_t g_fixed_recycle_aq_list_head = {};
 // 声明回收事件线程，兜底1000ms回收一次
 declare_ev_thd(fixed_node_recycle, fixed_node_recycle_work, NULL, 1000)
-
 // 全局统计数据
 ATOMIC_UINT32_T g_mp_calloc_cnt = 0;     // 申请次数
 ATOMIC_UINT64_T g_mp_calloc_size = 0;    // 申请大小
@@ -455,21 +407,6 @@ declare_list(fixed_recycle_aq, fixed_recycle_aq, fixed_recycle_aq_t, item)
 
 // 定义回收队列的相关操作
 declare_spsc_atom_queue(fixed_recycle, fixed_recycle, fixed_mem_node_t, aq_item)
-
-static inline void g_mem_type_attr_hash_init()
-{
-    mem_type_attr_hash_init(&g_mem_type_attr_hash_head);
-}
-
-static inline void g_fixed_free_list_head_hash_init()
-{
-    fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
-}
-
-static inline void g_fixed_recycle_aq_list_head_init()
-{
-    fixed_recycle_aq_list_init(&g_fixed_recycle_aq_list_head);
-}
 
 void mem_type_attr_init(mem_type_attr_t *attr)
 {
@@ -705,19 +642,31 @@ static inline void fixed_node_recycle_work(void *args)
     }
 }
 
-static inline void fixed_node_recycle_init()
+void mem_type_attr_module_init()
 {
-    ev_thd_run(fixed_node_recycle);
+    // attr哈希表初始化
+    mem_type_attr_hash_init(&g_mem_type_attr_hash_head);
+
+    dbg_major("mem type attr for mp init ok");
 }
 
-static void nonfixed_mp_early_init()
+void mp_module_init()
 {
-    // 初始化存储nonfixed mp的哈希表，这里只有主线程做了。子线程需要检查flag并且初始化
-    nonfixed_mp_hash_init(&g_nonfixed_mp_hash);
-    g_nonfixed_mp_hash_init_flag = 1;
+    // fixed mp初始化
+    fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
+    fixed_recycle_aq_list_init(&g_fixed_recycle_aq_list_head);
+    ev_thd_register(fixed_node_recycle);
+    ev_thd_run(fixed_node_recycle);
 
     // 初始化存储所有recycle aq的哈希表
     nonfixed_recycle_aq_hash_init(&g_nonfixed_recycle_aq_hash);
+    ev_thd_register(nonfixed_node_recycle);
+    ev_thd_run(nonfixed_node_recycle);
+
+    // cli注册
+    cli_register("show mp", "dump mem pool info", NULL, _mp_show_mp_hook);
+
+    dbg_major("mp module init ok");
 }
 
 /**
@@ -1020,11 +969,6 @@ static void _nonfixed_node_recycle_work(void *args)
         // 处理下一个aq
         recycle_aq = nonfixed_recycle_aq_hash_next(&g_nonfixed_recycle_aq_hash, recycle_aq);
     }
-}
-
-static inline void mp_cli_init()
-{
-    cli_register("show mp", "dump mem pool info", NULL, _mp_show_mp_hook);
 }
 
 static void* _mp_show_mp_hook(unsigned char argc, char *argv[])

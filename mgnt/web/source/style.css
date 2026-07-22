@@ -1,0 +1,152 @@
+/* ===== 全局重置 & 基础 ===== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+}
+
+/* ===== 卡片容器 ===== */
+.container {
+    max-width: 1080px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    border-radius: 24px;
+    padding: 25px 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    transition: transform 0.3s ease;
+}
+
+.container:hover {
+    transform: translateY(-5px);
+}
+
+/* ===== 内部模块网格容器 ===== */
+.card-grid {
+    display: flex;
+    flex-wrap: wrap;          /* 允许换行，防止溢出 */
+    gap: 20px;                /* 模块之间的间距 */
+    margin: 30px 0;           /* 上下留白 */
+    justify-content: flex-start; /* 靠左排列（也可改为 center/space-between） */
+}
+
+/* ===== 单个内部模块 ===== */
+.card-item {
+    flex: 1 1 200px;          /* 基础宽度200px，可伸缩 */
+    min-width: 150px;         /* 最小宽度，防止过小 */
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 16px;
+    padding: 20px 18px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); /* 独立阴影 */
+    border: 1px solid rgba(255, 255, 255, 0.4); /* 边框 */
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* 悬停效果：微微浮起 */
+.card-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+/* 内部模块的标题 */
+.card-item h3 {
+    font-size: 1.2rem;
+    margin-bottom: 8px;
+    color: #2d3748;
+}
+
+/* 内部模块的文本 */
+.card-item p {
+    font-size: 0.95rem;
+    color: #4a5568;
+    line-height: 1.5;
+}
+
+/* ===== 标题 ===== */
+h1 {
+    font-size: 2.5rem;
+    color: #2d3748;
+    margin-bottom: 12px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+
+h1 span {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.subtitle {
+    font-size: 1.1rem;
+    color: #4a5568;
+    margin-bottom: 30px;
+    border-left: 4px solid #667eea;
+    padding-left: 16px;
+    font-weight: 300;
+}
+
+/* ===== 内容区域 ===== */
+.content {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    color: #2d3748;
+    margin-bottom: 30px;
+}
+
+.content p {
+    margin-bottom: 16px;
+}
+
+/* ===== 按钮 ===== */
+.btn {
+    display: inline-block;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    padding: 12px 30px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 12px 28px rgba(102, 126, 234, 0.6);
+}
+
+/* ===== 页脚 ===== */
+.footer {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #718096;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 600px) {
+    .container {
+        padding: 25px 20px;
+    }
+    h1 {
+        font-size: 1.8rem;
+    }
+    .subtitle {
+        font-size: 0.95rem;
+    }
+}

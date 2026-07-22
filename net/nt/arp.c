@@ -210,13 +210,6 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[]);
 
 static void _arp_zcap_filter_cb(char *packet, int size, void *args);
 
-/**
- * @brief       ctor init arp
- * 
- * @note        初始化arp，优先级必须比MID低，以注册抓包过滤
- */
-static void arp_early_init(void) attr_ctor(CTOR_PRIO_LOW);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -548,7 +541,7 @@ error_code_e arp_request_send(const char *if_name, uint32_t dst_ip)
     return ERR_NO_ERROR;
 }
 
-static void arp_early_init(void)
+void arp_module_init(void)
 {
     // 初始化arp reply cache
     arp_reply_cache_hash_init(&g_arp_reply_cache);
@@ -574,4 +567,6 @@ static void arp_early_init(void)
 
     zcap_register_pkt_filter("wlan0", "arp", _arp_zcap_filter_cb, NULL);
     zcap_register_field_len_type("wlan0", "arp", 0x0806, 0xffff);
+
+    dbg_major("arp module init ok");
 }
