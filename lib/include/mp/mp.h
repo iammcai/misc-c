@@ -16,6 +16,7 @@
  *   1.2 | 2026-06-15 | cai | Add debug method.
  *   1.3 | 2026-07-11 | cai | Add auto init mp.
  *   2.0 | 2026-07-14 | cai | Add nonfixed mp.
+ *   3.0 | 2026-07-21 | cai | Add mp bin.
  */
 
 #ifndef __MP_H__
@@ -31,13 +32,14 @@
 #include "type/type_hash.h"
 #include "type/type_atom_queue.h"
 #include "type/type_skiplist.h"
+#include "mp/mp_base.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
 // 表示是否开启调试，开启时会添加计数等，导致性能降低
-#define MP_DBG_MODE             (1)
+#define MP_DBG_MODE             (0)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -52,6 +54,8 @@ pre_declare_hash(mem_type_attr)
 // 内存属性枚举
 typedef enum{
     MEM_TYPE_ATTR_FIXED_SIZE = 1 << 0,      // 节点大小固定
+    MEM_TYPE_ATTR_SLAB = 1 << 1,            // 分级内存
+    MEM_TYPE_ATTR_DYNAMIC_SUPPLY = 1 << 2,  // 动态补充
 }mem_type_attr_flag_e;
 
 // 内存类型属性
@@ -65,8 +69,15 @@ typedef struct{
 #if MP_DBG_MODE
     ATOMIC_UINT32_T used;               // 正在使用的数量
     ATOMIC_UINT32_T piece;              // 碎片数量，for nonfixed
+    /* -------- slab使用 -------- */
+    ATOMIC_UINT32_T slab_cnt[SLAB_SIZE_CNT];    // 每个链表最大数量
+    ATOMIC_UINT32_T slab_used[SLAB_SIZE_CNT];   // 每个链表分配出去的数量
+    ATOMIC_UINT32_T hit_total;                  // 命中总次数
+    ATOMIC_UINT32_T slab_hit[SLAB_SIZE_CNT];    // 各个slab命中次数
 #endif
 }mem_type_attr_t;
+
+/* -------------------------------- MP FIXED --------------------------------*/
 
 // 预定义固定大小内存空闲链表
 pre_declare_list(fixed_free)
@@ -104,6 +115,8 @@ typedef struct{
     mem_type_attr_t *attr;          // 所属内存类型
     fixed_free_list_head_hash_item_t item;  // item
 }fixed_free_list_t;
+
+/* -------------------------------- MP NONFIXED --------------------------------*/
 
 // 预定义哈希表，用来存储所有的非固定节点内存池
 pre_declare_hash(nonfixed_mp)
@@ -146,6 +159,8 @@ typedef struct{
     nonfixed_mp_hash_item_t item;               // 哈希表item
 }nonfixed_mp_t;
 
+/* -------------------------------- SYS --------------------------------*/
+
 // extern 全局统计数据
 extern ATOMIC_UINT32_T g_mp_calloc_cnt;
 extern ATOMIC_UINT64_T g_mp_calloc_size;
@@ -165,6 +180,41 @@ declare_list(fixed_free, fixed_free, fixed_mem_node_t, item)
  * @param[in]   attr    - mem type attr
  */
 extern void mem_type_attr_init(mem_type_attr_t *attr);
+
+/**
+ * @brief       find mem type attr in global hashtable
+ * 
+ * @param[in]   name    - attr name
+ * 
+ * @retval      ptr to mem type attr
+ */
+extern mem_type_attr_t* mem_type_attr_find(const char *name);
+
+/**
+ * @brief       get first attr in mem attr hashtable
+ */
+extern mem_type_attr_t* mem_type_attr_first();
+
+/**
+ * @brief       get next attr in mem attr hashtable
+ */
+extern mem_type_attr_t* mem_type_attr_next(mem_type_attr_t *attr);
+
+/**
+ * @brief       check if attr slab
+ * 
+ * @param[in]   attr    - mem type attr
+ * 
+ * @retval      0 - no, else - yes
+ */
+extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr);
+
+/**
+ * @brief       new a logic tid
+ * 
+ * @note        分配一个新的逻辑ID，原子ADD保证并发可用
+ */
+extern tid_t tid_new();
 
 /**
  * @brief       初始化fixed node mem pool

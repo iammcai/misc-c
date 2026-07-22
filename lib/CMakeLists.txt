@@ -7,6 +7,7 @@ add_library(Lib STATIC
     type/type_skiplist.c
     event/ev_thread.c
     mp/mp.c
+    mp/mp_slab.c
     event/ev_lock.c
     msg_q/msg_q.c
     plat/debug.c

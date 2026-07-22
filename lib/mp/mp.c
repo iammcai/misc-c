@@ -52,9 +52,11 @@
 // 打印attr的格式 标题：name,type,node_size,total,use,free,usage(%),piece
 #define MEM_ATTR_FMT_HEAD       "%-20s%-12s%-12s%-10s%-8s%-8s%-10s%-8s\n"
 // mp fixed 打印attr的格式 数据：name,type,total,use,free,usage
-#define MEM_ATTR_FIXED_FMT_DATA       "%-20s%-12s%-12d%-10d%-8d%-8d%-10.3f%-8s\n"
+#define MEM_ATTR_FIXED_FMT_DATA         "%-20s%-12s%-12d%-10d%-8d%-8d%-10.3f%-8s\n"
 // mp non fixed 打印attr的格式 数据：name,type,total,use,free,usage
-#define MEM_ATTR_NONFIXED_FMT_DATA    "%-20s%-12s%-12s%-10d%-8d%-8d%-10.3f%-8d\n"
+#define MEM_ATTR_NONFIXED_FMT_DATA      "%-20s%-12s%-12s%-10d%-8d%-8d%-10.3f%-8d\n"
+// mp slab 打印attr的格式 数据：name,type,total,use,free,usage
+#define MEM_ATTR_SLAB_FMT_DATA          "%-20s%-12s%-12s%-10d%-8d%-8d%-10.3f%-8s\n"
 
 /* ========================================================================== */
 /*                           Static Function Prototypes                       */
@@ -134,12 +136,10 @@ static attr_pure_inline unsigned int mem_type_attr_fixed_size(mem_type_attr_t *a
     return attr->flag & MEM_TYPE_ATTR_FIXED_SIZE;
 }
 
-/**
- * @brief       new a logic tid
- * 
- * @note        分配一个新的逻辑ID，原子ADD保证并发可用
- */
-static attr_force_inline tid_t tid_new();
+extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr)
+{
+    return attr->flag & MEM_TYPE_ATTR_SLAB;
+}
 
 /**
  * @brief       获取tid
@@ -475,13 +475,31 @@ void mem_type_attr_init(mem_type_attr_t *attr)
 {
     assert(attr && attr->name);
 
-        ATOM_STORE(&attr->allocated, 0, MORDER_RELEASE);
+    ATOM_STORE(&attr->allocated, 0, MORDER_RELEASE);
 #if MP_DBG_MODE
-        ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
+    ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
 #endif
 
-        mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
-    }
+    mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
+}
+
+mem_type_attr_t* mem_type_attr_find(const char *name)
+{
+    if(!name)
+        return NULL;
+    mem_type_attr_t key = {.name = name};
+    return mem_type_attr_hash_find(&g_mem_type_attr_hash_head, &key);
+}
+
+mem_type_attr_t* mem_type_attr_first()
+{
+    return mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
+}
+
+mem_type_attr_t* mem_type_attr_next(mem_type_attr_t *attr)
+{
+    return mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
+}
 
 void _mp_fixed_init(mem_type_attr_t *attr)
 {
@@ -635,7 +653,7 @@ void _mp_fixed_node_put(void *ptr)
 #endif
 }
 
-static inline tid_t tid_new()
+tid_t tid_new()
 {
     return ATOM_ADD_FETCH(&g_tid, 1, MORDER_ACQ_REL);
 }
@@ -1024,7 +1042,7 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
     safe_printf("MP debug mode: [%s], Use-Free-Usage-Piece invalid while close!\n\n", MP_DBG_MODE ? "open" : "close");
 
     safe_printf(MEM_ATTR_FMT_HEAD MEM_ATTR_FMT_HEAD, 
-        "Name", "Type", "Node_Size", "Total", "Use", "Free", "Usage(%%)", "piece",
+        "Name", "Type", "Node_Size", "Total", "Use", "Free", "Usage(%)", "piece",
         "----", "----", "---------", "-----", "---", "----", "--------",  "-----"
     );
 
@@ -1042,6 +1060,12 @@ static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
                 safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total*100 : 0, "/");
 #else
                 safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, 0, 0, 0.0, "/");
+#endif
+            else if(mem_type_attr_slab(attr))
+#if MP_DBG_MODE
+                safe_printf(MEM_ATTR_SLAB_FMT_DATA, attr->name, "slab", "/", total, used, total-used, total ? (double)used/total*100 : 0, "/");
+#else
+                safe_printf(MEM_ATTR_SLAB_FMT_DATA, attr->name, "slab", "/", total, 0, 0, 0.0, "/");
 #endif
             else
 #if MP_DBG_MODE

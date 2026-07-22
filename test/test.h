@@ -99,6 +99,21 @@ int test_mp();
 int test_mp_nonfixed();
 
 /**
+ * @brief       测试非固定大小内存池性能
+ */
+int test_nonfixed_mp_cost();
+
+/**
+ * @brief       测试slab mp功能
+ */
+void test_slab_mp_function();
+
+/**
+ * @brief       测试slab mp性能
+ */
+void test_slab_mp_cost();
+
+/**
  * @brief       test atom queue for spsc 
  */
 int test_aq_spsc();
