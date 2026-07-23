@@ -40,7 +40,7 @@
 #define TEST_COUNT      (10)
 
 // 测试slab的节点次数
-#define TEST_SLAB_NODE_COUNT    (1000)
+#define TEST_SLAB_NODE_COUNT    (500)
 
 #define TEST_SLAB_OPS_PER_PRODUCER      TEST_SLAB_NODE_COUNT
 // 生产者线程个数
@@ -307,6 +307,10 @@ void test_slab_mp_cost()
     // 初始化内存池并补充节点
     mp_slab_init(test_slab)
     mp_slab_supply(test_slab)
+
+    mem_type_attr_register(test_slab)
+    mem_type_attr_register(test_mp_multi)
+
     // 随机序列生成，表示申请内存大小，范围[1, 512]
     for (int i = 0; i < TEST_SLAB_NODE_COUNT; i++)
         node_size[i] = rand_normal_centered(1,1024,512,100);

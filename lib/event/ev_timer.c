@@ -260,9 +260,7 @@ static void _ev_high_res_timer_el_cb(int fd, void *args)
 
     //dbg_always("High res timer callback for %s", hr_timer->name);
 
-    //thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
-    // TODO: need fix
-    hr_timer->cb(hr_timer->args);
+    thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
 }
 
 ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout, ev_timer_cb_func cb, void *args)
@@ -340,11 +338,11 @@ void ev_timer_module_init(void)
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
 
     // 初始化线程池
-    thp_init(&_thp_ev_timer, "ev_timer", THREAD_POOL_TH_COUNT_MAX);
+    thp_register(ev_timer);
     thp_run(ev_timer);
 
     // 高精度定时器专用线程池
-    thp_init(&_thp_ev_high_res_timer, "ev_high_res_timer", THREAD_POOL_TH_COUNT_MAX);
+    thp_register(ev_high_res_timer);
     thp_run(ev_high_res_timer);
 
     ev_timer_heap_init(&g_ev_timer_heap);

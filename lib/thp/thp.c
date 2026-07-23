@@ -21,7 +21,7 @@
 #include <string.h>
 #include "thp/thp.h"
 #include "cli/cli.h"
-#include "mp/mp_slab.h"
+#include "mp/mp.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -46,7 +46,7 @@
 static thp_hash_head_t g_thp_hash = {};
 
 // 全局内存池，用于线程池任务节点
-declare_mem_type_slab(thp_work_node)
+declare_mem_type_fixed(thp_work_node, sizeof(thp_work_t), THP_WORK_COUNT_MAX)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -155,7 +155,11 @@ void _thp_run(thp_t *thp)
     // 创建工作线程
     unsigned char i = 0;
     for(i = 0; i < thp->thread_count; ++ i)
-        assert(-1 != pthread_create(&thp->thread_array[i], NULL, _thp_thread_routine, thp));
+    {
+        int ret = pthread_create(&thp->thread_array[i], NULL, _thp_thread_routine, thp);
+        if(0 != ret)
+            dbg_error("thp: create thread fail");
+    }
 }
 
 void* _thp_thread_routine(void *args)
@@ -182,7 +186,7 @@ void* _thp_thread_routine(void *args)
         pthread_mutex_unlock(&thp->mtx);
 
         task->wf(task->args);
-        mp_slab_node_put(task);
+        mp_fixed_node_put(task);
 
         //dbg("thread %d in thp %s, running a task done", (int)pthread_self(), thp->name);
     }
@@ -204,7 +208,7 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
 
     thp_work_t *task;
     do{
-        task = mp_slab_node_get(thp_work_node, sizeof(thp_work_t));    // 尝试获取内存
+        task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
     }while(!task);
 
     task->wf = wf;

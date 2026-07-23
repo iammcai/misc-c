@@ -302,10 +302,10 @@ static attr_force_inline void* _mp_slab_node_get_fast(mem_type_attr_t *attr, int
     if(likely(node))
     {
 #if MP_DBG_MODE
-    ATOM_FETCH_ADD(&attr->used, g_slab_size_arr[slot], MORDER_RELAXED);
-    ATOM_FETCH_ADD(&attr->slab_used[slot], 1, MORDER_RELAXED);
-    ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
-    ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->used, g_slab_size_arr[slot], MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->slab_used[slot], 1, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
 #endif
         return (void*)((char*)node + sizeof(slab_mem_node_t));
     }
@@ -333,14 +333,14 @@ static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, in
     {
         // 从 local_aq 回收一批，最多该批次1/2
         int batch = 0;
-        int bacth_cnt = g_slab_count_arr[node->slot] >> 1;
+        int bacth_cnt = g_slab_count_arr[slot] >> 1;
         slab_mem_node_t *recycle_node;
         while(batch < bacth_cnt && (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
         {
             slab_free_mem_list_add_head(&mp->free_lists[recycle_node->slot], recycle_node);
             batch++;
 #if MP_DBG_MODE
-            ATOM_FETCH_SUB(&recycle_node->attr->used, recycle_node->slot * g_slab_size_arr[recycle_node->slot], MORDER_RELAXED);
+            ATOM_FETCH_SUB(&recycle_node->attr->used, g_slab_size_arr[recycle_node->slot], MORDER_RELAXED);
             ATOM_FETCH_SUB(&recycle_node->attr->slab_used[recycle_node->slot], 1, MORDER_RELAXED);
 #endif
         }
@@ -386,7 +386,7 @@ static attr_force_inline void _mp_slab_node_put_local(slab_mp_t *mp, slab_mem_no
     slab_free_mem_list_add_head(&mp->free_lists[node->slot], node);
 
 #if MP_DBG_MODE
-    ATOM_FETCH_SUB(&node->attr->used, node->slot * g_slab_size_arr[node->slot], MORDER_RELAXED);
+    ATOM_FETCH_SUB(&node->attr->used, g_slab_size_arr[node->slot], MORDER_RELAXED);
     ATOM_FETCH_SUB(&node->attr->slab_used[node->slot], 1, MORDER_RELAXED);
 #endif
 }
@@ -403,8 +403,6 @@ static attr_force_inline void _mp_slab_node_put_remote(slab_mp_t *mp, slab_mem_n
 {
     // 将node放到本线程的remote_aq，等待后台回收
     slab_recycle_spsc_atom_queue_push(&mp->recycle.remote_aq, node);
-
-    //dbg_always("put remotely");
 
     // remote_aq堆积则立即唤醒_mp_slab_node_get 
     if(slab_recycle_spsc_atom_queue_count(&mp->recycle.remote_aq) >= MP_SLAB_RECYCLE_THRESHOLD)

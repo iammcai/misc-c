@@ -17,6 +17,9 @@ add_library(Lib STATIC
     syslog/syslog.c
 )
 
+# 保存临时文件
+set_source_files_properties(thp/thp.c PROPERTIES COMPILE_FLAGS "-save-temps")
+
 # 添加链接库
 target_link_libraries(Lib
     atomic

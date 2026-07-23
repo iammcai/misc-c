@@ -471,6 +471,8 @@ int test_nonfixed_mp_cost()
     double nonfixed_single_sys_cost = _sys_nonfixed_single_test();
     safe_printf("    SYS: %.3f us, %.3f ops/us\n", nonfixed_single_sys_cost,
         (double)(MP_NONFIXED_64_COUNT + MP_NONFIXED_128_COUNT + MP_NONFIXED_256_COUNT + MP_NONFIXED_512_COUNT)/nonfixed_single_sys_cost);
+    safe_printf("    Speedup: %.03f x\n", nonfixed_single_sys_cost / nonfixed_single_mp_cost);
+    safe_printf("==================================================\n");
 
     return 0;
 }
