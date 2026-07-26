@@ -331,6 +331,15 @@ extern void _zcap_start(zcap_t *captor);
 extern void _zcap_cancel(zcap_t *captor);
 
 /**
+ * @brief       get zcaptor status
+ * 
+ * @param[in]   if_name     - interface name
+ * 
+ * @retval      0 - shutdown, 1 - running
+ */
+extern int zcap_status_get(const char *if_name);
+
+/**
  * @brief       register filter into zcaptor
  * 
  * @param[in]   if_name         - if name

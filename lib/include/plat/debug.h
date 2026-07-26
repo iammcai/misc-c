@@ -57,6 +57,7 @@ typedef enum{
     ERR_NT_ARP_CACHE_NOT_EXIST,     // arp cache不存在
     ERR_NT_ARP_SEND_FAIL,           // 发送arp失败
     ERR_NT_PING_DMAC_UNKNOWN,       // ping目的mac未知
+    ERR_NT_TFTP_FILE_FAIL,          // tftp打开文件失败
 }error_code_e;
 
 /* ========================================================================== */

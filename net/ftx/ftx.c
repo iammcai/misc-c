@@ -498,6 +498,18 @@ void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx,
     return;
 }
 
+int ftx_status_get(const char *if_name)
+{
+    pfm_ensure_ret(if_name, 0);
+
+    // 获取接口
+    ftx_t key = {.if_name = if_name};
+    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    pfm_ensure_ret(ftxor, 0);
+
+    return ATOM_LOAD(&ftxor->status, MORDER_RELAXED);
+}
+
 error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr)
 {
     pfm_ensure_ret(mac_addr, ERR_BAD_PARAM);

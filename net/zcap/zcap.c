@@ -956,6 +956,17 @@ void _zcap_cancel(zcap_t *captor)
     }
 }
 
+int zcap_status_get(const char *if_name)
+{
+    pfm_ensure_ret(if_name, 0);
+
+    zcap_t captor_key = {.if_name = if_name};
+    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    pfm_ensure_ret(zcaptor, 0);
+
+    return ATOM_LOAD(&zcaptor->running, MORDER_RELAXED);
+}
+
 void _zcap_register_pkt_filter(const char *if_name, const char *filter_name, zcap_pkt_filter_match_cb cb, void *args)
 {
     assert(if_name && filter_name && cb);

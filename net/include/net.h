@@ -45,6 +45,9 @@
 // UDP头部长度
 #define PKT_HDR_UDP_SIZE    (8)
 
+// 接口名长度
+#define IF_NAME_SIZE        (8)
+
 // IPV4类型
 #define IPV4    (0x0800)
 // ARP类型

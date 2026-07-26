@@ -50,6 +50,7 @@
 // 定时器定义
 struct ev_timer_s{
     uint64_t expired_time;      // 绝对超时时间
+    uint32_t timeout;           // 超时时间
     ev_timer_cb_func cb;        // 回调函数
     void *args;                 // 回调参数
     ATOMIC_UINT8_T actived;     // 激活标记 
@@ -187,6 +188,7 @@ ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args)
 
     ev_timer_t *timer = mp_calloc(1, sizeof(ev_timer_t));
     timer->expired_time = ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE) + timeout;
+    timer->timeout = timeout;
     timer->cb = cb;
     timer->args = args;
 
@@ -213,11 +215,21 @@ void ev_timer_start(ev_timer_t *timer)
 {
     assert(timer);
 
+    // 如果定时器还在堆中，从堆中移除timer
+    if(ATOM_LOAD(&timer->actived, MORDER_ACQUIRE))
+    {
+        ev_with_spinlock(&g_heap_spinlock)
+            ev_timer_heap_del(&g_ev_timer_heap, timer);
+        timer->actived = 0;
+    }
+
     // 设置actived 0->1
     unsigned char expected = 0;
     if(ATOM_CMP_XCHG_WEAK(&timer->actived, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
     {
         ATOM_STORE(&timer->deleted, 0, MORDER_RELEASE);
+        // 重新设置绝对超时时间
+        timer->expired_time = ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE) + timer->timeout;
         ev_with_spinlock(&g_heap_spinlock)
             ev_timer_heap_add(&g_ev_timer_heap, timer); // 加入堆
 

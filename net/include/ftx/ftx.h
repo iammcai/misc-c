@@ -106,6 +106,17 @@ extern void _ftx_send(const char *if_name, void *ctx, unsigned int len);
 extern void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx, unsigned int len);
 
 /**
+ * @brief       check ftxor status
+ * 
+ * @param[in]   if_name     - interface name
+ * 
+ * @retval      status, 1-activated, 0-shutdown
+ * 
+ * @note        检查发包接口状态
+ */
+extern int ftx_status_get(const char *if_name);
+
+/**
  * @brief       get mac addr by interface name
  * 
  * @param[in]   if_name     - if name
