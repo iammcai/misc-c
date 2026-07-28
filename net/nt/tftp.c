@@ -48,13 +48,21 @@
 #define FILE_NAME_SIZE              (16)
 
 // TFTP文件名长度
-#define TFTP_DOWNLOAD_PATH_SIZE     (256)
+#define TFTP_FILE_PATH_SIZE     (256)
 // TFTP下载路径前缀
 #define TFTP_DOWNLOAD_PATH_PREFIX   "../net/nt/tftp/download/"
+// TFTP上传路径前缀
+#define TFTP_UPLOAD_PATH_PREFIX     "../net/nt/tftp/upload/"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
+
+// 读请求or写请求
+typedef enum{
+    TFTP_SEND_RRQ = 0,
+    TFTP_SEND_WRQ = 1
+}tftp_send_op_e;
 
 // TFTP opcode定义
 typedef enum{
@@ -90,6 +98,8 @@ typedef enum{
     TFTP_STATE_IDLE = 0,            // 空闲
     TFTP_STATE_WAIT_DATA1,          // 等待第一个block
     TFTP_STATE_DOWNLOAD,            // 剩余block的传输
+    TFTP_STATE_WAIT_ACK0,           // 等待第零个ack
+    TFTP_STATE_UPLOAD,              // 上传
     TFTP_STATE_SUCCESS,             // 传输完毕状态
     TFTP_STATE_ERROR,               // 错误状态
 
@@ -102,6 +112,10 @@ typedef enum{
     TFTP_EVENT_RECEIVE_DATA1,           // 接收到data1
     TFTP_EVENT_RECEIVE_DATA,            // 接收到从2开始的data
     TFTP_EVENT_RECEIVE_DATA_TIMEOUT,    // 读取数据超时
+    TFTP_EVENT_WRITE_REQ,               // 请求写文件，上传
+    TFTP_EVENT_RECEIVE_ACK0,            // 接收到ACK0
+    TFTP_EVENT_RECEIVE_ACK,             // 接收到别的ACK
+    TFTP_EVENT_RECEIVE_ACK_TIMEOUT,     // 接收ACK超时
     TFTP_EVENT_RECEIVE_ERROR,           // 收到error packet
     TFTP_EVENT_RE_IDLE,                 // 清除异常，回到idle
 
@@ -143,8 +157,11 @@ typedef struct{
     ATOMIC_UINT16_T server_port;        // 服务器使用端口号，tftp要求动态变更
     ATOMIC_UINT16_T expect_block_id;    // 等待的数据block_id
 
+    uint16_t send_data_size;            // 发送的长度
+
     uint8_t retry;              // 重试次数
-    ev_timer_t *retry_timer;      // 重发报文定时器
+    ev_timer_t *download_retry_timer;       // 重发报文定时器，用于下载
+    ev_timer_t *upload_retry_timer;         // 重传报文定时器，用于上传
 
     ev_sem_t sem_done;          // 结束的sem，用来通知cli
 }tftp_fsm_t;
@@ -166,11 +183,14 @@ declare_msg_q(tftp_fsm_mq, TFTP_FSM_MSGQ_CAPACITY, sizeof(tftp_msg_t))
 
 // 状态字符串
 const char* tftp_state_str[TFTP_STATE_CNT] = {
-    "IDLE", "WAIT_DATA1", "DOWNLOAD", "SUCCESS", "TFTP_ERROR",
+    "IDLE", "WAIT_DATA1", "DOWNLOAD",
+    "WAIT_ACK0", "UPLOAD", "SUCCESS", "TFTP_ERROR",
 };
 // 事件字符串
 const char* tftp_event_str[TFTP_EVENT_CNT] = {
-    "READ_REQUEST", "RECEIVE_DATA_1", "RECEIVE_DATE", "DATA_TIMEOUT", "RECEIVE_ERROR_PKT", "RETURN_IDLE", 
+    "READ_REQUEST", "RECEIVE_DATA_1", "RECEIVE_DATE", "DATA_TIMEOUT", 
+    "WRITE_REQUEST", "RECEIVE_ACK0", "RECEIVE_ACK", "ACK_TIMEOUT",
+    "RECEIVE_ERROR_PKT", "RETURN_IDLE", 
 };
 
 /* ========================================================================== */
@@ -178,13 +198,17 @@ const char* tftp_event_str[TFTP_EVENT_CNT] = {
 /* ========================================================================== */
 
 /**
- * @brief       send tftp rrq packet
+ * @brief       send tftp rrq or wrq packet
  * 
- * @note        发送读请求报文
+ * @param[in]   op      - rrq or wrq
+ * 
+ * @note        发送读/写请求报文
  *              format: op_code(2B) + filename + '\0' + mode + '\0'
  */
-static error_code_e _tftp_send_rrq()
+static error_code_e _tftp_send_rrq_or_wrq(tftp_send_op_e op)
 {
+    pfm_ensure_ret(op == TFTP_SEND_RRQ || op == TFTP_SEND_WRQ, ERR_BAD_PARAM);
+
     int offset = 0;
     const char *mode = "octet";     // 二进制模式
 
@@ -200,7 +224,7 @@ static error_code_e _tftp_send_rrq()
     memset(buffer, 0, TFTP_RRQ_BUFFER_LEN);
 
     pkthdr_tftp_t *tftp_hdr = (pkthdr_tftp_t*)buffer;
-    tftp_hdr->op_code = htons(TFTP_RD_REQ);
+    tftp_hdr->op_code = htons(TFTP_SEND_RRQ == op ? TFTP_RD_REQ : TFTP_WR_REQ);
     offset += 2;
 
     memcpy(buffer + offset, file_name, strlen(file_name)+1);
@@ -245,6 +269,50 @@ static attr_force_inline void _tftp_send_ack_retry(uint16_t block_id)
 }
 
 /**
+ * @brief       send data pakcet to tftp server
+ * 
+ * @note        根据fsm信息，发送data块
+ */
+static void _tftp_send_data()
+{
+    if(!g_tftp_fsm.fp)
+        return;
+
+    char *buffer = mp_slab_node_get(ftx, sizeof(pkthdr_tftp_data_t) + TFTP_DATA_BLOCK_SIZE);
+    if(!buffer)
+        return;
+    memset(buffer, 0, sizeof(pkthdr_tftp_data_t) + TFTP_DATA_BLOCK_SIZE);
+    int size = 0;
+
+    pkthdr_tftp_data_t *tftp_data_hdr = (pkthdr_tftp_data_t*)buffer;
+    tftp_data_hdr->op_code = htons(TFTP_DATA);
+    tftp_data_hdr->block_id = htons(ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE));
+    size += sizeof(pkthdr_tftp_data_t);
+
+    char* data = buffer + size;
+    // 从文件中读取最多512Bytes
+    // 如果是重传，那么需要先偏移回去
+    if(g_tftp_fsm.retry > 0)
+    {
+        long current_pos = ftell(g_tftp_fsm.fp);
+        fseek(g_tftp_fsm.fp, -(long)g_tftp_fsm.send_data_size, SEEK_CUR);
+    }
+    size_t read_bytes = fread(data, 1, TFTP_DATA_BLOCK_SIZE, g_tftp_fsm.fp);
+    if(read_bytes < 0)
+    {
+        safe_printf("-tftp_fsm: fread() file for block #%d fail\n", ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE));
+        mp_slab_node_put(buffer);
+        return;
+    }
+    size += read_bytes;
+    // 设置fsm data send size
+    g_tftp_fsm.send_data_size = read_bytes;
+
+    // 发送tftp报文
+    ftx_send_udp(g_tftp_fsm.if_name, g_tftp_fsm.server_ip, g_tftp_fsm.server_port, buffer, size);
+}
+
+/**
  * @brief       download data from tftp_data_packet into file
  * 
  * @param[in]   msg - tftp msg
@@ -269,9 +337,9 @@ static error_code_e _tftp_download_data(tftp_msg_t *msg)
 }
 
 /**
- * @brief       resend tftp rrq packet
+ * @brief       产生超时事件，驱动fsm
  */
-static attr_force_inline void _tftp_rrq_retry(void *args)
+static attr_force_inline void _tftp_download_retry_timer_cb(void *args)
 {
     tftp_msg_t msg = {};
 
@@ -279,7 +347,20 @@ static attr_force_inline void _tftp_rrq_retry(void *args)
         TFTP_EVENT_READ_REQ : TFTP_EVENT_RECEIVE_DATA_TIMEOUT;
     msg_q_push(tftp_fsm_mq, &msg, sizeof(tftp_msg_t));
     // 再次启动
-    ev_timer_start(g_tftp_fsm.retry_timer);
+    ev_timer_start(g_tftp_fsm.download_retry_timer);
+}
+
+static attr_force_inline void _tftp_upload_retry_timer_cb(void *args)
+{
+    tftp_msg_t msg = {};
+
+    // 根据等待block是否为0，区分超时事件
+    msg.event = ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE) == 0 ?
+        TFTP_EVENT_WRITE_REQ : TFTP_EVENT_RECEIVE_ACK_TIMEOUT;
+    msg_q_push(tftp_fsm_mq, &msg, sizeof(tftp_msg_t));
+
+    // 再次启动
+    ev_timer_start(g_tftp_fsm.upload_retry_timer);
 }
 
 /**
@@ -290,6 +371,7 @@ static void _tftp_fsm_session_update(tftp_msg_t *msg)
     switch(msg->event)
     {
         case TFTP_EVENT_READ_REQ:
+        case TFTP_EVENT_WRITE_REQ:
             // 文件名
             memset(g_tftp_fsm.file_name, 0, FILE_NAME_SIZE);
             memcpy(g_tftp_fsm.file_name, msg->file_name, strlen(msg->file_name));
@@ -300,6 +382,7 @@ static void _tftp_fsm_session_update(tftp_msg_t *msg)
             ATOM_STORE(&g_tftp_fsm.server_ip, msg->server_ip, MORDER_RELEASE);
             break;
         case TFTP_EVENT_RECEIVE_DATA1:
+        case TFTP_EVENT_RECEIVE_ACK0:
             // 更新服务器端口
             ATOM_STORE(&g_tftp_fsm.server_port, msg->server_port, MORDER_RELEASE);
             break;
@@ -308,9 +391,9 @@ static void _tftp_fsm_session_update(tftp_msg_t *msg)
 
 static error_code_e _tftp_open_file(tftp_msg_t *msg)
 {
-    char filepath[TFTP_DOWNLOAD_PATH_SIZE] = {};
+    char filepath[TFTP_FILE_PATH_SIZE] = {};
 
-    snprintf(filepath, TFTP_DOWNLOAD_PATH_SIZE, "%s%s", TFTP_DOWNLOAD_PATH_PREFIX, g_tftp_fsm.file_name);
+    snprintf(filepath, TFTP_FILE_PATH_SIZE, "%s%s", TFTP_DOWNLOAD_PATH_PREFIX, g_tftp_fsm.file_name);
     g_tftp_fsm.fp = fopen(filepath, "wb");
     if(!g_tftp_fsm.fp)
     {
@@ -333,6 +416,7 @@ static attr_force_inline void _tftp_state_idle_enter(tftp_msg_t *msg)
     ATOM_STORE(&g_tftp_fsm.server_port, 0, MORDER_RELEASE);
     ATOM_STORE(&g_tftp_fsm.expect_block_id, 0, MORDER_RELEASE);
     g_tftp_fsm.retry = 0;
+    g_tftp_fsm.send_data_size = 0;
 
     // 通知cli完毕
     ev_sem_post(&g_tftp_fsm.sem_done);
@@ -351,6 +435,12 @@ static attr_force_inline void _tftp_state_idle_poll(tftp_msg_t *msg)
             // 更新会话信息
             _tftp_fsm_session_update(msg);
             g_tftp_fsm.state = TFTP_STATE_WAIT_DATA1;
+            break;
+        case TFTP_EVENT_WRITE_REQ:      // 请求上传
+            // 更新会话信息
+            _tftp_fsm_session_update(msg);
+            g_tftp_fsm.state = TFTP_STATE_WAIT_ACK0;
+            break;
         default:
             break;
     }
@@ -365,9 +455,9 @@ static attr_force_inline void _tftp_state_wait_data1_enter(tftp_msg_t *msg)
 {
     ATOM_STORE(&g_tftp_fsm.expect_block_id, 1, MORDER_RELEASE);
 
-    _tftp_send_rrq();
+    _tftp_send_rrq_or_wrq(TFTP_SEND_RRQ);
     safe_printf("-tftp_fsm: Send RRQ Packet\n");
-    ev_timer_start(g_tftp_fsm.retry_timer);
+    ev_timer_start(g_tftp_fsm.download_retry_timer);
 }
 
 /**
@@ -382,7 +472,7 @@ static attr_force_inline void _tftp_state_wait_data1_poll(tftp_msg_t *msg)
         case TFTP_EVENT_READ_REQ:
             if(g_tftp_fsm.retry < TFTP_RETRY_COUNT)     // 有限次数超时重传
             {
-                _tftp_send_rrq();
+                _tftp_send_rrq_or_wrq(TFTP_SEND_RRQ);
                 ++ g_tftp_fsm.retry;
                 safe_printf("-tftp_fsm: Retry send RRQ (%d/%d)\n", g_tftp_fsm.retry, TFTP_RETRY_COUNT);
             }
@@ -411,7 +501,7 @@ static attr_force_inline void _tftp_state_wait_data1_poll(tftp_msg_t *msg)
                     ATOM_FETCH_ADD(&g_tftp_fsm.expect_block_id, 1, MORDER_ACQ_REL); // 等待下一个block
                     _tftp_send_ack(1);
                     if(msg->data_size == TFTP_DATA_BLOCK_SIZE)
-                        g_tftp_fsm.state = TFTP_STATE_DOWNLOAD;     // 进入transfer状态
+                        g_tftp_fsm.state = TFTP_STATE_DOWNLOAD;     // 进入download状态
                     else
                         g_tftp_fsm.state = TFTP_STATE_SUCCESS;      // 传输完毕，进入success
                 }
@@ -434,22 +524,22 @@ static attr_force_inline void _tftp_state_wait_data1_poll(tftp_msg_t *msg)
 static attr_force_inline void _tftp_state_wait_data1_exit(tftp_msg_t *msg)
 {
     g_tftp_fsm.retry = 0;       // 重置重传次数
-    ev_timer_stop(g_tftp_fsm.retry_timer);    // 结束定时器
+    ev_timer_stop(g_tftp_fsm.download_retry_timer);    // 结束定时器
 }
 
 /**
- * @brief       进入transfer状态调用
+ * @brief       进入download状态调用
  * 
  * @note        
  */
 static attr_force_inline void _tftp_state_download_enter(tftp_msg_t *msg)
 {
     // 启动ACK定时器
-    ev_timer_start(g_tftp_fsm.retry_timer);
+    ev_timer_start(g_tftp_fsm.download_retry_timer);
 }
 
 /**
- * @brief       transfer状态切换
+ * @brief       download状态切换
  */
 static attr_force_inline void _tftp_state_download_poll(tftp_msg_t *msg)
 {
@@ -459,7 +549,7 @@ static attr_force_inline void _tftp_state_download_poll(tftp_msg_t *msg)
     {
         case TFTP_EVENT_RECEIVE_DATA:       // 接收到数据
             // 停止ACK定时器
-            ev_timer_stop(g_tftp_fsm.retry_timer);
+            ev_timer_stop(g_tftp_fsm.download_retry_timer);
             g_tftp_fsm.retry = 0;
             // 下载该block数据
             int ret = _tftp_download_data(msg);
@@ -476,7 +566,7 @@ static attr_force_inline void _tftp_state_download_poll(tftp_msg_t *msg)
                 {
                     g_tftp_fsm.state = TFTP_STATE_DOWNLOAD;
                     // 重启ACK定时器
-                    ev_timer_start(g_tftp_fsm.retry_timer);
+                    ev_timer_start(g_tftp_fsm.download_retry_timer);
                 }
             }
             else
@@ -494,11 +584,146 @@ static attr_force_inline void _tftp_state_download_poll(tftp_msg_t *msg)
             break;
         case TFTP_EVENT_RECEIVE_ERROR:
             // 停止ACK定时器
-            ev_timer_stop(g_tftp_fsm.retry_timer);
+            ev_timer_stop(g_tftp_fsm.download_retry_timer);
             g_tftp_fsm.retry = 0;
             g_tftp_fsm.state = TFTP_STATE_ERROR;
             safe_printf("-tftp_fsm: Receive Error From Server.\n");
             break;
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief       进入wait_ack0状态调用
+ * 
+ * @note        发送wrq报文，启动重传定时器
+ */
+static attr_force_inline void _tftp_state_wait_ack0_enter(tftp_msg_t *msg)
+{
+    // 尝试打开文件
+    char filepath[TFTP_FILE_PATH_SIZE] = {};
+    snprintf(filepath, TFTP_FILE_PATH_SIZE, "%s%s", TFTP_UPLOAD_PATH_PREFIX, g_tftp_fsm.file_name);
+    g_tftp_fsm.fp = fopen(filepath, "rb");
+    if(!g_tftp_fsm.fp)
+    {
+        safe_printf("-tftp_fsm: fopen() file %s fail, file not exist\n", filepath);
+        tftp_msg_t new_msg = {
+            .event = TFTP_EVENT_RECEIVE_ERROR
+        };
+        msg_q_push(tftp_fsm_mq, &new_msg, sizeof(tftp_msg_t));
+        return;
+    }
+
+    ATOM_STORE(&g_tftp_fsm.expect_block_id, 0, MORDER_RELEASE);     // 期望接收到ACK block == 0
+
+    _tftp_send_rrq_or_wrq(TFTP_SEND_WRQ);   // 发送wrq
+    safe_printf("-tftp_fsm: Send WRQ Packet\n");
+
+    ev_timer_start(g_tftp_fsm.upload_retry_timer);          // 启动重传
+    g_tftp_fsm.retry = 0;
+}
+
+/**
+ * @brief       wait_ack0状态切换
+ */
+static attr_force_inline void _tftp_state_wait_ack0_poll(tftp_msg_t *msg)
+{
+    tftp_event_e event = msg->event;
+
+    switch(event)
+    {
+        case TFTP_EVENT_WRITE_REQ:      // 超时
+            if(g_tftp_fsm.retry < TFTP_RETRY_COUNT)
+            {
+                _tftp_send_rrq_or_wrq(TFTP_SEND_WRQ);   // 发送wrq
+                ++ g_tftp_fsm.retry;
+                safe_printf("-tftp_fsm: Retry send WRQ (%d/%d)\n", g_tftp_fsm.retry, TFTP_RETRY_COUNT);
+            }
+            else
+                g_tftp_fsm.state = TFTP_STATE_ERROR;
+            break;
+        case TFTP_EVENT_RECEIVE_ERROR:
+            g_tftp_fsm.state = TFTP_STATE_ERROR;
+            break;
+        case TFTP_EVENT_RECEIVE_ACK0:
+            _tftp_fsm_session_update(msg);
+            g_tftp_fsm.state = TFTP_STATE_UPLOAD;
+            break;
+        default:
+            break;
+    }
+}
+
+static attr_force_inline void _tftp_state_wait_ack0_exit(tftp_msg_t *msg)
+{
+    // 关闭重传wrq定时器
+    ev_timer_stop(g_tftp_fsm.upload_retry_timer);
+    g_tftp_fsm.retry = 0;
+}
+
+/**
+ * @brief       进入Upload状态调用
+ */
+static attr_force_inline void _tftp_state_upload_enter(tftp_msg_t *msg)
+{
+    ATOM_STORE(&g_tftp_fsm.expect_block_id, 1, MORDER_RELEASE); // 准备发送第一个data
+
+    // 发送data1，等待ack1
+    _tftp_send_data();
+    // 启动timer
+    ev_timer_start(g_tftp_fsm.upload_retry_timer);
+}
+
+/**
+ * @brief       upload状态切换
+ */
+static attr_force_inline void _tftp_state_upload_poll(tftp_msg_t *msg)
+{
+    tftp_event_e event = msg->event;
+
+    switch(event)
+    {
+        case TFTP_EVENT_RECEIVE_ACK:        // 接收到ACK
+            // 关闭当前的timer
+            ev_timer_stop(g_tftp_fsm.upload_retry_timer);
+            g_tftp_fsm.retry = 0;
+            safe_printf("-tftp_fsm: Upload block #%d %d Bytes...\n", ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE), g_tftp_fsm.send_data_size);
+            // 检查是否已经上传最后一个block
+            if(g_tftp_fsm.send_data_size < TFTP_DATA_BLOCK_SIZE)
+                g_tftp_fsm.state = TFTP_STATE_SUCCESS;
+            else
+            {
+                ATOM_FETCH_ADD(&g_tftp_fsm.expect_block_id, 1, MORDER_ACQ_REL);     // next block id
+                _tftp_send_data();
+                // 启动timer
+                ev_timer_start(g_tftp_fsm.upload_retry_timer);
+            }
+            break;
+        case TFTP_EVENT_RECEIVE_ACK_TIMEOUT:        // ACK超时
+            // 关闭当前的timer
+            ev_timer_stop(g_tftp_fsm.upload_retry_timer);
+            if(g_tftp_fsm.retry < TFTP_RETRY_COUNT)         // 尝试重传Data
+            {
+                ++ g_tftp_fsm.retry;
+                _tftp_send_data();
+                safe_printf("-tftp_fsm: Retry send Data block #%d (%d/%d)\n", 
+                    ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE), g_tftp_fsm.retry, TFTP_RETRY_COUNT);
+                ev_timer_start(g_tftp_fsm.upload_retry_timer);      // 再次启动
+            }
+            else    // 重传次数超出，进入error
+            {
+                safe_printf("-tftp_fsm: Retry Server timeout.\n");
+                g_tftp_fsm.retry = 0;
+                g_tftp_fsm.state = TFTP_STATE_ERROR;
+            }
+            break;
+        case TFTP_EVENT_RECEIVE_ERROR:      // 收到错误
+            // 关闭当前的timer
+            ev_timer_stop(g_tftp_fsm.upload_retry_timer);
+            g_tftp_fsm.retry = 0;
+
+            g_tftp_fsm.state = TFTP_STATE_ERROR;        // 进入error状态
         default:
             break;
     }
@@ -511,7 +736,7 @@ static attr_force_inline void _tftp_state_download_poll(tftp_msg_t *msg)
  */
 static attr_force_inline void _tftp_state_success_enter(tftp_msg_t *msg)
 {
-    safe_printf("-tftp_fsm: Download file done.\n");
+    safe_printf("-tftp_fsm: Transfer file done.\n");
 
     tftp_msg_t self_msg = {
         .event = TFTP_EVENT_RE_IDLE,
@@ -599,7 +824,8 @@ static attr_force_inline void _tftp_fsm_init()
     // 初始化fsm信息
     memset(&g_tftp_fsm, 0, sizeof(g_tftp_fsm));
     g_tftp_fsm.state = TFTP_STATE_IDLE;
-    g_tftp_fsm.retry_timer = ev_timer_create(TFTP_RETRY_INTERVAL*1000, _tftp_rrq_retry, NULL);
+    g_tftp_fsm.download_retry_timer = ev_timer_create(TFTP_RETRY_INTERVAL*1000, _tftp_download_retry_timer_cb, NULL);
+    g_tftp_fsm.upload_retry_timer = ev_timer_create(TFTP_RETRY_INTERVAL*1000, _tftp_upload_retry_timer_cb, NULL);
     ev_sem_init(&g_tftp_fsm.sem_done);
 
     // IDLE
@@ -610,10 +836,18 @@ static attr_force_inline void _tftp_fsm_init()
     g_tftp_fsm.hook[TFTP_STATE_WAIT_DATA1].enter_hook = _tftp_state_wait_data1_enter;
     g_tftp_fsm.hook[TFTP_STATE_WAIT_DATA1].poll_hook = _tftp_state_wait_data1_poll;
     g_tftp_fsm.hook[TFTP_STATE_WAIT_DATA1].exit_hook = _tftp_state_wait_data1_exit;
-    // TRANSFER
+    // DOWNLOAD
     g_tftp_fsm.hook[TFTP_STATE_DOWNLOAD].enter_hook = _tftp_state_download_enter;
     g_tftp_fsm.hook[TFTP_STATE_DOWNLOAD].poll_hook = _tftp_state_download_poll;
     g_tftp_fsm.hook[TFTP_STATE_DOWNLOAD].exit_hook = NULL;
+    // WAIT_ACK0
+    g_tftp_fsm.hook[TFTP_STATE_WAIT_ACK0].enter_hook = _tftp_state_wait_ack0_enter;
+    g_tftp_fsm.hook[TFTP_STATE_WAIT_ACK0].poll_hook = _tftp_state_wait_ack0_poll;
+    g_tftp_fsm.hook[TFTP_STATE_WAIT_ACK0].exit_hook = _tftp_state_wait_ack0_exit;
+    // UPLOAD
+    g_tftp_fsm.hook[TFTP_STATE_UPLOAD].enter_hook = _tftp_state_upload_enter;
+    g_tftp_fsm.hook[TFTP_STATE_UPLOAD].poll_hook = _tftp_state_upload_poll;
+    g_tftp_fsm.hook[TFTP_STATE_UPLOAD].exit_hook = NULL;
     // SUCCESS
     g_tftp_fsm.hook[TFTP_STATE_SUCCESS].enter_hook = _tftp_state_success_enter;
     g_tftp_fsm.hook[TFTP_STATE_SUCCESS].poll_hook = _tftp_state_success_poll;
@@ -639,6 +873,15 @@ static void* _tftp_fsm(void *args);
  * @param[in]   filename    - file name
  */
 static void* _tftp_download_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for tftp upload
+ * 
+ * @param[in]   if_name     - if name
+ * @param[in]   server_ip   - host order
+ * @param[in]   filename    - file name
+ */
+static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[]);
 
 /**
  * @brief       cb for zcap filter tftp packet
@@ -701,6 +944,52 @@ static void* _tftp_download_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
+static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[])
+{
+    // 检查接口长度
+    if(strlen(argv[0]) >= IF_NAME_SIZE)
+    {
+        safe_printf("-tftp: Length of ifname too long\n");
+        return NULL;
+    }
+    // 检查接口状态
+    if(!(zcap_status_get(argv[0]) && ftx_status_get(argv[0])))
+    {
+        safe_printf("-tftp: Interface invalid: %s\n", argv[0]);
+        return NULL;
+    }
+
+    // 检查文件长度
+    if(strlen(argv[2]) >= FILE_NAME_SIZE)
+    {
+        safe_printf("-tftp: Length of filename too long\n");
+        return NULL;
+    }
+
+    // 获取server ip
+    const char *server_ip_str = argv[1];
+    struct in_addr addr = {};
+    if(1 != inet_pton(AF_INET, server_ip_str, &addr))
+    {
+        safe_printf("-tftp: Error Server IP: %s\n", server_ip_str);
+        return NULL;
+    }
+    uint32_t server_ip_host = ntohl(addr.s_addr);
+
+    tftp_msg_t msg = {
+        .event = TFTP_EVENT_WRITE_REQ,
+        .server_ip = server_ip_host,
+    };
+    memcpy(msg.if_name, argv[0], strlen(argv[0]));
+    memcpy(msg.file_name, argv[2], strlen(argv[2]));
+    msg_q_push(tftp_fsm_mq, &msg, sizeof(tftp_msg_t));
+
+    // 等待完成
+    ev_sem_wait(&g_tftp_fsm.sem_done);
+
+    return NULL;
+}
+
 static void _tftp_packet_filter_cb(char *packet, int len, void *args)
 {
     // 检查报文长度是否小于tftp的
@@ -712,42 +1001,65 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args)
     if(ntohl(ipv4_hdr->src_addr) != ATOM_LOAD(&g_tftp_fsm.server_ip, MORDER_ACQUIRE))
         return;
     
-    // 检查TFTP op_code是否为TFTP_DATA，或者ERROR
+    // 获取tftp opcode
     pkthdr_tftp_t *tftp_hdr = (pkthdr_tftp_t*)(packet + sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t) + sizeof(pkthdr_udp_t));
     uint16_t op_code = ntohs(tftp_hdr->op_code);
     tftp_msg_t msg = {};
-    if(op_code == TFTP_ERROR)
-    {
-        msg.event = TFTP_EVENT_RECEIVE_ERROR;
-        msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
-    }
-    if(op_code != TFTP_DATA)
-        return;
+    uint16_t block_id = 0;
 
-    pkthdr_tftp_data_t *tftp_data_hdr = (pkthdr_tftp_data_t*)tftp_hdr;
-    uint16_t block_id = ntohs(tftp_data_hdr->block_id);
-
-    if(ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE) != block_id)
-        return;
-
-    char *data = (char*)tftp_data_hdr + sizeof(pkthdr_tftp_data_t);
-    int data_size = len - (sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t) + sizeof(pkthdr_udp_t) + sizeof(pkthdr_tftp_data_t));
-    // 如果block_id为1，推送RECEIVE_DATA1事件
-    if(block_id == 1)
+    switch(op_code)
     {
-        msg.event = TFTP_EVENT_RECEIVE_DATA1;
-        pkthdr_udp_t *udp_hdr = (pkthdr_udp_t*)(packet + sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t));
-        msg.server_port = ntohs(udp_hdr->sport);
-        memcpy(msg.data, data, data_size);
-        msg.data_size = data_size;
-        msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
-    }
-    else        // 否则是RECEIVE_DATA事件
-    {
-        msg.event = TFTP_EVENT_RECEIVE_DATA;
-        memcpy(msg.data, data, data_size);
-        msg.data_size = data_size;
-        msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+        case TFTP_DATA:         // 下载文件的数据包
+            pkthdr_tftp_data_t *tftp_data_hdr = (pkthdr_tftp_data_t*)tftp_hdr;
+            block_id = ntohs(tftp_data_hdr->block_id);
+
+            if(ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE) != block_id)
+                return;
+
+            char *data = (char*)tftp_data_hdr + sizeof(pkthdr_tftp_data_t);
+            int data_size = len - (sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t) + sizeof(pkthdr_udp_t) + sizeof(pkthdr_tftp_data_t));
+            // 如果block_id为1，推送RECEIVE_DATA1事件
+            if(block_id == 1)
+            {
+                msg.event = TFTP_EVENT_RECEIVE_DATA1;
+                pkthdr_udp_t *udp_hdr = (pkthdr_udp_t*)(packet + sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t));
+                msg.server_port = ntohs(udp_hdr->sport);
+                memcpy(msg.data, data, data_size);
+                msg.data_size = data_size;
+            }
+            else        // 否则是RECEIVE_DATA事件
+            {
+                msg.event = TFTP_EVENT_RECEIVE_DATA;
+                memcpy(msg.data, data, data_size);
+                msg.data_size = data_size;
+            }
+            msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+            break;
+        case TFTP_ACK:      // 上传文件的ACK响应
+            pkthdr_tftp_ack_t *tftp_ack_hdr = (pkthdr_tftp_ack_t*)tftp_hdr;
+            block_id = ntohs(tftp_ack_hdr->block_id);
+            if(ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE) != block_id)      // 过滤当前期望的block id ack
+                return;
+            if(block_id == 0)
+            {
+                pkthdr_udp_t *udp_hdr = (pkthdr_udp_t*)(packet + sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t));
+                msg.server_port = ntohs(udp_hdr->sport);        // Block0需要设置server port后续使用
+                msg.event = TFTP_EVENT_RECEIVE_ACK0;
+                msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+            }
+            else            // 其它block的ACK
+            {
+                msg.event = TFTP_EVENT_RECEIVE_ACK;
+                msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+            }
+            break;
+        case TFTP_ERROR:
+            return;
+            msg.event = TFTP_EVENT_RECEIVE_ERROR;
+            msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+            break;
+        default:
+            return;
     }
 }
 
@@ -794,6 +1106,13 @@ void tftp_module_init()
         {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"}
     };
     cli_register("tftp download", "download file from server", param0, _tftp_download_cli_hook);
+    // 注册cli，上传文件到tftp服务器
+    cli_param_t param1[] = {
+        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+        {.required = 1, .type = PARAM_VALUE, .short_name = 's', .help = "tftp server ip addr"},
+        {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"}
+    };
+    cli_register("tftp upload", "upload file to server", param1, _tftp_upload_cli_hook);
 
     // 注册UDP报文过滤，TFTP传输数据会指定随机的端口号，这里只能粗匹配
     zcap_register_pkt_filter("eth0", "udp", _tftp_packet_filter_cb, NULL);

@@ -5,3 +5,8 @@
 ## TFTP Download
 
 ![tftp_client_fsm](../images/tftp_client.png)
+
+## TFTP Upload
+
+
+![tftp_upload_fsm](../images/tftp_upload.png)
