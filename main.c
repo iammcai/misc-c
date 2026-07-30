@@ -36,6 +36,7 @@
 #include "web/web.h"
 #include "nt/ping.h"
 #include "nt/tftp.h"
+#include "led/led.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -129,6 +130,9 @@ static attr_force_inline void _platfrom_init()
 
     // web初始化
     web_module_init();
+
+    // led初始化
+    led_module_init();
 
     // 关闭debug
     debug_level_set(debug_level_none);

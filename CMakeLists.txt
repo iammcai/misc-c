@@ -15,6 +15,7 @@ add_executable(Main
 add_subdirectory(lib)
 add_subdirectory(mgnt)
 add_subdirectory(net)
+add_subdirectory(app)
 add_subdirectory(test)
 
 # 头文件目录
@@ -22,6 +23,7 @@ target_link_libraries(Main PUBLIC
     Mgnt
     Lib
     Net
+    App
     Test
 )
 

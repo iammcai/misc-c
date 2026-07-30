@@ -1,0 +1,21 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2712";
+
+    fragment@0 {
+        target-path = "/";                  /* 挂载到根节点，作为独立平台设备 */
+        __overlay__ {
+            miscc_led_label: miscc_led {    /* label: name */
+                compatible = "miscc,led";   /* 必须与驱动 of_match_table 完全一致 */
+                status = "okay";
+
+                                            /* 属性名必须与驱动代码中读取的名称一致 */
+                led-gpios = <&rp1_gpio 2 0>;
+
+                default-state = "off";
+            };
+        };
+    };
+};
