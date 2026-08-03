@@ -181,8 +181,6 @@ static inline void _web_handle_new_conn()
 
     // 将新的fd注册到evloop中
     event_loop_register_file_event(client_fd, EL_FILE_EVENT_READABLE, _web_el_cb, NULL);
-
-    syslog_notice(SYSLOG_MODULE_WEB, "user login web");
 }
 
 static void _web_handle_msg(int fd)
@@ -399,3 +397,15 @@ done:
     
     memset(&g_web_mgnt, 0, sizeof(web_t));
 }
+
+/**
+ * @brief       set tpcl filter sourceId
+ * 
+ * @param[in]   appId       - tpcl app id
+ * @param[in]   entryId     - tpcl entry id
+ * @param[in]   sourceId    - sourceId for mvl metadata, 12bits
+ * 
+ * @retval      error code
+ * 
+ * @note        sourceId earch falcon支持12bit，少部分仅5bit
+ */

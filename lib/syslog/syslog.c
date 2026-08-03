@@ -33,8 +33,6 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// 日志内容的缓冲区长度，保持8字节对齐
-#define SYSLOG_ENTRY_CTX_SIZE   (108)
 // 日志环形缓冲区大小，必须是2次幂
 #define SYSLOG_RING_SIZE        (64)
 _Static_assert((SYSLOG_RING_SIZE & (SYSLOG_RING_SIZE-1)) == 0, "Ring size must be power of 2");

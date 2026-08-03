@@ -58,6 +58,11 @@ typedef enum{
     ERR_NT_ARP_SEND_FAIL,           // 发送arp失败
     ERR_NT_PING_DMAC_UNKNOWN,       // ping目的mac未知
     ERR_NT_TFTP_FILE_FAIL,          // tftp打开文件失败
+
+    // SHT30
+    ERR_SHT30_START = 1200,         // sht30错误码开始
+    ERR_SHT30_DEVICE_NOT_EXIST,     // sht30设备不存在
+    ERR_SHT30_ATTR_NOT_EXIST,       // sht30属性不存在
 }error_code_e;
 
 /* ========================================================================== */

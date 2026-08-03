@@ -12,7 +12,7 @@
                 status = "okay";
 
                                             /* 属性名必须与驱动代码中读取的名称一致 */
-                led-gpios = <&rp1_gpio 2 0>;
+                led-gpios = <&rp1_gpio 17 0>;
 
                 default-state = "off";
             };

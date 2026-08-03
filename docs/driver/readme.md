@@ -152,4 +152,7 @@ cai@raspicai:~/share/misc-c/driver/led $ readlink /sys/devices/platform/my-led-d
 
 项目对引脚的分配进行规划如下：
 
-GPIO2 - led
+Pin 11  : GPIO17        给 led
+
+Pin 3   : SDA1          给 sht30 sda
+Pin 5   : SCL1          给 sht30 scl

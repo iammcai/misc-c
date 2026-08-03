@@ -37,6 +37,7 @@
 #include "nt/ping.h"
 #include "nt/tftp.h"
 #include "led/led.h"
+#include "sht30/sht30.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -133,6 +134,8 @@ static attr_force_inline void _platfrom_init()
 
     // led初始化
     led_module_init();
+    // sht30初始化
+    sht30_module_init();
 
     // 关闭debug
     debug_level_set(debug_level_none);

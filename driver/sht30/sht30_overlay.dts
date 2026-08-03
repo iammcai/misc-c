@@ -1,0 +1,27 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2712"; /* 树莓派5专用兼容字符串 */
+
+    fragment@0 {
+        target = <&i2c1>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@1 {
+        target = <&i2c1>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            sht30@44 {
+                compatible = "miscc,sht30";
+                reg = <0x44>;
+                status = "okay";
+            };
+        };
+    };
+};

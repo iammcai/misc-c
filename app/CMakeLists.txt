@@ -1,5 +1,6 @@
 add_library(App STATIC
     led/led.c
+    sht30/sht30.c
 )
 
 target_include_directories(App PUBLIC

@@ -46,6 +46,7 @@ typedef enum{
     SYSLOG_MODULE_SYS = 0,
     SYSLOG_MODULE_WEB,
     SYSLOG_MODULE_LED,          // led
+    SYSLOG_MODULE_SHT30,        // sht30
 
     SYSLOG_MODULE_MAX,          // 计数
 }syslog_module_e;
@@ -71,11 +72,15 @@ static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "system",
     "web",
     "led",
+    "sht30",
 };
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
+
+// 日志内容的缓冲区长度，保持8字节对齐
+#define SYSLOG_ENTRY_CTX_SIZE   (108)
 
 /**
  * 内部使用，添加日志
