@@ -72,8 +72,23 @@ typedef struct{
 /**
  * 外部使用，声明slab内存类型，全局仅可以使用一次
  */
-#define declare_mem_type_slab(_name)    \
-    _declare_mem_type_attr(_name, MEM_TYPE_ATTR_SLAB, 0, 0);
+#define declare_mem_type_slab(_name, cnt8, cnt16, cnt32, cnt64, cnt128, cnt256, cnt512, cnt1024, cnt2048, cnt4096, cnt9216) \
+    _declare_mem_type_attr(_name, MEM_TYPE_ATTR_SLAB, 0, 0);    \
+static void _name ## _slab_cnt_set() attr_ctor(CTOR_PRIO_MID);  \
+static void _name ## _slab_cnt_set()    \
+{   \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_8] = cnt8;         \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_16] = cnt16;       \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_32] = cnt32;       \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_64] = cnt64;       \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_128] = cnt128;     \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_256] = cnt256;     \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_512] = cnt512;     \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_1024] = cnt1024;   \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_2048] = cnt2048;   \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_4096] = cnt4096;   \
+    _mem_type_attr_ ## _name.slab_node_cnt[SLAB_SIZE_9216] = cnt9216;   \
+}   \
 /* declare_mem_type_slab end */
 
 /**

@@ -27,6 +27,12 @@ body {
     transition: transform 0.3s ease;
 }
 
+.container h2 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    color: #4c6693;
+}
+
 .container:hover {
     transform: translateY(-5px);
 }

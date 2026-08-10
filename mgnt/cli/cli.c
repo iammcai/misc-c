@@ -35,6 +35,16 @@
 #define CLI_COUNTS_INIT     (128)
 
 /* ========================================================================== */
+/*                             Type Definitions                               */
+/* ========================================================================== */
+
+// cli模式枚举
+typedef enum{
+    CLI_MODE_CONFIG = 0,
+    CLI_MODE_SHELL,
+}cli_mode_e;
+
+/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
@@ -75,11 +85,21 @@ static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])
 // 执行监听输入、任务处理的线程
 static pthread_t cli_stask_tid;
 
+// cli模式
+cli_mode_e g_cli_mode = CLI_MODE_CONFIG;
+
 extern ev_sem_t g_platform_init_ok;
 
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
+
+static attr_force_inline void* _cli_shell_cli_hook(unsigned char argc, char *argv[])
+{
+    safe_printf("-cli: Shell mode, Enter <config> for coming back.\n");
+    g_cli_mode = CLI_MODE_SHELL;
+    return NULL;
+}
 
 static void* _cli_routine(void *args)
 {
@@ -88,18 +108,35 @@ static void* _cli_routine(void *args)
     dbg_major("CLI start...");
     while(1)
     {
-        char *input  = cli_gnurl_readline(fmt_color_green "misc-c > " fmt_color_clear);
+        char *input = NULL;
 
-        if(!input)      // ctrl + D 退出cli
-            break;
-
-        if(*input)      // 非空进行处理
+        switch(g_cli_mode)
         {
-            _cli_handler(input);    // readline会自动过滤掉换行
-            cli_gnurl_add_history(input);       // 添加历史
+            case CLI_MODE_CONFIG:
+                input = cli_gnurl_readline(fmt_color_green "misc-c (config) > " fmt_color_clear);
+                if(!input)      // ctrl + D 退出cli
+                    return NULL;
+                if(*input)      // 非空进行处理
+                {
+                    _cli_handler(input);    // readline会自动过滤掉换行
+                    cli_gnurl_add_history(input);       // 添加历史
+                }
+                // 需要free，readline使用的是malloc分配的内存
+                free(input);
+                break;
+            case CLI_MODE_SHELL:
+                input = cli_gnurl_readline(fmt_color_green "misc-c (shell) > " fmt_color_clear);
+                if(0 == strcmp(input, "config"))
+                    g_cli_mode = CLI_MODE_CONFIG;
+                else
+                    system(input);
+                free(input);
+                break;
+            default:
+                break;
         }
-        // 需要free，readline使用的是malloc分配的内存
-        free(input);
+
+        
     }
 
     return NULL;
@@ -145,6 +182,7 @@ void cli_module_init()
         {.help = "history num", .required = 0, .short_name = 'n', .type = PARAM_VALUE},
     };
     cli_register("history", "dump cli history", param0, _cli_dump_history_cli_hook);
+    cli_register("shell", "enter cli shell mode", NULL, _cli_shell_cli_hook);
 
     // 创建线程执行监听cli输入
     pthread_create(&cli_stask_tid, NULL, _cli_routine, NULL);

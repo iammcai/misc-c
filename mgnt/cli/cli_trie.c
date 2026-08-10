@@ -586,10 +586,10 @@ char** cli_trie_completion(const char *prefix, int start, int end, const char *t
         item = &g_cli_trie.root;
     else        // tab之后的单词，需要截断掉最后一个
     {
-        char *key = mp_calloc(start, sizeof(char));
+        char *key = mp_calloc(start+1, sizeof(char));
         memcpy(key, prefix, start);     // start前面的内存作为查找键
         item = _cli_trie_item_get(key);
-        mp_free(key, sizeof(char)*start);
+        mp_free(key, sizeof(char)*(start+1));
     }
 
     // tab失败

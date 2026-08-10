@@ -52,6 +52,8 @@
 #define IPV4    (0x0800)
 // ARP类型
 #define ARP     (0x0806)
+// TCP类型
+#define TCP     (0x06)
 // UDP类型
 #define UDP     (0x11)
 

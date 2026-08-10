@@ -2,410 +2,348 @@
  * Copyright (C) cai<sybstudy@yeah.net>. All rights reserved.
  *
  * @file    web.c
- * @brief   web管理实现
+ * @brief   web服务实现
  *
  * @author  cai<sybstudy@yeah.net>
- * @date    2026-06-29
+ * @date    2026-08-07
  * @version 1.0
  *
  * @note    
  *
  * @history
- *   1.0 | 2026-06-29 | cai | Initial creation.
+ *   1.0 | 2026-08-07 | cai | Initial creation.
  */
 
 /* ========================================================================== */
 /*                               Include Files                                */
 /* ========================================================================== */
 
-#include <stdio.h>
-#include <sys/stat.h>       // for stat
-#include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
-#include <sys/socket.h>     // for socket
+#include <sys/socket.h>     // for socket api
+#include <sys/epoll.h>      // for epoll api
 #include <netinet/in.h>     // for struct sockaddr_in
-#include <fcntl.h>          // for fcntl
+#include <pthread.h>
+#include <sys/errno.h>
+#include <stdio.h>
+
 #include "web/web.h"
-#include "event/ev_loop.h"
-#include "msg_q/msg_q.h"
-#include "event/ev_thread.h"
-#include "plat/debug.h"
-#include "syslog/syslog.h"
+#include "plat/atom.h"
+#include "type/type_list.h"
+#include "mp/mp.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// web服务使用的端口号
-#define WEB_PORT        (8080)
+// web服务器监听端口
+#define WEB_TCP_PORT        (8080)
+
 // 最大连接数量
-#define WEB_CONN_MAX    (16)
-// 消息队列长度
-#define WEB_MSGQ_SIZE   (WEB_CONN_MAX * 16)
-// 缓冲区大小
-#define WEB_BUFFER_SIZE (4096)
+#define WEB_CONNECT_MAX_CNT     (128)
 
-/* web字符串长度 */
-#define WEB_BUFFER_SIZE_256     (256)
-#define WEB_BUFFER_SIZE_512     (512)
-#define WEB_BUFFER_SIZE_4096    (4096)
+// epoll等待时间
+#define WEB_EPOLL_WAIT_MS       (1000)
 
-// 状态字符串
-// 错误请求
-#define WEB_STATUS_BAD_REQ                  "Bad Request"
-#define WEB_STATUS_FORBIDDEN                "Forbidden"
-#define WEB_STATUS_NOT_FOUND                "Not Found"
-#define WEB_STATUS_METHOD_NOT_ALLOWED       "Method Not Allowed"
-
-#define WEB_DOCS_ROOT   "../mgnt/web/source"
+// web缓冲区长度
+#define WEB_BUFFER_SIZE         (4096)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-// web管理结构定义
-typedef struct{
-    int sock_fd;        // 用于监听连接用的tcp socket fd
-    char buffer[WEB_BUFFER_SIZE];   // 缓冲区，接收客户端使用
-}web_t;
+// 预定义链表，用于管理connection
+pre_declare_list(web_connection)
 
-// web状态码枚举
-typedef enum{
-    WEB_STATUS_CODE_BAD_REQUEST = 400,
-    WEB_STATUS_CODE_FORBIDDEN = 403,
-    WEB_STATUS_CODE_NOT_FOUND = 404,
-    WEB_STATUS_CODE_METHOD_NOT_ALLOWED = 405
-}web_status_code_e;
+// 连接持久化数据结构
+typedef struct{
+    int fd;                             // 对应fd
+    char buffer[WEB_BUFFER_SIZE];       // 缓冲区
+    size_t len;                         // 当前有效缓冲区长度
+
+    web_connection_list_item_t item;    // list item
+}web_connection_t;
+
+// web服务器管理结构定义
+typedef struct{
+    int sock_fd;                // 监听连接的socket fd
+    int epoll_fd;               // epoll_fd
+    pthread_t tid;              // 运行epoll等待的线程ID
+
+    ATOMIC_UINT8_T running;     // 服务器运行标志
+}web_mgnt_t;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
-/**
- * @brief       web evloop callback
- * 
- * @note        web事件注册到ev_loop指定的回调，通知主线程处理
- */
-static attr_force_inline void _web_el_cb(int fd, void *args);
+// 定义链表操作
+declare_list(web_connection, web_connection, web_connection_t, item)
 
 /**
- * @brief       web handle new connection
+ * @brief       find web connection by fd
  * 
- * @note        处理新的web连接请求
+ * @param[in]   fd      - connection fd
+ * 
+ * @retval      search result
  */
-static attr_force_inline void _web_handle_new_conn();
+static attr_force_inline web_connection_t* _web_connection_find(int fd);
 
 /**
- * @brief       web handle extern msg
+ * @brief       web process http request
  * 
- * @param[in]   fd
+ * @param[in]   fd      - fd
+ * @param[in]   req     - request
  * 
- * @note        处理已连接的客户端消息
+ * @note        处理解析好的http请求，响应
  */
-static void _web_handle_msg(int fd);
+static void _web_process_http_req(int fd, http_request_t *req);
 
 /**
- * @brief       send error to client
+ * @brief       handle web events
  * 
- * @param[in]   fd  - conn fd
- * @param[in]   sc  - status code
- * @param[in]   status  - status string
+ * @param[in]   fd      - fd ready
  */
-static void _web_send_error(int fd, web_status_code_e sc, const char *status);
+static void _web_events_handle(int fd);
 
 /**
- * @brief       web handle get file request
- * 
- * @param[in]   fd      - conn fd
- * @param[in]   path    - path in req head
- * 
- * @note        处理GET请求，响应相关PATH 
+ * @brief       web epoll routine
  */
-static void _web_handle_get(int fd, const char *path);
+static attr_force_inline void* _web_epoll_routine(void *args);
 
 /**
- * @brief       work func of web ev_thd
+ * @brief       init web mgnter
  * 
- * @note        处理web事件的工作函数
+ * @retval      error code
+ * 
+ * @note        初始化web连接需要的资源 socket epoll等
  */
-static void _web_ev_thd_work(void *args);
+static error_code_e _web_mgnt_init(void);
 
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
 
-// 全局web服务管理变量
-static web_t g_web_mgnt = {};
-// 处理web事件的线程
-declare_ev_thd(web, _web_ev_thd_work, NULL, -1);
+// fixed内存池，用于connection
+declare_mem_type_fixed(web_connection, sizeof(web_connection_t), WEB_CONNECT_MAX_CNT)
 
-// msgq，用于ev_loop和web之间
-declare_msg_q(web, WEB_MSGQ_SIZE, sizeof(int))
+// 全局web connection链表
+static web_connection_list_head_t g_web_conn_list = {};
 
-// 发送Head缓冲区
-static char head_buf[WEB_BUFFER_SIZE_512] = {};
-// 发送内容缓冲区
-static char send_buf[WEB_BUFFER_SIZE_4096] = {};
+// 全局唯一管理结构
+static web_mgnt_t g_web_mgnter = {};
 
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static inline void _web_el_cb(int fd, void *args)
+static attr_force_inline web_connection_t* _web_connection_find(int fd)
 {
-    // 往msgq推送fd信息
-    msg_q_push(web, &fd, sizeof(int));
-    // 唤醒线程进行处理
-    ev_thd_wake(web);
+    web_connection_t *conn = web_connection_list_first(&g_web_conn_list);
+    while(conn)
+    {
+        if(conn->fd == fd)
+            return conn;
+        conn = web_connection_list_next(conn);
+    }
+
+    return NULL;
 }
 
-static void _web_ev_thd_work(void *args)
+static void _web_process_http_req(int fd, http_request_t *req)
 {
-    // 一次性处理完msg
-    int fd = -1;
-    while(msg_q_ret_ok == msg_q_pop(web, sizeof(int), msg_q_no_wait, &fd))
+    dbg_always("process request for fd %d", fd);
+
+    // 处理GET方法
+    if(0 == strncasecmp(req->method.ptr, "GET", req->method.len))
     {
-        if(fd == g_web_mgnt.sock_fd)    // 新的连接
-            _web_handle_new_conn();
-        else
-            _web_handle_msg(fd);
+        char uri[HTTP_URI_SIZE] = {};
+        memcpy(uri, req->uri.ptr, req->uri.len);
+        http_send_file_response(fd, uri);
     }
 }
 
-static inline void _web_handle_new_conn()
+static void _web_events_handle(int fd)
 {
-    struct sockaddr_in client_addr = {};
-    socklen_t addr_len = sizeof(client_addr);
-    int client_fd = accept(g_web_mgnt.sock_fd, (struct sockaddr*)&client_addr, &addr_len);
-    pfm_ensure_ret_void(client_fd >= 0);
-
-    // 将新的fd注册到evloop中
-    event_loop_register_file_event(client_fd, EL_FILE_EVENT_READABLE, _web_el_cb, NULL);
-}
-
-static void _web_handle_msg(int fd)
-{
-    dbg("handle client msg, fd %d", fd);
-
-    char *buffer = g_web_mgnt.buffer;
-
-    memset(buffer, 0, WEB_BUFFER_SIZE);
-
-    ssize_t n = recv(fd, buffer, WEB_BUFFER_SIZE-1, 0);
-    if(n < 0)   // 处理错误
+    if(fd == g_web_mgnter.sock_fd)      // 新连接请求
     {
-        if(errno == EAGAIN || errno == EWOULDBLOCK) // 数据未就绪，等待下次处理
+        // accept
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        int fd_new = accept(g_web_mgnter.sock_fd, (struct sockaddr*)&client_addr, &client_len);
+        pfm_ensure_ret_void(fd_new >= 0);
+
+        // 将socket设置为非阻塞
+        int flags = fcntl(fd_new, F_GETFL, 0);
+        fcntl(fd_new, F_SETFL, flags | O_NONBLOCK);
+
+        // 加入到epoll
+        struct epoll_event ev = {.data.fd = fd_new, .events = EPOLLIN | EPOLLET};
+        if(0 != epoll_ctl(g_web_mgnter.epoll_fd, EPOLL_CTL_ADD, fd_new, &ev))
+        {
+            dbg_error("epoll_ctl add fail");
+            close(fd_new);
             return;
-        else
+        }
+
+        // 获取connection内存，添加到链表记录
+        web_connection_t *conn = (web_connection_t*)mp_fixed_node_get(web_connection);
+        if(!conn)
         {
-            dbg_error("recv error on fd %d, error: %s", fd, strerror(errno));
-            goto clean_up;
+            dbg_error("get memory for connection fail");
+            close(fd_new);
+            return;
+        }
+        memset(conn, 0, sizeof(web_connection_t));
+        conn->fd = fd_new;
+        web_connection_list_add_head(&g_web_conn_list, conn);
+
+        dbg_always("handle new connection, fd %d", fd_new);
+    }
+    else
+    {
+        dbg_always("handle msg from fd %d", fd);
+        // 找到对应fd的connection
+        web_connection_t *conn = _web_connection_find(fd);
+        if(!conn)
+        {
+            dbg_error("find web connection for fd %d fail", fd);
+            return;
+        }
+        // 将数据读取完
+        while(1)
+        {
+            ssize_t n = recv(conn->fd, conn->buffer + conn->len, WEB_BUFFER_SIZE - conn->len, 0);
+            if(n > 0)       // 读取到内容
+            {
+                conn->len += n;
+                if(conn->len == WEB_BUFFER_SIZE)        // 缓冲区满，退出
+                    break;
+            }
+            else if(n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) // 内核缓冲区读取完毕
+                break;
+            else            // 对端关闭或者出错
+            {
+                close(fd);      // 内含epoll_del
+                web_connection_list_del(&g_web_conn_list, conn);
+                mp_fixed_node_put(conn);        // 归还内存
+                return;
+            }
+        }
+
+        // 解析，需要处理粘包和拆包
+        size_t rpos = 0;
+        while(rpos < conn->len)
+        {
+            http_request_t req = {};
+            size_t consumed = 0;
+
+            http_parse_result_e ret = http_parse_request(conn->buffer, conn->len, &req, &consumed);
+            if(ret == HTTP_PARSE_COMPLETE)              // 解析出完整请求
+            {
+                dbg_always("parse done complete");
+                // TODO: process
+                _web_process_http_req(fd, &req);
+
+                // 清除req，继续解析
+                memset(&req, 0, sizeof(req));
+                rpos += consumed;
+            }
+            else if(ret == HTTP_PARSE_INCOMPLETE)       // 请求不完整，退出等待下个数据包
+                break;
+            else if(ret == HTTP_PARSE_ERROR)            // 内容出错
+            {
+                close(fd);      // 内含epoll_del
+                web_connection_list_del(&g_web_conn_list, conn);
+                mp_fixed_node_put(conn);        // 归还内存
+                return;
+            }
+        }
+
+        // 存在拆包的话，将剩余数据保存
+        if(rpos > 0)
+        {
+            conn->len -= rpos;
+            if(conn->len > 0)
+                memmove(conn->buffer, conn->buffer + rpos, conn->len);
         }
     }
-    else if(n == 0)     // 客户端主动关闭
-    {
-        dbg_major("client on fd %d close conn", fd);
-        goto clean_up;
-    }
-
-    buffer[n] = '\0';   // 添加结束符
-
-    // 解析请求头部，格式固定。这里使用魔数
-    char method[16] = {}, path[256] = {}, version[16] = {};
-    if(3 != sscanf(buffer, "%15s %255s %15s", method, path, version))
-    {
-        dbg_error("bad request");
-        _web_send_error(fd,  WEB_STATUS_CODE_BAD_REQUEST, WEB_STATUS_BAD_REQ);
-        goto clean_up;
-    }
-
-    // 仅支持GET
-    if(0 != strcasecmp(method, "GET"))
-    {
-        dbg_error("method not allowed");
-        _web_send_error(fd,  WEB_STATUS_CODE_METHOD_NOT_ALLOWED, WEB_STATUS_METHOD_NOT_ALLOWED);
-        goto clean_up;
-    }
-
-    // 处理文件请求
-    _web_handle_get(fd, path);
-
-    //dbg_always("handle done");
-    // 处理完毕关闭，短链接
-
-clean_up:
-    // 从ev_loop注销事件，关闭socket
-    event_loop_deregister_file_event(fd);
-    close(fd);
 }
 
-static void _web_send_error(int fd, web_status_code_e sc, const char *status)
+static inline void* _web_epoll_routine(void *args)
 {
-    char body[WEB_BUFFER_SIZE_256] = {};
-    char resp[WEB_BUFFER_SIZE_512] = {};
+    struct epoll_event events[WEB_CONNECT_MAX_CNT];
 
-    snprintf(body, sizeof(body), 
-        "<html><body><h1>%d %s</h1></body></html>\r\n", sc, status
-    );
+    ATOM_STORE(&g_web_mgnter.running, 1, MORDER_RELAXED);
 
-    snprintf(resp, sizeof(resp),
-             "HTTP/1.1 %d %s\r\n"
-             "Content-Type: text/html\r\n"
-             "Content-Length: %zu\r\n"
-             "Connection: close\r\n"
-             "\r\n"
-             "%s",
-             sc, status, strlen(body), body);
+    dbg("web epoll routine starting");
 
-    ssize_t n = send(fd, resp, strlen(resp), 0);
-    pfm_ensure_dbg(n == strlen(resp));
+    while(ATOM_LOAD(&g_web_mgnter.running, MORDER_ACQUIRE))
+    {
+        int ready = epoll_wait(g_web_mgnter.epoll_fd, events, WEB_CONNECT_MAX_CNT, WEB_EPOLL_WAIT_MS);
+        if(ready == 0)          // 超时
+            continue;
+        else if(ready < 0)
+            if(errno == EINTR)  // 被信号中断
+                continue;
+            else                // 出错
+                break;
+        else                    // 有事件就绪
+            for(int i = 0; i < ready; ++ i)
+                _web_events_handle(events[i].data.fd);
+    }
+
+    dbg_error("web epoll routine exit");
+
+    return NULL;
 }
 
-static void _web_handle_get(int fd, const char *path)
+static error_code_e _web_mgnt_init(void)
 {
-    char path_copy[WEB_BUFFER_SIZE_256] = {};
-    char full_path[WEB_BUFFER_SIZE_256] = {};
+    // 创建socket
+    g_web_mgnter.sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    pfm_ensure_done(g_web_mgnter.sock_fd >= 0);
+    // 设置地址复用
+    int opt = 1;
+    setsockopt(g_web_mgnter.sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // 复制path，剥离?之后的查询字符串
-    strncpy(path_copy, path, sizeof(path_copy) - 1);
-    char *q_mark = strchr(path_copy, '?');
-    if(q_mark)
-        *q_mark = '\0';
-    
-    // 处理根路径
-    if(path_copy[0] == '\0' || (path_copy[0] == '/' && path_copy[1] == '\0'))
-        strcpy(path_copy, "/index.html");
-    
-    // 禁止..
-    if(strstr(path_copy, ".."))
-    {
-        _web_send_error(fd, WEB_STATUS_CODE_FORBIDDEN, WEB_STATUS_FORBIDDEN);
-        return;
-    }
+    // socket绑定到any:8080
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_addr = INADDR_ANY,
+        .sin_port = htons(WEB_TCP_PORT),
+    };
+    pfm_ensure_done(0 == bind(g_web_mgnter.sock_fd, (struct sockaddr*)&addr, sizeof(addr)));
 
-    // 构造完整路径
-    snprintf(full_path, sizeof(full_path), "%s%s", WEB_DOCS_ROOT, path_copy);
+    // 开始监听
+    pfm_ensure_done(0 == listen(g_web_mgnter.sock_fd, WEB_CONNECT_MAX_CNT));
 
-    // 检查文件是否存在并且普通文件
-    struct stat st;
-    if(stat(full_path, &st) != 0 || !S_ISREG(st.st_mode))
-    {
-        dbg_error("find file: %s fail", full_path);
-        _web_send_error(fd, WEB_STATUS_CODE_NOT_FOUND, WEB_STATUS_NOT_FOUND);
-        return;
-    }
+    // 创建epoll
+    g_web_mgnter.epoll_fd = epoll_create1(O_CLOEXEC);
+    pfm_ensure_done(g_web_mgnter.epoll_fd >= 0);
+    // 加入epoll监听
+    struct epoll_event ev = {.events = EPOLLIN | EPOLLET, .data.fd = g_web_mgnter.sock_fd};
+    pfm_ensure_done(0 == epoll_ctl(g_web_mgnter.epoll_fd, EPOLL_CTL_ADD, g_web_mgnter.sock_fd, &ev));
 
-    // 根据扩展名决定 Content-Type
-    const char *content_type = "application/octet-stream";
-    const char *ext = strrchr(full_path, '.');
-    if(ext) 
-    {
-        if(strcasecmp(ext, ".html") == 0 || strcasecmp(ext, ".htm") == 0)
-            content_type = "text/html";
-        else if(strcasecmp(ext, ".css") == 0)
-            content_type = "text/css";
-        else if(strcasecmp(ext, ".js") == 0)
-            content_type = "application/javascript";
-        else if(strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0)
-            content_type = "image/jpeg";
-        else if(strcasecmp(ext, ".png") == 0)
-            content_type = "image/png";
-        else if(strcasecmp(ext, ".gif") == 0)
-            content_type = "image/gif";
-        else if(strcasecmp(ext, ".txt") == 0)
-            content_type = "text/plain";
-    }
+    // 创建线程执行epoll_wait
+    pthread_create(&g_web_mgnter.tid, NULL, _web_epoll_routine, NULL);
 
-    // 7. 构造响应头
-    memset(head_buf, 0, sizeof(head_buf));
-    int head_len = snprintf(head_buf, sizeof(head_buf),
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: %s\r\n"
-        "Content-Length: %lld\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        content_type, (long long)st.st_size);
+    return ERR_NO_ERROR;
 
-    // 发送响应头
-    if(send(fd, head_buf, head_len, 0) != head_len)
-    {
-        dbg_error("send response header failed for fd %d", fd);
-        return;
-    }
-
-    // 打开文件发送内容
-    FILE *fp = fopen(full_path, "rb");
-    if(!fp)
-    {
-        dbg_error("open file: %s fail", full_path);
-        _web_send_error(fd, WEB_STATUS_CODE_NOT_FOUND, WEB_STATUS_NOT_FOUND);
-        return;
-    }
-    memset(send_buf, 0, sizeof(send_buf));
-    size_t bytes_read;
-    while((bytes_read = fread(send_buf, 1, sizeof(send_buf), fp)) > 0)
-    {
-        ssize_t sent = send(fd, send_buf, bytes_read, 0);
-        if(sent != (ssize_t)bytes_read)
-        {
-            dbg_error("send file content failed for fd %d", fd);
-            break;
-        }
-    }
-    fclose(fp);
-
-    //dbg_always("file %s sent to fd %d", full_path, fd);
+done:
+    if(g_web_mgnter.sock_fd >= 0)
+        close(g_web_mgnter.sock_fd);
+    if(g_web_mgnter.epoll_fd >= 0)
+        close(g_web_mgnter.epoll_fd);
+    return ERR_WEB_INIT_FAIL;
 }
 
 void web_module_init()
 {
-    // 启动解析线程
-    ev_thd_register(web);
-    ev_thd_run(web)
+    mem_type_attr_register(web_connection);
+    web_connection_list_init(&g_web_conn_list);
 
-    // 创建socket
-    g_web_mgnt.sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-    pfm_ensure_done(g_web_mgnt.sock_fd >= 0);
+    _web_mgnt_init();
 
-    // 设置地址复用
-    int opt = 1;
-    pfm_ensure_dbg(0 == setsockopt(g_web_mgnt.sock_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)));
-
-    // socket绑定地址：any:8080
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(WEB_PORT),
-        .sin_addr = INADDR_ANY,
-    };
-    pfm_ensure_done(0 == bind(g_web_mgnt.sock_fd, (struct sockaddr*)&addr, sizeof(addr)));
-    // 开启监听
-    pfm_ensure_done(0 == listen(g_web_mgnt.sock_fd, WEB_CONN_MAX));
-    // 设置非阻塞
-    int flags = fcntl(g_web_mgnt.sock_fd, F_GETFL, 0);
-    fcntl(g_web_mgnt.sock_fd, flags | O_NONBLOCK);
-
-    // 注册到ev_loop
-    event_loop_register_file_event(g_web_mgnt.sock_fd, EL_FILE_EVENT_READABLE, _web_el_cb, NULL);
-
-    dbg_major("web init ok");
-
-    return;
-
-done:
-    if(g_web_mgnt.sock_fd >= 0)
-        close(g_web_mgnt.sock_fd);
-    
-    memset(&g_web_mgnt, 0, sizeof(web_t));
+    dbg_major("web module init ok");
 }
-
-/**
- * @brief       set tpcl filter sourceId
- * 
- * @param[in]   appId       - tpcl app id
- * @param[in]   entryId     - tpcl entry id
- * @param[in]   sourceId    - sourceId for mvl metadata, 12bits
- * 
- * @retval      error code
- * 
- * @note        sourceId earch falcon支持12bit，少部分仅5bit
- */

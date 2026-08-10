@@ -91,7 +91,7 @@ struct ftx_s{
 static ftx_hash_head_t g_ftx_hash = {};
 
 // 声明发包使用的slab attr
-declare_mem_type_slab(ftx)
+declare_mem_type_slab(ftx, 8, 8, 8, 8, 2048, 2048, 512, 16, 16, 8, 8)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */

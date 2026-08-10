@@ -45,6 +45,10 @@ typedef enum{
     ERR_BAD_PARAM,                  // 参数错误
     ERR_NO_MEM,                     // 内存不足
 
+    // web模块
+    ERR_WEB_START = 800,            // web错误码起始
+    ERR_WEB_INIT_FAIL,              // 初始化失败
+
     // ftx模块
     ERR_FTX_START = 900,            // ftx错误码起始
     ERR_FTX_SOCKET_FAIL,            // socket操作错误
@@ -81,12 +85,15 @@ typedef enum{
 #define dbg(fmt, args...)   \
     _debug_printf(debug_level_normal, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg end */
+
 #define dbg_major(fmt, args...) \
     _debug_printf(debug_level_major, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg_major end */
+
 #define dbg_error(fmt, args...)     \
     _debug_printf(debug_level_error, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg_error end */
+
 #define dbg_always(fmt, args...)    \
     _debug_printf(debug_level_always, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg_always end */

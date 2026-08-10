@@ -2,6 +2,7 @@ add_library(Mgnt STATIC
     cli/cli_trie.c
     cli/cli.c
     cli/cli_gnurl.c
+    web/http.c
     web/web.c
 )
 

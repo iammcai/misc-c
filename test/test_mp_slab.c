@@ -51,9 +51,9 @@
 /* ========================================================================== */
 
 // 声明测试内存池
-declare_mem_type_slab(test_slab)
+declare_mem_type_slab(test_slab, 8, 8, 8, 8, 2048, 2048, 512, 16, 16, 8, 8)
 
-declare_mem_type_slab(test_mp_multi)
+declare_mem_type_slab(test_mp_multi, 8, 8, 8, 8, 2048, 2048, 512, 16, 16, 8, 8)
 
 // 测试功能的数组
 static void* ptr[TEST_COUNT] = {};

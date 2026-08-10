@@ -65,7 +65,7 @@
 
 #define ZCAP_CAL_RATE_INTERVAL  (1000)  // 计算速率间隔，1s一次
 
-#define ZCAP_ANALYZE_PKTS_ONCE  (16)    // 每次最多处理16个报文，避免reactor队头阻塞
+#define ZCAP_ANALYZE_PKTS_ONCE  (1024)      // 每次最多处理1024个报文，避免reactor队头阻塞
 
 #define ZCAP_HASH_Q_MASK        (ZCAP_HASH_Q_SIZE - 1)  // hash分片处理报文的队列掩码
 
@@ -78,7 +78,7 @@
 /* ========================================================================== */
 
 // 内存池，用于rx_t和alz_t之间交互报文
-declare_mem_type_slab(zcap_pkt)
+declare_mem_type_slab(zcap_pkt, 8, 8, 8, 8, 4096, 4096, 64, 16, 16, 8, 8)
 
 // 封装一下，传递给alz线程入口
 typedef struct{
@@ -184,7 +184,7 @@ static attr_force_inline void _zcap_packet_flow_key_extract(zcap_packet_t *packe
     }
     else    // 非IPv4报文使用srcMac和etherType作为五元组
     {
-        flow_key->protocol = (uint8_t)(ether_type && 0xff);
+        flow_key->protocol = (uint8_t)(ether_type & 0xff);
         memcpy(&flow_key->src_ip, eth->h_source, 4);
     }
 }
@@ -832,7 +832,6 @@ static void* _zcap_alz_routine(void *args)
         int processed = 0;
         while ((packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head)))
         {
-            pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
             _zcap_analyze_a_packet(captor, packet);
             mp_slab_node_put(packet);
             processed++;
@@ -1041,7 +1040,7 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "ERROR", captor->stat.err);
         }
-        
+
         // 打印注册的过滤项
         zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
         while(filter)

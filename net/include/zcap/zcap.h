@@ -41,7 +41,7 @@
 // mac地址长度
 #define MAC_ADDR_SIZE   (6)
 
-#define ZCAP_HASH_Q_SIZE        (4)     // hash分片处理报文的队列数量，必须2的幂次
+#define ZCAP_HASH_Q_SIZE        (1)     // hash分片处理报文的队列数量，必须2的幂次
 
 // 过滤字段长度
 #define FIELD_DATA_SIZE     (6)

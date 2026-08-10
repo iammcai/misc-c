@@ -64,7 +64,9 @@ typedef struct{
     unsigned int flag;                  // 标志位
     unsigned int node_size;             // 该类型的内存节点大小
     unsigned int node_max_num;          // 该类型的最大节点数量
+    unsigned int slab_node_cnt[SLAB_SIZE_CNT];      // slab使用,各个类型大小节点的数量
     mem_type_attr_hash_item_t item;     // hash item
+
     ATOMIC_UINT32_T allocated;          // 总共申请的数量
 #if MP_DBG_MODE
     ATOMIC_UINT32_T used;               // 正在使用的数量
@@ -74,6 +76,7 @@ typedef struct{
     ATOMIC_UINT32_T slab_used[SLAB_SIZE_CNT];   // 每个链表分配出去的数量
     ATOMIC_UINT32_T hit_total;                  // 命中总次数
     ATOMIC_UINT32_T slab_hit[SLAB_SIZE_CNT];    // 各个slab命中次数
+    unsigned int slab_full_times[SLAB_SIZE_CNT];        // 告警次数
 #endif
 }mem_type_attr_t;
 

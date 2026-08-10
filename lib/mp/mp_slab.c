@@ -22,6 +22,8 @@
 #include "plat/debug.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"
+#include "event/ev_lock.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -40,7 +42,7 @@
 #define slab_data_node(data)    (slab_mem_node_t*)((char*)data - sizeof(slab_mem_node_t))
 
 // 回收阈值
-#define MP_SLAB_RECYCLE_THRESHOLD       (64)
+#define MP_SLAB_RECYCLE_THRESHOLD       (256)
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -49,10 +51,6 @@
 // 内存节点大小数组，与slab_size_e对应
 static int g_slab_size_arr[SLAB_SIZE_CNT] = {
     8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 9216
-};
-// 内存节点数量数组，与slab_size_e对应
-static int g_slab_count_arr[SLAB_SIZE_CNT] = {
-    128, 128, 256, 256, 512, 1024, 256, 128, 64, 64, 32
 };
 
 // 线程独立哈希表，记录本线程所有slab内存池
@@ -66,6 +64,8 @@ static thread_local slab_mp_t *slab_mp_cache = NULL;
 
 // 全局recycle_aq哈希表，后台线程遍历回收
 static slab_recycle_aq_hash_head_t g_recycle_aq_hash = {};
+// recycle_aq hash lock
+static ev_rwlock_t g_recyle_aq_hash_rwlock = EV_RWLOCK_INITIALIZER;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -168,23 +168,31 @@ static attr_force_inline int _slab_mp_size_2_slot(int size)
  */
 static attr_force_inline slab_mp_t* _slab_mp_find_or_create(mem_type_attr_t *attr, int supply);
 
+/**
+ * @brief       slab mp monitor routine
+ */
+static void* _slab_mp_monitor_routine(void *args);
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
 static void _slab_mp_recycle_work_func(void *args)
 {
-    slab_recycle_aq_t *aq = slab_recycle_aq_hash_first(&g_recycle_aq_hash);
-    while(aq)
+    ev_with_rdlock(&g_recyle_aq_hash_rwlock)
     {
-        slab_mem_node_t *node = NULL;
-        while(node = slab_recycle_spsc_atom_queue_pop(&aq->remote_aq))
+        slab_recycle_aq_t *aq = slab_recycle_aq_hash_first(&g_recycle_aq_hash);
+        while(aq)
         {
-            slab_recycle_aq_t key = {.tid = node->tid};
-            slab_recycle_aq_t *target_aq = slab_recycle_aq_hash_find(&g_recycle_aq_hash, &key);
-            slab_recycle_spsc_atom_queue_push(&target_aq->local_aq, node);
+            slab_mem_node_t *node = NULL;
+            while(node = slab_recycle_spsc_atom_queue_pop(&aq->remote_aq))
+            {
+                slab_recycle_aq_t key = {.tid = node->tid};
+                slab_recycle_aq_t *target_aq = slab_recycle_aq_hash_find(&g_recycle_aq_hash, &key);
+                slab_recycle_spsc_atom_queue_push(&target_aq->local_aq, node);
+            }
+            aq = slab_recycle_aq_hash_next(&g_recycle_aq_hash, aq);
         }
-        aq = slab_recycle_aq_hash_next(&g_recycle_aq_hash, aq);
     }
 }
 
@@ -213,7 +221,8 @@ void _mp_slab_init(mem_type_attr_t *attr)
         mp->recycle.tid = tid_new();
         slab_recycle_spsc_atom_queue_init(&mp->recycle.local_aq);
         slab_recycle_spsc_atom_queue_init(&mp->recycle.remote_aq);
-        slab_recycle_aq_hash_add(&g_recycle_aq_hash, &mp->recycle);
+        ev_with_wrlock(&g_recyle_aq_hash_rwlock)
+            slab_recycle_aq_hash_add(&g_recycle_aq_hash, &mp->recycle);
 
         // mp加入线程局部哈希表
         slab_mp_hash_add(&g_slab_mp_hash, mp);
@@ -229,9 +238,11 @@ void _mp_slab_supply(mem_type_attr_t *attr)
     // 每个链表申请一个大块内存，自行划分加入空闲链表
     for(int i = 0; i < SLAB_SIZE_CNT; ++ i)
     {
-        int count = g_slab_count_arr[i];
+        // 获取attr中指定的数量,0则按照默认模板分配
+        int count = attr->slab_node_cnt[i];
         if(count == 0)
             continue;
+
         int size = sizeof(slab_mem_node_t) + g_slab_size_arr[i];
         char *chunk = mp_calloc(count, size);   // 大内存
         for(int j = 0; j < count; ++ j)
@@ -297,6 +308,11 @@ static attr_force_inline void* _mp_slab_node_get_fast(mem_type_attr_t *attr, int
     // cache命中，获取内存
     slab_mp_t *mp = slab_mp_cache;
     int slot = _slab_mp_size_2_slot(size);
+    if(slot >= SLAB_SIZE_CNT)
+    {
+        dbg_error("slab node acquire too large");
+        return NULL;
+    }
 
     slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
     if(likely(node))
@@ -327,15 +343,19 @@ static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, in
 {
     slab_mp_t *mp = _slab_mp_find_or_create(attr, 1);
     int slot = _slab_mp_size_2_slot(size);
+    if(slot >= SLAB_SIZE_CNT)
+    {
+        dbg_error("slab node acquire too large");
+        return NULL;
+    }
 
     slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
     if(unlikely(!node))
     {
-        // 从 local_aq 回收一批，最多该批次1/2
+        // 从 local_aq 回收一批，最多256
         int batch = 0;
-        int bacth_cnt = g_slab_count_arr[slot] >> 1;
         slab_mem_node_t *recycle_node;
-        while(batch < bacth_cnt && (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
+        while(batch < MP_SLAB_RECYCLE_THRESHOLD && (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
         {
             slab_free_mem_list_add_head(&mp->free_lists[recycle_node->slot], recycle_node);
             batch++;
@@ -359,7 +379,6 @@ static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, in
     ATOM_FETCH_ADD(&attr->hit_total, 1, MORDER_RELAXED);
     ATOM_FETCH_ADD(&attr->slab_hit[slot], 1, MORDER_RELAXED);
 #endif
-
     return slab_node_data(node);
 }
 
@@ -423,7 +442,6 @@ void _mp_slab_node_put(void *ptr)
 
     // 找到对应mp，支持懒加载
     slab_mp_t *mp = _slab_mp_find_or_create(node->attr, 0);
-
     if(node->tid == mp->recycle.tid)
         _mp_slab_node_put_local(mp, node);
     else
@@ -431,6 +449,10 @@ void _mp_slab_node_put(void *ptr)
 }
 
 #if MP_DBG_MODE
+
+/**
+ * @brief       cli hook for debug show mp slab
+ */
 static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
 {
     mem_type_attr_t *attr = mem_type_attr_first();
@@ -441,11 +463,11 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
         if(mem_type_attr_slab(attr))
         {
             char str[768] = {};
-            snprintf(str, 768, "[%d]. name %s | used /total\n", i, attr->name);
+            snprintf(str, 768, "[%d]. name %s | used / total\n", i, attr->name);
             for(int j = 0; j < SLAB_SIZE_CNT; ++ j)
             {
                 snprintf(str+strlen(str), 768-strlen(str), "    slot%-2d (%-4d B): %-4d / %-4d, hit %.3f%%\n", j, g_slab_size_arr[j],
-                    ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED), g_slab_count_arr[j], 
+                    ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED), attr->slab_node_cnt[j], 
                     (double)ATOM_LOAD(&attr->slab_hit[j], MORDER_RELAXED)/ATOM_LOAD(&attr->hit_total, MORDER_RELAXED) * 100);
             }
             safe_printf("%s\n", str);
@@ -456,6 +478,43 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
     safe_printf("\n");
     return NULL;
 }
+
+#include <unistd.h>
+static void* _slab_mp_monitor_routine(void *args)
+{
+    dbg_major("slab mp debug monitor start...");
+    while(1)
+    {
+        mem_type_attr_t *attr = mem_type_attr_first();
+        while(attr)
+        {
+            if(mem_type_attr_slab(attr))
+            {
+                for(int j = 0; j < SLAB_SIZE_CNT; ++ j)
+                {
+                    if(ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED) == attr->slab_node_cnt[j])
+                    {
+                        ++ attr->slab_full_times[j];
+                        if(attr->slab_full_times[j] >= 10)
+                        {
+                            char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
+                            snprintf(ctx, SYSLOG_ENTRY_CTX_SIZE, "mem type %s, slot %d full for a while, please check", attr->name, j);
+                            syslog_emerg(SYSLOG_MODULE_SLAB_MP, ctx);
+                        }
+                    }
+                    else
+                        attr->slab_full_times[j] = 0;
+                }
+            }
+            attr = mem_type_attr_next(attr);
+        }
+
+        sleep(10);      // 10s检查一下
+    }
+    
+    return NULL;
+}
+
 #endif
 
 void mp_slab_module_init()
@@ -466,6 +525,10 @@ void mp_slab_module_init()
 #if MP_DBG_MODE
     // 注册调试cli
     cli_register("debug show mp slab", "debug dump slab type mempool", NULL, _mp_slab_show_cli_hook);
+
+    // 创建监控线程
+    pthread_t g_slab_mp_monitor_tid;
+    pthread_create(&g_slab_mp_monitor_tid, NULL, _slab_mp_monitor_routine, NULL);
 #endif
 
     // 启动后台回收
