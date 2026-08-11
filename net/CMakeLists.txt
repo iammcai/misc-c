@@ -1,4 +1,5 @@
 add_library(Net STATIC
+    net_comm.c
     zcap/zcap.c
     ftx/ftx.c
     nt/arp.c

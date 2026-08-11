@@ -14,8 +14,8 @@
  *   1.0 | 2026-07-08 | cai | Initial creation.
  */
 
-#ifndef __NET_H__
-#define __NET_H__
+#ifndef __NET_COMM_H__
+#define __NET_COMM_H__
 
 /* ========================================================================== */
 /*                               Include Files                                */
@@ -93,9 +93,25 @@ typedef struct{
 }attr_packed pkthdr_udp_t;
 _Static_assert(sizeof(pkthdr_udp_t) == PKT_HDR_UDP_SIZE, "sizeof pkthdr_udp_t must be 8");
 
+// 接口状态定义
+typedef struct{
+    int linkup;
+    int has_ipv4;
+}if_status_t;
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       get interface status by netlink
+ * 
+ * @param[in]   if_name     - interface name
+ * @param[out]  status      - interface status
+ * 
+ * @retval      error code
+ */
+extern error_code_e if_status_get(const char *if_name, if_status_t *status);
 
 /* ========================================================================== */
 /*                             Static Variable                                */
@@ -215,4 +231,4 @@ static error_code_e cidr_parse(const char *cidr, uint32_t *ip, uint8_t *prefix)
 }
 
 #endif
-/* __NET_H__ end */
+/* __NET_COMM_H__ end */

@@ -29,7 +29,7 @@
 #include "msg_q/msg_q.h"
 #include "type/type_hash.h"
 #include "event/ev_lock.h"
-#include "net.h"
+#include "net_comm.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */

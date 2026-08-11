@@ -23,7 +23,7 @@
 
 #include "ftx/ftx.h"
 #include "zcap/zcap.h"
-#include "net.h"
+#include "net_comm.h"
 #include "cli/cli.h"
 
 /* ========================================================================== */

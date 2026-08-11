@@ -306,6 +306,15 @@ static error_code_e _ftx_udp_socket_init(ftx_t *ftxor)
 
 void _ftx_init(const char *if_name)
 {
+    // 检查接口真实情况，未linkup或者无ip addr的接口不初始化
+    if_status_t status = {};
+    error_code_e ret = if_status_get(if_name, &status);
+    if(ERR_NO_ERROR != ret || status.has_ipv4 == 0 || status.linkup == 0)
+    {
+        dbg_error("if %s status error, stop init ftxor", if_name);
+        return;
+    }
+
     // 检查是否已存在
     ftx_t key = {.if_name = if_name};
     ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);

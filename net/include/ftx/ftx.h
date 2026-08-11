@@ -21,7 +21,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
-#include "net.h"
+#include "net_comm.h"
 #include "plat/compiler.h"
 #include "type/type_hash.h"
 #include "plat/debug.h"

@@ -19,7 +19,6 @@
 /* ========================================================================== */
 
 #include <math.h>
-#include "net.h"
 #include "nt/ping.h"
 #include "nt/arp.h"
 #include "cli/cli.h"

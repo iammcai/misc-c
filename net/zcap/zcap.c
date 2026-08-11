@@ -871,6 +871,15 @@ void zcap_module_init()
 
 void _zcap_init(zcap_t *captor)
 {
+    // 获取接口真实状态，linkup且分配ipv4地址的才可初始化抓包
+    if_status_t status = {};
+    int ret = if_status_get(captor->if_name, &status);
+    if(ERR_NO_ERROR != ret || status.has_ipv4 == 0 || status.linkup == 0)
+    {
+        dbg_error("if %s status check fail, zcaptor init fail", captor->if_name);
+        return;
+    }
+
     // 加到哈希表
     zcaptor_hash_add(&g_zcaptor_hash_head, captor);
 
@@ -973,7 +982,8 @@ void _zcap_register_pkt_filter(const char *if_name, const char *filter_name, zca
     // 查找zcaptor
     zcap_t captor_key = {.if_name = if_name};
     zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
-    assert(zcaptor);
+    if(!zcaptor)        // 查找失败，返回
+        return;
 
     zcap_pkt_filter_t key = {.name = filter_name};
     zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_find(&zcaptor->filters, &key);
@@ -998,7 +1008,8 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
     // 查找zcaptor
     zcap_t captor_key = {.if_name = if_name};
     zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
-    assert(zcaptor);
+    if(!zcaptor)    // 查找失败则返回
+        return;
 
     // 查找过滤器
     zcap_pkt_filter_t key = {.name = filter_name};

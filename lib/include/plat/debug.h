@@ -58,6 +58,7 @@ typedef enum{
 
     // nt模块
     ERR_NT_START = 1000,            // net tool错误码起始
+    ERR_NT_SOCK_ERROR,              // socket出错
     ERR_NT_IF_ERROR,                // 接口错误
     ERR_NT_CIDR_INVALID,            // cidr地址错误
     ERR_NT_ARP_CACHE_NOT_EXIST,     // arp cache不存在
