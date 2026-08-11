@@ -49,8 +49,8 @@
 // 设备路径最大长度
 #define FILE_PATH_MAX_LEN   (256)
 
-// 30s检测一次
-#define SHT30_MEASURE_INTERVAL      (30 * 1000)
+// 120s检测一次
+#define SHT30_MEASURE_INTERVAL      (120 * 1000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -231,6 +231,23 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
     return ERR_NO_ERROR;
 }
 
+error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
+{
+     double temp_raw = 0.0, temp_scale = 0.0;
+     double humi_raw = 0.0, humi_scale = 0.0;
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) || 
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+    {
+        return ERR_SHT30_HW_ERR;
+    }
+
+    snprintf(buf, buf_size, "{\"temperature\":%.1f,\"humidity\":%.1f}", temp_raw * temp_scale, humi_raw * humi_scale);
+    return ERR_NO_ERROR;
+}
+
 void sht30_module_init()
 {
     // 寻找设备节点
@@ -247,6 +264,8 @@ void sht30_module_init()
     // 注册定时任务检测温度湿度
     ev_thd_register(sht30_measure);
     ev_thd_run(sht30_measure);
+    // 初始化时立即测量一次
+    ev_thd_wake(sht30_measure);
 
     dbg_major("sht30 module init ok");
 }

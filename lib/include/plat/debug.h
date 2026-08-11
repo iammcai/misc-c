@@ -44,10 +44,12 @@ typedef enum{
     ERR_NO_ERROR = 0,               // 无错误
     ERR_BAD_PARAM,                  // 参数错误
     ERR_NO_MEM,                     // 内存不足
+    ERR_NOT_SUPPORT,                // 未支持
 
-    // web模块
+    // web模块，http模块
     ERR_WEB_START = 800,            // web错误码起始
     ERR_WEB_INIT_FAIL,              // 初始化失败
+    ERR_WEB_HTTP_CGI_NOT_FOUND,     // cgi接口不存在
 
     // ftx模块
     ERR_FTX_START = 900,            // ftx错误码起始
@@ -67,6 +69,7 @@ typedef enum{
     ERR_SHT30_START = 1200,         // sht30错误码开始
     ERR_SHT30_DEVICE_NOT_EXIST,     // sht30设备不存在
     ERR_SHT30_ATTR_NOT_EXIST,       // sht30属性不存在
+    ERR_SHT30_HW_ERR,               // 硬件错误
 }error_code_e;
 
 /* ========================================================================== */
@@ -97,6 +100,10 @@ typedef enum{
 #define dbg_always(fmt, args...)    \
     _debug_printf(debug_level_always, __FILE_NAME__, __func__, __LINE__, fmt, ##args);   \
 /* dbg_always end */
+
+#define dbg_func_in()   \
+    dbg_always("<<<=== FUNCTION IN");   \
+/* dbg_func_in end */
 
 /**
  * 外部使用，安全打印

@@ -152,14 +152,18 @@ static attr_force_inline web_connection_t* _web_connection_find(int fd)
 
 static void _web_process_http_req(int fd, http_request_t *req)
 {
-    dbg_always("process request for fd %d", fd);
+    char uri[HTTP_URI_SIZE] = {};
 
     // 处理GET方法
     if(0 == strncasecmp(req->method.ptr, "GET", req->method.len))
     {
-        char uri[HTTP_URI_SIZE] = {};
         memcpy(uri, req->uri.ptr, req->uri.len);
         http_send_file_response(fd, uri);
+    }
+    else if(0 == strncasecmp(req->method.ptr, "POST", req->method.len))     // post方法
+    {
+        memcpy(uri, req->uri.ptr, req->uri.len);
+        http_send_cgi_response(fd, uri);
     }
 }
 
@@ -198,11 +202,11 @@ static void _web_events_handle(int fd)
         conn->fd = fd_new;
         web_connection_list_add_head(&g_web_conn_list, conn);
 
-        dbg_always("handle new connection, fd %d", fd_new);
+        dbg("handle new connection, fd %d", fd_new);
     }
     else
     {
-        dbg_always("handle msg from fd %d", fd);
+        dbg("handle msg from fd %d", fd);
         // 找到对应fd的connection
         web_connection_t *conn = _web_connection_find(fd);
         if(!conn)
@@ -241,8 +245,7 @@ static void _web_events_handle(int fd)
             http_parse_result_e ret = http_parse_request(conn->buffer, conn->len, &req, &consumed);
             if(ret == HTTP_PARSE_COMPLETE)              // 解析出完整请求
             {
-                dbg_always("parse done complete");
-                // TODO: process
+                dbg("parse done complete");
                 _web_process_http_req(fd, &req);
 
                 // 清除req，继续解析

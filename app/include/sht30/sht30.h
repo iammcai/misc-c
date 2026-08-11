@@ -36,9 +36,12 @@
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
-/* ========================================================================== */
-/*                             Global Variables                               */
-/* ========================================================================== */
+/**
+ * @brief       cb for http cgi: /api/sht30/sensor
+ * 
+ * @retval      json for temp and humi
+ */
+extern error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
  * @brief       init sht30 module

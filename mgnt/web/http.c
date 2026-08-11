@@ -28,6 +28,9 @@
 #include <sys/sendfile.h>       // for sendfile
 
 #include "web/http.h"
+#include "mp/mp.h"
+#include "led/led.h"
+#include "sht30/sht30.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -44,6 +47,9 @@
 
 // http资源目录
 #define HTTP_RESOURCE_PREFIX        "../mgnt/web/resource"
+
+// debug开关
+#define HTTP_DEBUG_ON       (0)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -123,6 +129,17 @@ static attr_force_inline size_t _http_parse_uint(const char *str, size_t len, in
 static attr_pure_inline const char* _http_get_mime_type(const char *path);
 
 /**
+ * @brief       get cgi response body
+ * 
+ * @param[in]   uri     - uri
+ * @param[in]   buf     - json buffer
+ * @param[in]   buf_size    - size of buffer
+ * 
+ * @retval      error code
+ */
+static attr_pure_inline error_code_e _http_get_cgi_response(const char *uri, char *buf, size_t buf_size);
+
+/**
  * @brief       send http error response
  * 
  * @param[in]   fd      - fd
@@ -144,6 +161,13 @@ static http_mime_entry_t g_http_mime_table[] = {
     // TODO: 可扩展
 };
 
+// cgi响应接口表项
+static http_cgi_entry_t g_http_cgi_response_table[] = {
+    {"/api/led/turn",           led_turn_http_cgi_cb},
+    {"/api/led/status",         led_status_http_cgi_cb},
+    {"/api/sht30/sensor",       sht30_sensor_http_cgi_cb},
+};
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -160,6 +184,17 @@ static inline const char* _http_get_mime_type(const char *path)
             return g_http_mime_table[i].type;
 
     return "application/octet-stream";
+}
+
+static inline error_code_e _http_get_cgi_response(const char *uri, char *buf, size_t buf_size)
+{
+    for(size_t i = 0; i < array_size(g_http_cgi_response_table); ++ i)
+        if(0 == strcasecmp(g_http_cgi_response_table[i].uri, uri))
+            if(g_http_cgi_response_table[i].func)
+                return g_http_cgi_response_table[i].func(buf, buf_size);
+            else
+                return ERR_WEB_HTTP_CGI_NOT_FOUND;
+    return ERR_WEB_HTTP_CGI_NOT_FOUND;
 }
 
 static void _http_send_error_response(int fd, int code, const char *reason)
@@ -205,6 +240,14 @@ http_parse_result_e http_parse_request(const char *buffer, size_t buffer_len, ht
     const char *pos = buffer;
     const char *end = buffer + buffer_len;
     *consumed = 0;
+
+#if HTTP_DEBUG_ON
+    char *debug_buffer = mp_calloc(buffer_len+1, sizeof(char));
+    memcpy(debug_buffer, buffer, buffer_len);
+    debug_buffer[buffer_len] = '\0';
+    dbg("parse buffer:\n%s", debug_buffer);
+    mp_free(debug_buffer, sizeof(char)*(buffer_len+1));
+#endif
 
     /* =-=-=-=-=-=-=-=- 解析请求行 -=-=-=-=-=-=-=-= */
 
@@ -395,7 +438,7 @@ void http_send_file_response(int fd, const char *uri)
     // 关闭文件
     close(file_fd);
 
-    dbg_always("send uri %s ok", uri);
+    dbg("send uri %s ok", uri);
 
     return;
 
@@ -410,5 +453,51 @@ forbidden:
     return;
 internal_error:
     _http_send_error_response(fd, 500, "Internal Server Error");
+    return;
+}
+
+void http_send_cgi_response(int fd, const char *uri)
+{
+    // TODO: 实现
+    dbg("respone cgi %s for fd %d", uri, fd);
+
+    /* =-=-=-=-=-=-=-=- 获取cgi响应体 -=-=-=-=-=-=-=-= */
+
+    char body[HTTP_BODY_BUFFER_SIZE] = {};
+    error_code_e ret = _http_get_cgi_response(uri, body, HTTP_BODY_BUFFER_SIZE);
+    if(ERR_NO_ERROR != ret)
+        goto not_found;
+
+    /* =-=-=-=-=-=-=-=- 组装响应 -=-=-=-=-=-=-=-= */
+
+    char buffer[HTTP_BODY_BUFFER_SIZE] = {};
+    int len = snprintf(buffer, sizeof(buffer),
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: application/json; charset=utf-8\r\n"
+        "Content-Length: %ld\r\n"
+        "Connection: keep-alive\r\n"
+        "Cache-Control: no-cache\r\n"
+        "\r\n"
+        "%s",
+        (long)strlen(body), body);
+
+    /* =-=-=-=-=-=-=-=- 发送 -=-=-=-=-=-=-=-= */
+
+    ssize_t written = 0;
+    while(written < len)
+    {
+        ssize_t w = write(fd, buffer + written, len - written);
+        if(w <= 0)
+        {
+            dbg_error("write() fail");
+            return;
+        }
+        written += w;
+    }
+
+    return;
+
+not_found:
+    _http_send_error_response(fd, 404, "Not Found");
     return;
 }

@@ -24,6 +24,7 @@
 #include "plat/atom.h"
 #include "cli/cli.h"
 #include "syslog/syslog.h"
+#include "web/web.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -46,7 +47,7 @@
 /* ========================================================================== */
 
 // 全局led状态
-static led_status_e g_led_status = LED_STATUS_OFF;
+static ATOMIC_UINT8_T g_led_status = LED_STATUS_OFF;
 
 // 全局fd
 static int g_led_fd = -1;
@@ -66,7 +67,7 @@ static int g_led_fd = -1;
  */
 static attr_force_inline void* _led_on_cli_hook(unsigned char argc, char *argv[])
 {
-    if(g_led_status == LED_STATUS_ON)
+    if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_ON)
         return NULL;
     
     int on = 1;
@@ -76,7 +77,7 @@ static attr_force_inline void* _led_on_cli_hook(unsigned char argc, char *argv[]
         return NULL;
     }
 
-    g_led_status = LED_STATUS_ON;
+    ATOM_STORE(&g_led_status, LED_STATUS_ON, MORDER_RELAXED);
     syslog_notice(SYSLOG_MODULE_LED, "led turn on");
 
     return NULL;
@@ -89,7 +90,7 @@ static attr_force_inline void* _led_on_cli_hook(unsigned char argc, char *argv[]
  */
 static attr_force_inline void* _led_off_cli_hook(unsigned char argc, char *argv[])
 {
-    if(g_led_status == LED_STATUS_OFF)
+    if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_OFF)
         return NULL;
 
     int off = 0;
@@ -98,15 +99,60 @@ static attr_force_inline void* _led_off_cli_hook(unsigned char argc, char *argv[
         safe_printf("-led: ioctl() fail.\n");
         return NULL;
     }
-    g_led_status = LED_STATUS_OFF;
+    ATOM_STORE(&g_led_status, LED_STATUS_OFF, MORDER_RELAXED);
 
     syslog_notice(SYSLOG_MODULE_LED, "led turn off");
 
     return NULL;
 }
 
+error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size)
+{
+    led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
+    switch(status)
+    {
+        case LED_STATUS_OFF:
+            _led_on_cli_hook(0, NULL);
+            snprintf(buf, buf_size, "%s", "{\"status\":\"on\"}");
+            break;
+        case LED_STATUS_ON:
+            _led_off_cli_hook(0, NULL);
+            snprintf(buf, buf_size, "%s", "{\"status\":\"off\"}");
+            break;
+        case LED_STATUS_UNKNOWN:
+            snprintf(buf, buf_size, "%s", "{\"status\":\"unknown\"}");
+            break;
+        default:
+            return ERR_NOT_SUPPORT;
+    }
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size)
+{
+    led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
+    switch(status)
+    {
+        case LED_STATUS_OFF:
+            snprintf(buf, buf_size, "%s", "{\"status\":\"off\"}");
+            break;
+        case LED_STATUS_ON:
+            snprintf(buf, buf_size, "%s", "{\"status\":\"on\"}");
+            break;
+        case LED_STATUS_UNKNOWN:
+            snprintf(buf, buf_size, "%s", "{\"status\":\"unknown\"}");
+            break;
+        default:
+            return ERR_NOT_SUPPORT;
+    }
+    return ERR_NO_ERROR;
+}
+
 void led_module_init()
 {
+    g_led_status = LED_STATUS_UNKNOWN;
+
     // 打开led文件
     g_led_fd = open(LED_FILE_PATH, O_RDWR);
     if(g_led_fd < 0)

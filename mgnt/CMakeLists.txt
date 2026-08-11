@@ -13,4 +13,5 @@ target_include_directories(Mgnt PUBLIC
 target_link_libraries(Mgnt PUBLIC
     readline
     Lib
+    App
 )

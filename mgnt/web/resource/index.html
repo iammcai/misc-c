@@ -25,12 +25,12 @@
         <div class="card-grid">
             <div class="card-item" style="order: 1;">
                 <h3>Environment Sensor</h3>
-                <p>Temperature: ℃</p>
-                <p>Humidity: %RH</p>
+                <p id="env_temp">Temperature: -- ℃</p>
+                <p id="env_humi">Humidity: -- %RH</p>
             </div>
             <div class="card-item" style="order: 2;">
-                <h3>Led Status</h3>
-                <p>Status</p>
+                <h3 id="led_status">Led Status: UNKNOWN</h3>
+                <button id="led_turn_btn" class="btn">Turn LED</button>
             </div>
             <div class="card-item" style="order: 3;">
                 <h3>TODO</h3>
@@ -53,5 +53,7 @@
         </div>
     </div>
 
+    <!-- 引入js -->
+    <script src="/app.js"></script>
 </body>
 </html>

@@ -39,6 +39,7 @@
 typedef enum{
     LED_STATUS_OFF = 0,     // 灭
     LED_STATUS_ON = 1,      // 亮
+    LED_STATUS_UNKNOWN = 2, // 状态未知
 }led_status_e;
 
 /* ========================================================================== */
@@ -48,6 +49,20 @@ typedef enum{
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       cb for http cgi: /api/led/turn
+ * 
+ * @retval      led status json
+ */
+extern error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size);
+
+/**
+ * @brief       cb for http cgi: /api/led/status
+ * 
+ * @retval      led status json
+ */
+extern error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
  * @brief       初始化led模块

@@ -69,6 +69,15 @@ typedef struct{
     char has_content_len;
 }http_request_t;
 
+// cgi数据内容返回的函数签名
+typedef error_code_e (*http_cgi_response_f)(char *buf, size_t buf_size);
+
+// cgi接口表项条目定义
+typedef struct{
+    const char *uri;
+    http_cgi_response_f func;
+}http_cgi_entry_t;
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -94,5 +103,15 @@ extern http_parse_result_e http_parse_request(const char *buffer, size_t buffer_
  * @note        发送静态文件响应
  */
 extern void http_send_file_response(int fd, const char *uri);
+
+/**
+ * @brief       send cgi response
+ * 
+ * @param[in]   fd      - fd
+ * @param[in]   uri     - uri
+ * 
+ * @note        返回前端js需要的数据，json格式
+ */
+extern void http_send_cgi_response(int fd, const char *uri);
 
 #endif
