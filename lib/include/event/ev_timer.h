@@ -22,7 +22,11 @@
 /* ========================================================================== */
 
 #include <stdint.h>
+#include <time.h>
+#include <string.h>
+
 #include "plat/compiler.h"
+#include "plat/debug.h"
 #include "type/type_heap.h"
 
 /* ========================================================================== */
@@ -44,6 +48,29 @@ typedef void (*ev_timer_cb_func)(void *args);
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       get sys time string
+ * 
+ * @param[out]  buf     - string
+ * @param[in]   buf_size    -  size of buf
+ * 
+ * @retval      error code
+ */
+static attr_force_inline error_code_e realtime_get_str(char *buf, size_t buf_size)
+{
+    // 检查buf长度，2026-01-01 23:59:59，至少需要20B
+    pfm_ensure_ret(buf && buf_size >= 20, ERR_BAD_PARAM);
+
+    memset(buf, 0, buf_size);
+    struct tm tm_info = {};
+    struct timespec ts = {};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    localtime_r(&ts.tv_sec, &tm_info);
+    strftime(buf, buf_size, "%Y-%m-%d %H:%M:%S", &tm_info);
+
+    return ERR_NO_ERROR;
+}
 
 /**
  * @brief`      get system mono time

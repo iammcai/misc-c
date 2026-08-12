@@ -104,4 +104,33 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     // 启动轮询
     sht30_poll();
+
+    /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */
+
+    const realtime = document.getElementById('realtime');
+
+    function realtime_poll() {
+        fetch('/api/sys/realtime', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+        })
+        .then(r => {
+            if(!r.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return r.json();
+        })
+        .then(data => {
+            realtime.textContent = data.realtime;
+        })
+        .catch(() => {
+            realtime.textContent = '-- : -- : -- -- : -- : --'
+        })
+        .finally(() => {
+            setTimeout(realtime_poll, 1000);
+        })
+    }
+    realtime_poll();
 })

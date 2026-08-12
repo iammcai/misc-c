@@ -29,6 +29,7 @@
 
 #include "web/http.h"
 #include "mp/mp.h"
+#include "event/ev_timer.h"
 #include "led/led.h"
 #include "sht30/sht30.h"
 
@@ -148,6 +149,21 @@ static attr_pure_inline error_code_e _http_get_cgi_response(const char *uri, cha
  */
 static void _http_send_error_response(int fd, int code, const char *reason);
 
+/**
+ * @brief       http response for cgi: /api/sys/realtime
+ */
+static attr_force_inline error_code_e sys_realtime_http_cgi_cb(char *buf, size_t buf_size)
+{
+    char time_str[32] = {}; // 32长度足够
+
+    if(ERR_NO_ERROR != realtime_get_str(time_str, sizeof(time_str)))
+        return ERR_NOT_SUPPORT;
+
+    snprintf(buf, buf_size, "{\"realtime\":\"%s\"}", time_str);
+
+    return ERR_NO_ERROR;
+}
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -166,6 +182,7 @@ static http_cgi_entry_t g_http_cgi_response_table[] = {
     {"/api/led/turn",           led_turn_http_cgi_cb},
     {"/api/led/status",         led_status_http_cgi_cb},
     {"/api/sht30/sensor",       sht30_sensor_http_cgi_cb},
+    {"/api/sys/realtime",       sys_realtime_http_cgi_cb},
 };
 
 /* ========================================================================== */

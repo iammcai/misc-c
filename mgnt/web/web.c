@@ -31,6 +31,7 @@
 #include "plat/atom.h"
 #include "type/type_list.h"
 #include "mp/mp.h"
+#include "zcap/zcap.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -341,12 +342,27 @@ done:
     return ERR_WEB_INIT_FAIL;
 }
 
+void zcap_web_pkt_cb(char *packet, int len, void *args)
+{
+
+}
+
 void web_module_init()
 {
     mem_type_attr_register(web_connection);
     web_connection_list_init(&g_web_conn_list);
 
     _web_mgnt_init();
+
+    // 注册zcap捕获http报文
+    zcap_register_pkt_filter("wlan0", "web", zcap_web_pkt_cb, NULL);
+    zcap_register_field_len_type("wlan0", "web", IPV4, 0xffff);
+    zcap_register_field_pro_type("wlan0", "web", TCP, 0xff);
+    zcap_register_field_l4_dport("wlan0", "web", WEB_TCP_PORT, 0xffff);
+    zcap_register_pkt_filter("eth0", "web", zcap_web_pkt_cb, NULL);
+    zcap_register_field_len_type("eth0", "web", IPV4, 0xffff);
+    zcap_register_field_pro_type("eth0", "web", TCP, 0xff);
+    zcap_register_field_l4_dport("eth0", "web", WEB_TCP_PORT, 0xffff);
 
     dbg_major("web module init ok");
 }
