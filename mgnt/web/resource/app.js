@@ -134,6 +134,38 @@ document.addEventListener('DOMContentLoaded', function(){
     }
     realtime_poll();
 
+    /* =-=-=-=-=-=-=-=- network stat -=-=-=-=-=-=-=-= */
+
+    const eth0_rx_rate = document.getElementById('eth0_rx_rate');
+    const wlan0_rx_rate = document.getElementById('wlan0_rx_rate');
+
+    function rx_rate_poll() {
+        fetch('/api/network/status/rx_rate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+        })
+        .then(r => {
+            if(!r.ok){
+                throw new Error('Network response was not ok');
+            }
+            return r.json();
+        })
+        .then(data => {
+            eth0_rx_rate.textContent = `eth0: 👇 ${data.eth0.rx_rate} kB/s`;
+            wlan0_rx_rate.textContent = `wlan0: 👇 ${data.wlan0.rx_rate} kB/s`;
+        })
+        .catch(() => {
+            eth0_rx_rate.textContent = 'eth0: 👇 -- kB/s';
+            wlan0_rx_rate.textContent = 'wlan0: 👇 -- kB/s';
+        })
+        .finally(() => {
+            setTimeout(rx_rate_poll, 1000);
+        })
+    }
+    rx_rate_poll();
+
     /* =-=-=-=-=-=-=-=- sysmon -=-=-=-=-=-=-=-= */
 
     const cpu_total = document.getElementById('cpu_total');

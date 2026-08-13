@@ -1048,7 +1048,7 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 captor->stat.rate_Bps/1024
             );
             unsigned long loss = ATOM_LOAD(&captor->stat.loss_count, MORDER_RELAXED);
-            safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count);
+            safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count*100);
 
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
@@ -1069,4 +1069,32 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
     }
 
     return NULL;
+}
+
+error_code_e zcap_rx_rate_http_cgi_cb(char *buf, size_t buf_size)
+{
+    memset(buf, 0, buf_size);
+
+    double eth0_rx_rate = 0;
+    double wlan0_rx_rate = 0;
+
+    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+    while(captor)
+    {
+        if(0 == strcmp(captor->if_name, "eth0"))
+        {
+            ev_with_mutex(&captor->stat.mtx)
+                eth0_rx_rate = captor->stat.rate_Bps/1024;
+        }
+        else if(0 == strcmp(captor->if_name, "wlan0"))
+        {
+            ev_with_mutex(&captor->stat.mtx)
+                wlan0_rx_rate = captor->stat.rate_Bps/1024;
+        }
+        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+    }
+
+    snprintf(buf, buf_size, "{\"eth0\":{\"rx_rate\":\"%.3f\"},\"wlan0\":{\"rx_rate\":\"%.3f\"}}", eth0_rx_rate, wlan0_rx_rate);
+
+    return ERR_NO_ERROR;
 }

@@ -33,6 +33,7 @@
 #include "led/led.h"
 #include "sht30/sht30.h"
 #include "sysmon/sysmon.h"
+#include "zcap/zcap.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -180,11 +181,12 @@ static http_mime_entry_t g_http_mime_table[] = {
 
 // cgi响应接口表项
 static http_cgi_entry_t g_http_cgi_response_table[] = {
-    {"/api/led/turn",           led_turn_http_cgi_cb},
-    {"/api/led/status",         led_status_http_cgi_cb},
-    {"/api/sht30/sensor",       sht30_sensor_http_cgi_cb},
-    {"/api/sys/realtime",       sys_realtime_http_cgi_cb},
-    {"/api/sysmon/cpu/usage",   sysmon_cpu_usage_http_cgi_cb},
+    {"/api/led/turn",                   led_turn_http_cgi_cb},
+    {"/api/led/status",                 led_status_http_cgi_cb},
+    {"/api/sht30/sensor",               sht30_sensor_http_cgi_cb},
+    {"/api/sys/realtime",               sys_realtime_http_cgi_cb},
+    {"/api/sysmon/cpu/usage",           sysmon_cpu_usage_http_cgi_cb},
+    {"/api/network/status/rx_rate",     zcap_rx_rate_http_cgi_cb},
 };
 
 /* ========================================================================== */
