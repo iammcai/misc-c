@@ -117,6 +117,9 @@ typedef struct{
     // 报文类型
     unsigned long err;          // 错包数量
 
+    // 丢包统计
+    unsigned long loss_count;   // 丢包个数
+
     //以下用于速率统计
     unsigned long curr_count;   // 本次统计数量
     unsigned long curr_size;    // 本次统计大小

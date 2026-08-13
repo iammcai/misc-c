@@ -550,6 +550,7 @@ static void* _zcap_routine(void *args)
                 if(!packet)
                 {
                     dbg_error("no mem for packet node, packet loss");
+                    ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
                     continue;
                 }
                 memset(packet, 0, sizeof(zcap_packet_t)+pkt_len);
@@ -1042,10 +1043,12 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
         ev_with_mutex(&captor->stat.mtx)
         {
             safe_printf("rx_count: %u, %.3f pps\n", captor->stat.count, captor->stat.rate_pps);
-            safe_printf("rx_size: %.3f KB, %.3f KBps\n\n",
+            safe_printf("rx_size: %.3f KB, %.3f KBps\n",
                 (double)captor->stat.size/1024,
                 captor->stat.rate_Bps/1024
             );
+            unsigned long loss = ATOM_LOAD(&captor->stat.loss_count, MORDER_RELAXED);
+            safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count);
 
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");

@@ -26,10 +26,6 @@
 #include "syslog/syslog.h"
 
 /* ========================================================================== */
-/*                             Type Definitions                               */
-/* ========================================================================== */
-
-/* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
@@ -43,6 +39,9 @@
 
 // 回收阈值
 #define MP_SLAB_RECYCLE_THRESHOLD       (256)
+
+// 后台回收线程执行间隔
+#define SLAB_MP_RECYCLE_WORK_INTERVAL   (500)
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -137,8 +136,8 @@ declare_hash(slab_recycle_aq, slab_recycle_aq, slab_recycle_aq_t, item, 1, 31, _
 // 定义spsc aq操作，用于线程自身回收队列
 declare_spsc_atom_queue(slab_recycle, slab_recycle, slab_mem_node_t, item.aq_item)
 
-// 后台线程，来跨线程回收内存，1s一次
-declare_ev_thd(slab_mp_recycle, _slab_mp_recycle_work_func, NULL, 1000)
+// 后台线程，来跨线程回收内存
+declare_ev_thd(slab_mp_recycle, _slab_mp_recycle_work_func, NULL, SLAB_MP_RECYCLE_WORK_INTERVAL)
 
 /**
  * @brief       size 2 free list slot
@@ -350,23 +349,29 @@ static attr_cold_noinline void* _mp_slab_node_get_slow(mem_type_attr_t *attr, in
     }
 
     slab_mem_node_t *node = slab_free_mem_list_pop(&mp->free_lists[slot]);
-    if(unlikely(!node))
+    int batch = 0;
+    int found = 0;
+    if(!node)
     {
-        // 从 local_aq 回收一批，最多256
-        int batch = 0;
+        // 从 local_aq 回收一批，至少256个，且有需求的节点类型
         slab_mem_node_t *recycle_node;
-        while(batch < MP_SLAB_RECYCLE_THRESHOLD && (recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq)))
+        while(recycle_node = slab_recycle_spsc_atom_queue_pop(&mp->recycle.local_aq))
         {
             slab_free_mem_list_add_head(&mp->free_lists[recycle_node->slot], recycle_node);
-            batch++;
 #if MP_DBG_MODE
             ATOM_FETCH_SUB(&recycle_node->attr->used, g_slab_size_arr[recycle_node->slot], MORDER_RELAXED);
             ATOM_FETCH_SUB(&recycle_node->attr->slab_used[recycle_node->slot], 1, MORDER_RELAXED);
 #endif
+            batch ++;
+            if(recycle_node->slot == slot)
+                found = 1;
+            // 没有找到满足需求的就持续回收
+            if(batch >= MP_SLAB_RECYCLE_THRESHOLD && found)
+                break;
         }
         // 再次尝试
         node = slab_free_mem_list_pop(&mp->free_lists[slot]);
-        if(!node)
+        if(unlikely(!node))
         {
             dbg_error("slot %d no memory", slot);
             return NULL;
@@ -423,9 +428,11 @@ static attr_force_inline void _mp_slab_node_put_remote(slab_mp_t *mp, slab_mem_n
     // 将node放到本线程的remote_aq，等待后台回收
     slab_recycle_spsc_atom_queue_push(&mp->recycle.remote_aq, node);
 
-    // remote_aq堆积则立即唤醒_mp_slab_node_get 
+    #if 0
+    // remote_aq堆积则立即唤醒_mp_slab_node_get
     if(slab_recycle_spsc_atom_queue_count(&mp->recycle.remote_aq) >= MP_SLAB_RECYCLE_THRESHOLD)
         ev_thd_wake(slab_mp_recycle);
+    #endif
 }
 
 void _mp_slab_node_put(void *ptr)
