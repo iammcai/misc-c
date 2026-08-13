@@ -48,6 +48,11 @@ extern error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size);
  */
 extern void sht30_module_init();
 
+/**
+ * @brief       deinit sht30 module
+ */
+extern void sht30_module_deinit();
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */

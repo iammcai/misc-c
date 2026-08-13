@@ -48,6 +48,7 @@ typedef enum{
     SYSLOG_MODULE_WEB,
     SYSLOG_MODULE_LED,          // led
     SYSLOG_MODULE_SHT30,        // sht30
+    SYSLOG_MODULE_SYSMON,       // sysmon
 
     SYSLOG_MODULE_MAX,          // 计数
 }syslog_module_e;
@@ -75,6 +76,7 @@ static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "web",
     "led",
     "sht30",
+    "sysmon",
 };
 
 /* ========================================================================== */

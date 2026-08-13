@@ -151,6 +151,9 @@ error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size)
 
 void led_module_init()
 {
+    // 加载驱动，忽略错误
+    system("insmod ../driver/led/miscc_led.ko");
+
     g_led_status = LED_STATUS_UNKNOWN;
 
     // 打开led文件
@@ -176,4 +179,19 @@ void led_module_init()
     cli_register("led off", "turn off led", NULL, _led_off_cli_hook);
 
     dbg_major("led module init ok");
+}
+
+void led_module_deinit()
+{
+    // 退出时熄灭led
+    _led_off_cli_hook(0, NULL);
+
+    // 关闭led文件
+    if(g_led_fd >= 0)
+        close(g_led_fd);
+
+    // 卸载led驱动
+    system("rmmod miscc_led");
+
+    dbg_major("led module deinit ok");
 }

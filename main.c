@@ -22,6 +22,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdlib.h>
+#include <signal.h>
+
 #include "test.h"
 #include "cli/cli.h"
 #include "zcap/zcap.h"
@@ -38,6 +40,7 @@
 #include "nt/tftp.h"
 #include "led/led.h"
 #include "sht30/sht30.h"
+#include "sysmon/sysmon.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -57,7 +60,7 @@
 #define TEST_EV_TIMER   (0)
 
 /* ========================================================================== */
-/*                               Extern Symbols                               */
+/*                             Global Variables                               */
 /* ========================================================================== */
 
 // 声明接口抓包
@@ -67,9 +70,36 @@ declare_zcap(wlan0)
 // 用于通知platform init ok
 ev_sem_t g_platform_init_ok;
 
+// 系统运行标志
+static ATOMIC_UINT8_T g_main_running;
+
 /* ========================================================================== */
 /*                         Private Function Implementations                   */
 /* ========================================================================== */
+
+/**
+ * @brief       sigint callback
+ * 
+ * @note        用于注册sigint信号异步处理函数，设置running标志为0使主循环退出
+ */
+static attr_force_inline void _platform_sigint_handler(int signo)
+{
+    ATOM_STORE(&g_main_running, 0, MORDER_RELAXED);
+}
+
+/**
+ * @brief       register SIGINT handler
+ * 
+ * @note        注册SIGINT处理器
+ */
+static attr_force_inline void _platform_sigint_register()
+{
+    struct sigaction sa;
+    sa.sa_handler = _platform_sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+}
 
 /**
  * @brief       platform init
@@ -136,6 +166,11 @@ static attr_force_inline void _platfrom_init()
     led_module_init();
     // sht30初始化
     sht30_module_init();
+    // sysmon初始化
+    sysmon_module_init();
+
+    // sigint处理器注册
+    _platform_sigint_register();
 
     // 关闭debug
     debug_level_set(debug_level_none);
@@ -143,6 +178,30 @@ static attr_force_inline void _platfrom_init()
     syslog_notice(SYSLOG_MODULE_SYS, "c-misc system start");
 
     ev_sem_post(&g_platform_init_ok);
+}
+
+/**
+ * @brief       platform de init
+ * 
+ * @note        按照_platform_init()逆序回收资源
+ */
+static void _platform_deinit()
+{
+    debug_level_set(debug_level_all);
+
+    // sysmon
+    sysmon_module_deinit();
+    // sht30
+    sht30_module_deinit();
+    // led
+    led_module_deinit();
+
+    // web
+    web_module_deinit();
+
+    dbg_major("c-misc system exit");
+
+    debug_level_set(debug_level_none);
 }
 
 int main()
@@ -209,11 +268,15 @@ int main()
     return 0;
 #endif
 
+    ATOM_STORE(&g_main_running, 1, MORDER_RELAXED);
     // Main进入休眠
-    while(1)
+    while(ATOM_LOAD(&g_main_running, MORDER_RELAXED))
     {
         sleep(1);
     }
+
+    // 运行到这里说明g_main_running已修改，系统退出
+    _platform_deinit();
 
     return 0;
 }

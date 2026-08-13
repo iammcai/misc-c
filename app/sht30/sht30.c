@@ -250,6 +250,10 @@ error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
 
 void sht30_module_init()
 {
+    // 加载驱动，忽略错误
+    system("modprobe industrialio");
+    system("insmod ../driver/sht30/miscc_sht30.ko");
+
     // 寻找设备节点
     if(ERR_NO_ERROR != _sht30_find_device_path_by_name(SHT30_IIO_DEVICE_NAME))
     {
@@ -268,4 +272,16 @@ void sht30_module_init()
     ev_thd_wake(sht30_measure);
 
     dbg_major("sht30 module init ok");
+}
+
+void sht30_module_deinit()
+{
+    // 停止定时检测事件线程
+    ev_thd_cancel(sht30_measure);
+
+    // 注销驱动
+    system("rmmod miscc_sht30");
+    system("rmmod industrialio");
+
+    dbg_major("sht30 module deinit ok");
 }

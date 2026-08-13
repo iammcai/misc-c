@@ -68,3 +68,8 @@ extern error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size);
  * @brief       初始化led模块
  */
 extern void led_module_init();
+
+/**
+ * @brief       led模块销毁
+ */
+extern void led_module_deinit();

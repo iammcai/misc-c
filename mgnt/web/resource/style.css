@@ -149,6 +149,29 @@ h1 span {
     background: rgba(255, 255, 255, 0.6);
 }
 
+/* ===== 表格 ===== */
+
+/* 表格样式 */
+table {
+  border-collapse: collapse;
+  width: 100%;          /* 或 auto，根据需要 */
+  margin-top: 10px;      /* 与标题留出间距 */
+  border: 1px solid #ccc;   /* 表格外边框 */
+}
+
+/* 所有单元格（表头和数据）都加上边框 */
+th, td {
+  border: 1px solid #ccc;     /* 单元格边框，颜色可调 */
+  padding: 6px 12px;            /* 让内容不拥挤 */
+  text-align: center;           /* 居中 */
+}
+
+/* 表头（左侧标签） */
+th {
+  font-weight: normal;
+  background-color: #f2f2f2; /* 可选的浅灰背景，区分表头 */
+}
+
 /* ===== 页脚 ===== */
 .footer {
     margin-top: 30px;

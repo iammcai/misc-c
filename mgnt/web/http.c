@@ -32,6 +32,7 @@
 #include "event/ev_timer.h"
 #include "led/led.h"
 #include "sht30/sht30.h"
+#include "sysmon/sysmon.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -183,6 +184,7 @@ static http_cgi_entry_t g_http_cgi_response_table[] = {
     {"/api/led/status",         led_status_http_cgi_cb},
     {"/api/sht30/sensor",       sht30_sensor_http_cgi_cb},
     {"/api/sys/realtime",       sys_realtime_http_cgi_cb},
+    {"/api/sysmon/cpu/usage",   sysmon_cpu_usage_http_cgi_cb},
 };
 
 /* ========================================================================== */

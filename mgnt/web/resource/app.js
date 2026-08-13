@@ -133,4 +133,51 @@ document.addEventListener('DOMContentLoaded', function(){
         })
     }
     realtime_poll();
+
+    /* =-=-=-=-=-=-=-=- sysmon -=-=-=-=-=-=-=-= */
+
+    const cpu_total = document.getElementById('cpu_total');
+    const cpu0 = document.getElementById('cpu0');
+    const cpu1 = document.getElementById('cpu1');
+    const cpu2 = document.getElementById('cpu2');
+    const cpu3 = document.getElementById('cpu3');
+
+    // 辅助函数，更新cpu利用率展示标签
+    function update_cpu_usage(elem, value, threshold=75) {
+        elem.textContent = `${value} %`;
+        elem.style.color = value > threshold ? 'red' : '';
+    }
+
+    function sysmon_poll() {
+        fetch('/api/sysmon/cpu/usage', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+        })
+        .then(r => {
+            if(!r.ok){
+                throw new Error('Network response was not ok');
+            }
+            return r.json();
+        })
+        .then(data => {
+            update_cpu_usage(cpu_total, data.total, 25);
+            update_cpu_usage(cpu0, data.cpu0);
+            update_cpu_usage(cpu1, data.cpu1);
+            update_cpu_usage(cpu2, data.cpu2);
+            update_cpu_usage(cpu3, data.cpu3);
+        })
+        .catch(() => {
+            cpu_total.textContent = '-- %';
+            cpu0.textContent = '-- %';
+            cpu1.textContent = '-- %';
+            cpu2.textContent = '-- %';
+            cpu3.textContent = '-- %';
+        })
+        .finally(() => {
+            setTimeout(sysmon_poll, 2000);
+        })
+    }
+    sysmon_poll();
 })

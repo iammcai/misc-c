@@ -342,9 +342,14 @@ done:
     return ERR_WEB_INIT_FAIL;
 }
 
-void zcap_web_pkt_cb(char *packet, int len, void *args)
+/**
+ * @brief       cb for web pkt
+ * 
+ * @note        捕获dstport 8080 tcp报文回调，不做任何操作，仅为增加zcap计数
+ */
+static attr_force_inline void zcap_web_pkt_cb(char *packet, int len, void *args)
 {
-
+    // nothing
 }
 
 void web_module_init()
@@ -365,4 +370,11 @@ void web_module_init()
     zcap_register_field_l4_dport("eth0", "web", WEB_TCP_PORT, 0xffff);
 
     dbg_major("web module init ok");
+}
+
+void web_module_deinit()
+{
+    // 销毁web_connection list
+
+    dbg_major("web module deinit ok");
 }
