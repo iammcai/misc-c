@@ -19,28 +19,37 @@
         <!-- 内容区域 -->
         <div class="content">
             <p>这里是MISC-C项目的web管理页面</p>
+            <p>页面数据大部分5s刷新一次，可点击<span>Poll</span>按钮主动更新</p>
         </div>
 
         <!-- 内部模块网格 -->
         <div class="card-grid">
+            <!-- sht30 -->
             <div class="card-item" style="order: 1;">
                 <h3>Environment Sensor</h3>
                 <p id="env_temp">Temperature: -- ℃</p>
                 <p id="env_humi">Humidity: -- %RH</p>
+                <button id="sht30_poll_btn" class="btn">Poll</button>
             </div>
+            <!-- led -->
             <div class="card-item" style="order: 2;">
                 <h3 id="led_status">Led Status: UNKNOWN</h3>
-                <button id="led_turn_btn" class="btn">Turn LED</button>
+                <button id="led_poll_btn" class="btn">Poll</button>
+                <button id="led_turn_btn" class="btn">Turn</button>
             </div>
+            <!-- clock realtime -->
             <div class="card-item" style="order: 3;">
                 <h3>System Time</h3>
                 <p id="realtime">-- : -- : -- -- : -- : --</p>
             </div>
+            <!-- network stat -->
             <div class="card-item" style="order: 4;">
                 <h3>Network Stat</h3>
                 <p id="eth0_rx_rate">eth0: 👇 -- kB/s</p>
                 <p id="wlan0_rx_rate">wlan0: 👇 -- kB/s</p>
+                <button id="network_poll_btn" class="btn">Poll</button>
             </div>
+            <!-- sysmon -->
             <div class="card-item" style="order: 5;">
                 <h3>System Monitor</h3>
                 <table class="sysmon-cpu-table">
@@ -74,6 +83,7 @@
                         </tr>
                     </tbody>
                 </table>
+                <button id="sysmon_poll_btn" class="btn">Poll</button>
             </div>
         </div>
 

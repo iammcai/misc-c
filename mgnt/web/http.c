@@ -48,6 +48,9 @@
 // body长度
 #define HTTP_BODY_BUFFER_SIZE   (2048)
 
+// 模块单独CGI响应body长度
+#define HTTP_CGI_BODY_BUFFER_SIZE   (256)
+
 // http资源目录
 #define HTTP_RESOURCE_PREFIX        "../mgnt/web/resource"
 
@@ -166,6 +169,33 @@ static attr_force_inline error_code_e sys_realtime_http_cgi_cb(char *buf, size_t
     return ERR_NO_ERROR;
 }
 
+/**
+ * @brief       http response for cgi: /api/sync
+ * 
+ * @note        web端定时刷新接口，需要收集所有模块数据上报
+ */
+static attr_force_inline error_code_e _http_sync_http_cgi_cb(char *buf, size_t buf_size)
+{
+    memset(buf, 0, buf_size);
+
+    char led_status[HTTP_CGI_BODY_BUFFER_SIZE] = {};
+    pfm_ensure_ret(ERR_NO_ERROR == led_status_http_cgi_cb(led_status, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
+    char sht30_sensor[HTTP_CGI_BODY_BUFFER_SIZE] = {};
+    pfm_ensure_ret(ERR_NO_ERROR == sht30_sensor_http_cgi_cb(sht30_sensor, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
+    char sysmon_cpu_usage[HTTP_CGI_BODY_BUFFER_SIZE] = {};
+    pfm_ensure_ret(ERR_NO_ERROR == sysmon_cpu_usage_http_cgi_cb(sysmon_cpu_usage, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
+    char network_status_rxrate[HTTP_CGI_BODY_BUFFER_SIZE] = {};
+    pfm_ensure_ret(ERR_NO_ERROR == zcap_rx_rate_http_cgi_cb(network_status_rxrate, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
+
+    int n = snprintf(buf, buf_size,
+        "{\"led\":%s,\"sht30\":%s,\"sysmon\":%s,\"network\":%s}",
+        led_status, sht30_sensor, sysmon_cpu_usage, network_status_rxrate);
+    if(unlikely(n >= buf_size))
+        return ERR_WEB_HTTP_CGI_RESP_ERROR;
+
+    return ERR_NO_ERROR;
+}
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -181,10 +211,11 @@ static http_mime_entry_t g_http_mime_table[] = {
 
 // cgi响应接口表项
 static http_cgi_entry_t g_http_cgi_response_table[] = {
+    {"/api/sync",                       _http_sync_http_cgi_cb},
+    {"/api/sys/realtime",               sys_realtime_http_cgi_cb},
     {"/api/led/turn",                   led_turn_http_cgi_cb},
     {"/api/led/status",                 led_status_http_cgi_cb},
     {"/api/sht30/sensor",               sht30_sensor_http_cgi_cb},
-    {"/api/sys/realtime",               sys_realtime_http_cgi_cb},
     {"/api/sysmon/cpu/usage",           sysmon_cpu_usage_http_cgi_cb},
     {"/api/network/status/rx_rate",     zcap_rx_rate_http_cgi_cb},
 };
@@ -209,6 +240,8 @@ static inline const char* _http_get_mime_type(const char *path)
 
 static inline error_code_e _http_get_cgi_response(const char *uri, char *buf, size_t buf_size)
 {
+    dbg_major("receive uri %s", uri);
+
     for(size_t i = 0; i < array_size(g_http_cgi_response_table); ++ i)
         if(0 == strcasecmp(g_http_cgi_response_table[i].uri, uri))
             if(g_http_cgi_response_table[i].func)
@@ -266,7 +299,7 @@ http_parse_result_e http_parse_request(const char *buffer, size_t buffer_len, ht
     char *debug_buffer = mp_calloc(buffer_len+1, sizeof(char));
     memcpy(debug_buffer, buffer, buffer_len);
     debug_buffer[buffer_len] = '\0';
-    dbg("parse buffer:\n%s", debug_buffer);
+    dbg_always("parse buffer:\n%s\n", debug_buffer);
     mp_free(debug_buffer, sizeof(char)*(buffer_len+1));
 #endif
 

@@ -50,6 +50,7 @@ typedef enum{
     ERR_WEB_START = 800,            // web错误码起始
     ERR_WEB_INIT_FAIL,              // 初始化失败
     ERR_WEB_HTTP_CGI_NOT_FOUND,     // cgi接口不存在
+    ERR_WEB_HTTP_CGI_RESP_ERROR,    // 获取cgi响应失败
 
     // ftx模块
     ERR_FTX_START = 900,            // ftx错误码起始

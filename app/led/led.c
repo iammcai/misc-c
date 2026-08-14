@@ -135,13 +135,13 @@ error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size)
     switch(status)
     {
         case LED_STATUS_OFF:
-            snprintf(buf, buf_size, "%s", "{\"status\":\"off\"}");
+            snprintf(buf, buf_size, "%s", "{\"led_status\":\"off\"}");
             break;
         case LED_STATUS_ON:
-            snprintf(buf, buf_size, "%s", "{\"status\":\"on\"}");
+            snprintf(buf, buf_size, "%s", "{\"led_status\":\"on\"}");
             break;
         case LED_STATUS_UNKNOWN:
-            snprintf(buf, buf_size, "%s", "{\"status\":\"unknown\"}");
+            snprintf(buf, buf_size, "%s", "{\"led_status\":\"unknown\"}");
             break;
         default:
             return ERR_NOT_SUPPORT;
