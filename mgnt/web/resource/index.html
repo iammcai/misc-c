@@ -34,8 +34,8 @@
             <!-- led -->
             <div class="card-item" style="order: 2;">
                 <h3 id="led_status">Led Status: UNKNOWN</h3>
+                <button id="led_turn_btn" class="btn">Turn On/Off</button>
                 <button id="led_poll_btn" class="btn">Poll</button>
-                <button id="led_turn_btn" class="btn">Turn</button>
             </div>
             <!-- clock realtime -->
             <div class="card-item" style="order: 3;">
@@ -45,8 +45,8 @@
             <!-- network stat -->
             <div class="card-item" style="order: 4;">
                 <h3>Network Stat</h3>
-                <p id="eth0_rx_rate">eth0: 👇 -- kB/s</p>
-                <p id="wlan0_rx_rate">wlan0: 👇 -- kB/s</p>
+                <p id="eth0_rx">eth0: 👇 -- kB/s, -- MB</p>
+                <p id="wlan0_rx">wlan0: 👇 -- kB/s, -- MB</p>
                 <button id="network_poll_btn" class="btn">Poll</button>
             </div>
             <!-- sysmon -->

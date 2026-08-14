@@ -1071,12 +1071,14 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
-error_code_e zcap_rx_rate_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
 {
     memset(buf, 0, buf_size);
 
     double eth0_rx_rate = 0;
     double wlan0_rx_rate = 0;
+    unsigned long eth0_rx_size = 0;
+    unsigned long wlan0_rx_size = 0;
 
     zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
     while(captor)
@@ -1084,17 +1086,25 @@ error_code_e zcap_rx_rate_http_cgi_cb(char *buf, size_t buf_size)
         if(0 == strcmp(captor->if_name, "eth0"))
         {
             ev_with_mutex(&captor->stat.mtx)
+            {
                 eth0_rx_rate = captor->stat.rate_Bps/1024;
+                eth0_rx_size = captor->stat.size;
+            }
         }
         else if(0 == strcmp(captor->if_name, "wlan0"))
         {
             ev_with_mutex(&captor->stat.mtx)
+            {
                 wlan0_rx_rate = captor->stat.rate_Bps/1024;
+                wlan0_rx_size = captor->stat.size;
+            }
         }
         captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
     }
 
-    snprintf(buf, buf_size, "{\"eth0\":{\"rx_rate\":\"%.3f\"},\"wlan0\":{\"rx_rate\":\"%.3f\"}}", eth0_rx_rate, wlan0_rx_rate);
+    snprintf(buf, buf_size,
+        "{\"eth0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%u\"},\"wlan0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%u\"}}",
+        eth0_rx_rate, eth0_rx_size, wlan0_rx_rate, wlan0_rx_size);
 
     return ERR_NO_ERROR;
 }

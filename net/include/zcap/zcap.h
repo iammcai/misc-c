@@ -343,9 +343,9 @@ extern void _zcap_cancel(zcap_t *captor);
 extern int zcap_status_get(const char *if_name);
 
 /**
- * @brief       cb for http cgi: /api/network/status/rx_rate
+ * @brief       cb for http cgi: /api/network/status/rx
  */
-extern error_code_e zcap_rx_rate_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
  * @brief       register filter into zcaptor
