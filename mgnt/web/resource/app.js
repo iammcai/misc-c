@@ -1,24 +1,53 @@
 document.addEventListener('DOMContentLoaded', function(){
 
+    // ----- 页面切换逻辑 -----
+    const navItems = document.querySelectorAll('.nav-item');
+    const pages = {
+        dashboard: document.getElementById('page-dashboard'),
+        devices: document.getElementById('page-devices'),
+        network: document.getElementById('page-network'),
+        system: document.getElementById('page-system'),
+    };
+
+    // 切换页面函数
+    function switchPage(pageId) {
+        // 隐藏所有页面
+        Object.values(pages).forEach(p => p.classList.remove('active-page'));
+        // 显示目标页面
+        if (pages[pageId]) pages[pageId].classList.add('active-page');
+        // 更新菜单高亮
+        navItems.forEach(item => item.classList.remove('active'));
+        document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add('active');
+    }
+
+    // 监听菜单点击
+    navItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            const page = this.dataset.page;
+            if (page) switchPage(page);
+        });
+    });
+
+    // 默认激活 Dashboard
+    switchPage('dashboard');
+
+    // ----- 原有功能（保持不变） -----
     let realtimeTimer = null;
     let syncTimer = null;
 
-    // 启动轮询
     function startPolling() {
         if (!realtimeTimer) realtime_poll();
         if (!syncTimer) sync_poll();
     }
 
-    // 暂停轮询
     function stopPolling() {
-        // 清除待执行的定时器，阻止下一轮调度
         clearTimeout(realtimeTimer);
         clearTimeout(syncTimer);
         realtimeTimer = null;
         syncTimer = null;
     }
 
-    // 添加检测页面可见性切换事件
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
             stopPolling();
@@ -30,13 +59,10 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     /* =-=-=-=-=-=-=-=- LED -=-=-=-=-=-=-=-= */
-
-    // 定义变量指向按钮和状态展示，对应html文件的id
     const led_turn_btn = document.getElementById('led_turn_btn');
     const led_poll_btn = document.getElementById('led_poll_btn');
     const led_status = document.getElementById('led_status');
 
-    // led状态标签更新
     function update_led_status(status) {
         if(status === 'on') {
             led_status.textContent = 'Led Status: ON';
@@ -50,23 +76,16 @@ document.addEventListener('DOMContentLoaded', function(){
         }
     }
 
-    // led开关按钮
     led_turn_btn.addEventListener('click', function(){
-        // 禁用按钮点击
         led_turn_btn.disabled = true;
         led_turn_btn.textContent = '请求中...';
-
         fetch('/api/led/turn', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
         .then(response => {
-            if(!response.ok){
-                throw new Error('Network response was not ok');
-            }
-            return response.json();     // 后端返回json
+            if(!response.ok) throw new Error('Network response was not ok');
+            return response.json();
         })
         .then(data => update_led_status(data.status))
         .catch(error => {
@@ -74,28 +93,20 @@ document.addEventListener('DOMContentLoaded', function(){
             update_led_status('unknown');
         })
         .finally(() => {
-            // 恢复按钮文字
             led_turn_btn.disabled = false;
             led_turn_btn.textContent = 'Turn On/Off';
-        })
-    })
+        });
+    });
 
-    // led状态查询
     led_poll_btn.addEventListener('click', function() {
-
         led_poll_btn.disabled = true;
         led_poll_btn.textContent = '请求中';
-
         fetch('/api/led/status', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
         .then(response => {
-            if(!response.ok) {
-                throw new Error('Network response was not ok');
-            }
+            if(!response.ok) throw new Error('Network response was not ok');
             return response.json();
         })
         .then(data => update_led_status(data.led_status))
@@ -103,30 +114,23 @@ document.addEventListener('DOMContentLoaded', function(){
         .finally(() => {
             led_poll_btn.disabled = false;
             led_poll_btn.textContent = 'Poll';
-        })
-    })
+        });
+    });
 
     /* =-=-=-=-=-=-=-=- SHT30 -=-=-=-=-=-=-=-= */
-
     const env_temp = document.getElementById('env_temp');
     const env_humi = document.getElementById('env_humi');
-    const sht30_poll_btn = document.getElementById('sht30_poll_btn')
+    const sht30_poll_btn = document.getElementById('sht30_poll_btn');
 
     sht30_poll_btn.addEventListener('click', function() {
-
         sht30_poll_btn.disabled = true;
         sht30_poll_btn.textContent = '请求中...';
-
         fetch('/api/sht30/sensor', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
         .then(r => {
-            if(!r.ok) {
-                throw new Error('Network response was not ok');
-            }
+            if(!r.ok) throw new Error('Network response was not ok');
             return r.json();
         })
         .then(data => {
@@ -140,34 +144,26 @@ document.addEventListener('DOMContentLoaded', function(){
         .finally(() => {
             sht30_poll_btn.disabled = false;
             sht30_poll_btn.textContent = 'Poll';
-        })
-    })
+        });
+    });
 
     /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */
-
     const realtime = document.getElementById('realtime');
 
     async function realtime_poll() {
-        // 超时控制
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
-
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         try {
             const r = await fetch('/api/sys/realtime', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                signal: controller.signal  // 绑定 abort 信号
+                signal: controller.signal
             });
-            clearTimeout(timeoutId);     // 请求成功返回，清除超时定时器
-
-            if (!r.ok) {
-                throw new Error(`HTTP ${r.status}`);
-            }
-
+            clearTimeout(timeoutId);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
             const data = await r.json();
             realtime.textContent = data.realtime;
         } catch (err) {
-            // 区分超时错误和其他错误
             if (err.name === 'AbortError') {
                 console.warn('Realtime poll timed out');
             } else {
@@ -175,7 +171,6 @@ document.addEventListener('DOMContentLoaded', function(){
             }
             realtime.textContent = '-- : -- : -- -- : -- : --';
         } finally {
-            // 无论成功、失败、超时，都保证轮询继续
             clearTimeout(timeoutId);
             realtimeTimer = setTimeout(realtime_poll, 1000);
         }
@@ -183,26 +178,19 @@ document.addEventListener('DOMContentLoaded', function(){
     realtime_poll();
 
     /* =-=-=-=-=-=-=-=- network stat -=-=-=-=-=-=-=-= */
-
     const eth0_rx = document.getElementById('eth0_rx');
     const wlan0_rx = document.getElementById('wlan0_rx');
     const network_poll_btn = document.getElementById('network_poll_btn');
 
     network_poll_btn.addEventListener('click', function() {
-
         network_poll_btn.disabled = true;
         network_poll_btn.textContent = '请求中';
-
         fetch('/api/network/status/rx', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
         .then(r => {
-            if(!r.ok){
-                throw new Error('Network response was not ok');
-            }
+            if(!r.ok) throw new Error('Network response was not ok');
             return r.json();
         })
         .then(data => {
@@ -218,11 +206,10 @@ document.addEventListener('DOMContentLoaded', function(){
         .finally(() => {
             network_poll_btn.disabled = false;
             network_poll_btn.textContent = 'Poll';
-        })
-    })
+        });
+    });
 
     /* =-=-=-=-=-=-=-=- sysmon -=-=-=-=-=-=-=-= */
-
     const cpu_total = document.getElementById('cpu_total');
     const cpu0 = document.getElementById('cpu0');
     const cpu1 = document.getElementById('cpu1');
@@ -230,27 +217,20 @@ document.addEventListener('DOMContentLoaded', function(){
     const cpu3 = document.getElementById('cpu3');
     const sysmon_poll_btn = document.getElementById('sysmon_poll_btn');
 
-    // 辅助函数，更新cpu利用率展示标签
     function update_cpu_usage(elem, value, threshold=75) {
         elem.textContent = `${value} %`;
         elem.style.color = value > threshold ? 'red' : '';
     }
 
     sysmon_poll_btn.addEventListener('click', function() {
-
         sysmon_poll_btn.disabled = true;
         sysmon_poll_btn.textContent = '请求中';
-
         fetch('/api/sysmon/cpu/usage', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
         })
         .then(r => {
-            if(!r.ok){
-                throw new Error('Network response was not ok');
-            }
+            if(!r.ok) throw new Error('Network response was not ok');
             return r.json();
         })
         .then(data => {
@@ -270,28 +250,22 @@ document.addEventListener('DOMContentLoaded', function(){
         .finally(() => {
             sysmon_poll_btn.disabled = false;
             sysmon_poll_btn.textContent = 'Poll';
-        })
-    })
+        });
+    });
 
     /* =-=-=-=-=-=-=-=- sync 定时刷新 -=-=-=-=-=-=-=-= */
-
     async function sync_poll() {
-
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-
         try{
             const r = await fetch('/api/sync', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 signal: controller.signal,
-            })
-            clearTimeout(timeoutId);        // 请求成功，清除定时器
-            if(!r.ok) {
-                throw new Error('Network response was not ok');
-            }
-
-            const data = await r.json();    
+            });
+            clearTimeout(timeoutId);
+            if(!r.ok) throw new Error('Network response was not ok');
+            const data = await r.json();
             update_led_status(data.led.led_status);
             env_temp.textContent = `Temperature: ${data.sht30.temperature.toFixed(1)} ℃`;
             env_humi.textContent = `Humidity: ${data.sht30.humidity.toFixed(1)} %RH`;
@@ -310,7 +284,6 @@ document.addEventListener('DOMContentLoaded', function(){
             } else {
                 console.warn('sunc fail: ', err.message);
             }
-
             update_led_status('unknown');
             env_temp.textContent = `Temperature: -- ℃`;
             env_humi.textContent = `Humidity: -- %RH`;
@@ -327,4 +300,4 @@ document.addEventListener('DOMContentLoaded', function(){
         }
     }
     sync_poll();
-})
+});

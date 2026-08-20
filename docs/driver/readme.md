@@ -152,7 +152,15 @@ cai@raspicai:~/share/misc-c/driver/led $ readlink /sys/devices/platform/my-led-d
 
 项目对引脚的分配进行规划如下：
 
-Pin 11  : GPIO17        给 led
-
-Pin 3   : SDA1          给 sht30 sda
-Pin 5   : SCL1          给 sht30 scl
+|Pin编号|Method|分配|
+|---|---|---|
+|Pin 1|3.3V|接入面包板正极|
+|Pin 3|SDA1|给 sht30 sda|
+|Pin 5|SCL1|给 sht30 scl|
+|Pin 9|GND|接入面包板负极|
+|Pin 11|GPIO17|led|
+|Pin 13|GPIO27|ssd1306 res|
+|Pin 15|GPIO22|ssd1306 dc|
+|Pin 19|GPIO10|ssd1306 mosi|
+|Pin 23|GPIO11 / SPI0 SCLK|ssd1306 scl|
+|Pin 24|GPIO8 / SPI0 CE0|ssd1306 cs|

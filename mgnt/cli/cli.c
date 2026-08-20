@@ -21,6 +21,8 @@
 /* ========================================================================== */
 
 #include <pthread.h>
+#include <errno.h>
+#include <signal.h>
 #include "cli/cli.h"
 #include "cli/cli_gnurl.h"
 #include "event/ev_lock.h"
@@ -83,7 +85,9 @@ static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])
 /* ========================================================================== */
 
 // 执行监听输入、任务处理的线程
-static pthread_t cli_stask_tid;
+static pthread_t cli_task_tid;
+// 线程运行标志
+static ATOMIC_UINT8_T cli_task_running = 0;
 
 // cli模式
 cli_mode_e g_cli_mode = CLI_MODE_CONFIG;
@@ -105,8 +109,10 @@ static void* _cli_routine(void *args)
 {
     ev_sem_wait(&g_platform_init_ok);
 
+    ATOM_STORE(&cli_task_running, 1, MORDER_RELAXED);
+
     dbg_major("CLI start...");
-    while(1)
+    while(ATOM_LOAD(&cli_task_running, MORDER_RELAXED))
     {
         char *input = NULL;
 
@@ -114,8 +120,12 @@ static void* _cli_routine(void *args)
         {
             case CLI_MODE_CONFIG:
                 input = cli_gnurl_readline(fmt_color_green "misc-c (config) > " fmt_color_clear);
-                if(!input)      // ctrl + D 退出cli
-                    return NULL;
+                if(!input)      // ctrl + D 退出cli，ctrl + C 结束程序
+                {
+                    if(errno != EINTR)
+                        g_cli_mode = CLI_MODE_SHELL;
+                    break;
+                }
                 if(*input)      // 非空进行处理
                 {
                     _cli_handler(input);    // readline会自动过滤掉换行
@@ -135,9 +145,9 @@ static void* _cli_routine(void *args)
             default:
                 break;
         }
-
-        
     }
+
+    dbg("cli thread exit");
 
     return NULL;
 }
@@ -185,7 +195,16 @@ void cli_module_init()
     cli_register("shell", "enter cli shell mode", NULL, _cli_shell_cli_hook);
 
     // 创建线程执行监听cli输入
-    pthread_create(&cli_stask_tid, NULL, _cli_routine, NULL);
+    pthread_create(&cli_task_tid, NULL, _cli_routine, NULL);
 
     dbg_major("cli module init ok");
+}
+
+void cli_module_deinit_th()
+{
+    ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED);
+    // 向cli线程发送SIGINT，退出gnu_readline的阻塞等待
+    pthread_kill(cli_task_tid, SIGINT);
+
+    dbg_major("cli module deinit top half ok");
 }

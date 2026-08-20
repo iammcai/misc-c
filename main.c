@@ -40,6 +40,7 @@
 #include "nt/tftp.h"
 #include "led/led.h"
 #include "sht30/sht30.h"
+#include "ssd1306/ssd1306.h"
 #include "sysmon/sysmon.h"
 
 /* ========================================================================== */
@@ -166,6 +167,8 @@ static attr_force_inline void _platfrom_init()
     led_module_init();
     // sht30初始化
     sht30_module_init();
+    // ssd1306初始化
+    ssd1306_module_init();
     // sysmon初始化
     sysmon_module_init();
 
@@ -183,14 +186,26 @@ static attr_force_inline void _platfrom_init()
 /**
  * @brief       platform de init
  * 
- * @note        按照_platform_init()逆序回收资源
+ * @note        按照_platform_init()逆序回收资源，分上下两半部
  */
 static void _platform_deinit()
 {
     debug_level_set(debug_level_all);
 
+    /* =-=-=-=-=-=-=-=- top half -=-=-=-=-=-=-=-= */
+
+    // cli停止监听
+    cli_module_deinit_th();
+
+    // zcap停止抓包
+    zcap_module_deinit_th();
+
+    /* =-=-=-=-=-=-=-=- bottom half -=-=-=-=-=-=-=-= */
+
     // sysmon
     sysmon_module_deinit();
+    // ssd1306
+    ssd1306_module_deinit();
     // sht30
     sht30_module_deinit();
     // led
@@ -198,6 +213,14 @@ static void _platform_deinit()
 
     // web
     web_module_deinit();
+
+    // net tools注销
+    tftp_module_deinit();
+    ping_module_deinit();
+    arp_module_deinit();
+
+    // zcap, ftx
+    zcap_module_deinit_bh();
 
     dbg_major("c-misc system exit");
 

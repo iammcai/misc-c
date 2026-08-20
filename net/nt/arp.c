@@ -570,3 +570,26 @@ void arp_module_init(void)
 
     dbg_major("arp module init ok");
 }
+
+void arp_module_deinit()
+{
+    // 归还arp cache
+    ev_with_wrlock(&g_arp_reply_cache_rwlock)
+    {
+        arp_reply_cache_t *cache = arp_reply_cache_hash_first(&g_arp_reply_cache);
+        while(cache)
+        {
+            // 销毁定时器，归还内存
+            ev_timer_destroy(&cache->timer);
+
+            arp_reply_cache_t *temp = cache;
+            cache = arp_reply_cache_hash_next(&g_arp_reply_cache, cache);
+            arp_reply_cache_hash_del(&g_arp_reply_cache, temp);
+            mp_free(temp, sizeof(arp_reply_cache_t));
+        }
+
+        arp_reply_cache_hash_fini(&g_arp_reply_cache);
+    }
+
+    dbg_major("arp module deinit ok");
+}

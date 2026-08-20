@@ -44,6 +44,24 @@
 extern error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
+ * @brief       get temperature form sht30
+ * 
+ * @param[out]  temp
+ * 
+ * @retval      error code
+ */
+extern error_code_e sht30_read_temperature(double *temp);
+
+/**
+ * @brief       get humidity form sht30
+ * 
+ * @param[out]  humi
+ * 
+ * @retval      error code
+ */
+extern error_code_e sht30_read_humidity(double *humi);
+
+/**
  * @brief       init sht30 module
  */
 extern void sht30_module_init();

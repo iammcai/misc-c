@@ -4,105 +4,116 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MISC-C-WEB</title>
-    <!-- 引用 CSS -->
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
-    <!-- 卡片容器：整个内容被包裹在 .container 中 -->
-    <div class="container">
-        <!-- 主标题 -->
-        <h1>
-            <span>Welcome</span> To MISC-C-WEB
-        </h1>
-        
-        <!-- 内容区域 -->
-        <div class="content">
-            <p>这里是MISC-C项目的web管理页面</p>
-            <p>页面数据大部分5s刷新一次，可点击<span>Poll</span>按钮主动更新</p>
+<div class="layout">
+    <!-- 左侧菜单 -->
+    <nav class="sidebar">
+        <div class="sidebar-title">MISC-C</div>
+        <a href="#" class="nav-item active" data-page="dashboard">📊 Dashboard</a>
+        <a href="#" class="nav-item" data-page="devices">💡 Devices</a>
+        <a href="#" class="nav-item" data-page="network">🌐 Network Tools</a>
+        <a href="#" class="nav-item" data-page="system">⚙️ System Manage</a>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="container">
+        <h1><span>Welcome</span> To MISC-C-WEB</h1>
+
+        <!-- 页面容器 -->
+        <div class="page-container">
+            <!-- ===== Dashboard 页面 ===== -->
+            <div class="page active-page" id="page-dashboard">
+                <div class="content">
+                    <p>这里是MISC-C项目的web管理页面</p>
+                    <p>页面数据大部分5s刷新一次，可点击<span>Poll</span>按钮主动更新</p>
+                </div>
+
+                <div class="card-grid">
+                    <!-- sht30 -->
+                    <div class="card-item" style="order: 1;">
+                        <h3>Environment Sensor</h3>
+                        <p id="env_temp">Temperature: -- ℃</p>
+                        <p id="env_humi">Humidity: -- %RH</p>
+                        <button id="sht30_poll_btn" class="btn">Poll</button>
+                    </div>
+                    <!-- LED -->
+                    <div class="card-item" style="order: 2;">
+                        <h3 id="led_status">Led Status: UNKNOWN</h3>
+                        <button id="led_turn_btn" class="btn">Turn On/Off</button>
+                        <button id="led_poll_btn" class="btn">Poll</button>
+                    </div>
+                    <!-- 实时时钟 -->
+                    <div class="card-item" style="order: 3;">
+                        <h3>System Time</h3>
+                        <p id="realtime">-- : -- : -- -- : -- : --</p>
+                    </div>
+                    <!-- 网络统计 -->
+                    <div class="card-item" style="order: 4;">
+                        <h3>Network Stat</h3>
+                        <p id="eth0_rx">eth0: 👇 -- kB/s, -- MB</p>
+                        <p id="wlan0_rx">wlan0: 👇 -- kB/s, -- MB</p>
+                        <button id="network_poll_btn" class="btn">Poll</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Devices 页面（占位） ===== -->
+            <div class="page" id="page-devices">
+                <h2>Devices</h2>
+                <p>Coming soon...</p>
+            </div>
+
+            <!-- ===== Network Tools 页面（占位） ===== -->
+            <div class="page" id="page-network">
+                <h2>Network Tools</h2>
+                <p>Coming soon...</p>
+            </div>
+
+            <!-- ===== System Manage 页面 ===== -->
+            <div class="page" id="page-system">
+                <h2>System Manage</h2>
+                <div class="card-grid">
+                    <!-- sysmon 卡片 -->
+                    <div class="card-item" style="order: 1;">
+                        <h3>System Monitor</h3>
+                        <table class="sysmon-cpu-table">
+                            <caption>CPU Usage</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Core</th>
+                                    <th scope="col">Usage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td>Total</td><td id="cpu_total">-- %</td></tr>
+                                <tr><td>cpu0</td><td id="cpu0">-- %</td></tr>
+                                <tr><td>cpu1</td><td id="cpu1">-- %</td></tr>
+                                <tr><td>cpu2</td><td id="cpu2">-- %</td></tr>
+                                <tr><td>cpu3</td><td id="cpu3">-- %</td></tr>
+                            </tbody>
+                        </table>
+                        <button id="sysmon_poll_btn" class="btn">Poll</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <!-- 内部模块网格 -->
-        <div class="card-grid">
-            <!-- sht30 -->
-            <div class="card-item" style="order: 1;">
-                <h3>Environment Sensor</h3>
-                <p id="env_temp">Temperature: -- ℃</p>
-                <p id="env_humi">Humidity: -- %RH</p>
-                <button id="sht30_poll_btn" class="btn">Poll</button>
-            </div>
-            <!-- led -->
-            <div class="card-item" style="order: 2;">
-                <h3 id="led_status">Led Status: UNKNOWN</h3>
-                <button id="led_turn_btn" class="btn">Turn On/Off</button>
-                <button id="led_poll_btn" class="btn">Poll</button>
-            </div>
-            <!-- clock realtime -->
-            <div class="card-item" style="order: 3;">
-                <h3>System Time</h3>
-                <p id="realtime">-- : -- : -- -- : -- : --</p>
-            </div>
-            <!-- network stat -->
-            <div class="card-item" style="order: 4;">
-                <h3>Network Stat</h3>
-                <p id="eth0_rx">eth0: 👇 -- kB/s, -- MB</p>
-                <p id="wlan0_rx">wlan0: 👇 -- kB/s, -- MB</p>
-                <button id="network_poll_btn" class="btn">Poll</button>
-            </div>
-            <!-- sysmon -->
-            <div class="card-item" style="order: 5;">
-                <h3>System Monitor</h3>
-                <table class="sysmon-cpu-table">
-                    <caption>CPU Usage</caption>
-                    <thead>
-                        <tr>
-                            <th scope="col">Core</th>
-                            <th scope="col">Usage</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>Total</td>
-                            <td id="cpu_total">-- %</td>
-                        </tr>
-                        <tr>
-                            <td>cpu0</td>
-                            <td id="cpu0">-- %</td>
-                        </tr>
-                        <tr>
-                            <td>cpu1</td>
-                            <td id="cpu1">-- %</td>
-                        </tr>
-                        <tr>
-                            <td>cpu2</td>
-                            <td id="cpu2">-- %</td>
-                        </tr>
-                        <tr>
-                            <td>cpu3</td>
-                            <td id="cpu3">-- %</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <button id="sysmon_poll_btn" class="btn">Poll</button>
-            </div>
-        </div>
-
-        <h2>
-            <span>How</span> To Contact Me
-        </h2>
+        <!-- 全局底部（联系方式 & 版权） -->
+        <h2><span>How</span> To Contact Me</h2>
         <div class="content">
             E-Mail: sybstudy@yeah.net       <br>
             Github: iammcai                 <br>
             公众号: codefishh               <br>
         </div>
-
-        <!-- 页脚 -->
         <div class="footer">
             &copy; 2026 MISC-C-WEB · V 1.0
         </div>
-    </div>
+    </main>
+</div>
 
-    <!-- 引入js -->
-    <script src="/app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

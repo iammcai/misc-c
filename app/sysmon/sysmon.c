@@ -252,6 +252,17 @@ error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size)
     return ERR_NO_ERROR;
 }
 
+void sysmon_cpu_usage_get(double *usage)
+{
+    pfm_ensure_ret_void(usage);
+
+    double temp[SYSMON_CPU_COUNTS] = {};
+    ev_with_spinlock(&g_sysmon_cpu_usage_lock)
+        memcpy(temp, g_sysmon_cpu_usages, sizeof(double)*SYSMON_CPU_COUNTS);
+
+    *usage = temp[0];
+}
+
 void sysmon_module_init()
 {
     // 启动事件线程来持续更新CPU利用率

@@ -49,6 +49,11 @@
 extern void arp_module_init(void);
 
 /**
+ * @brief       arp module deinit
+ */
+extern void arp_module_deinit();
+
+/**
  * @brief       send one arp request
  * 
  * @param[in]   if_name - if name

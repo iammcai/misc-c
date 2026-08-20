@@ -1,6 +1,7 @@
 add_library(App STATIC
     led/led.c
     sht30/sht30.c
+    ssd1306/ssd1306.c
     sysmon/sysmon.c
 )
 

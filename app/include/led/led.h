@@ -14,6 +14,9 @@
  *   1.0 | 2026-07-30 | cai | Initial creation.
  */
 
+#ifndef __LED_H__
+#define __LED_H__
+
 /* ========================================================================== */
 /*                               Include Files                                */
 /* ========================================================================== */
@@ -73,3 +76,5 @@ extern void led_module_init();
  * @brief       led模块销毁
  */
 extern void led_module_deinit();
+
+#endif

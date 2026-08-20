@@ -17,8 +17,8 @@ body {
 
 /* ===== 卡片容器 ===== */
 .container {
-    max-width: 1080px;
-    width: 100%;
+    flex : 1;
+    min-width: 0;
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(10px);
     border-radius: 24px;
@@ -37,34 +37,45 @@ body {
     transform: translateY(-5px);
 }
 
+/* ===== 页面切换容器 ===== */
+.page-container {
+    width: 100%;
+}
+
+.page {
+    display: none;
+}
+
+.page.active-page {
+    display: block;
+}
+
 /* ===== 内部模块网格容器 ===== */
 .card-grid {
     display: flex;
-    flex-wrap: wrap;          /* 允许换行，防止溢出 */
-    gap: 20px;                /* 模块之间的间距 */
-    margin: 30px 0;           /* 上下留白 */
-    justify-content: flex-start; /* 靠左排列（也可改为 center/space-between） */
+    flex-wrap: wrap;
+    gap: 20px;
+    margin: 30px 0;
+    justify-content: flex-start;
 }
 
 /* ===== 单个内部模块 ===== */
 .card-item {
-    flex: 1 1 200px;          /* 基础宽度200px，可伸缩 */
-    min-width: 150px;         /* 最小宽度，防止过小 */
+    flex: 1 1 200px;
+    min-width: 150px;
     background: rgba(255, 255, 255, 0.7);
     border-radius: 16px;
     padding: 20px 18px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); /* 独立阴影 */
-    border: 1px solid rgba(255, 255, 255, 0.4); /* 边框 */
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.4);
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
-/* 悬停效果：微微浮起 */
 .card-item:hover {
     transform: translateY(-4px);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
-/* 内部模块的标题 */
 .card-item h3 {
     font-size: 1.5rem;
     margin-bottom: 8px;
@@ -72,7 +83,6 @@ body {
     text-align: center;
 }
 
-/* 内部模块的文本 */
 .card-item p {
     font-size: 1.1rem;
     color: #59667c;
@@ -134,7 +144,7 @@ span {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
     text-decoration: none;
     text-align: center;
-    width: 100%; /* 让按钮撑满卡片宽度，更整齐 */
+    width: 100%;
 }
 
 .btn:hover {
@@ -150,26 +160,22 @@ span {
 }
 
 /* ===== 表格 ===== */
-
-/* 表格样式 */
 table {
   border-collapse: collapse;
-  width: 100%;          /* 或 auto，根据需要 */
-  margin-top: 10px;      /* 与标题留出间距 */
-  border: 1px solid #ccc;   /* 表格外边框 */
+  width: 100%;
+  margin-top: 10px;
+  border: 1px solid #ccc;
 }
 
-/* 所有单元格（表头和数据）都加上边框 */
 th, td {
-  border: 1px solid #ccc;     /* 单元格边框，颜色可调 */
-  padding: 6px 12px;            /* 让内容不拥挤 */
-  text-align: center;           /* 居中 */
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+  text-align: center;
 }
 
-/* 表头（左侧标签） */
 th {
   font-weight: normal;
-  background-color: #f2f2f2; /* 可选的浅灰背景，区分表头 */
+  background-color: #f2f2f2;
 }
 
 /* ===== 页脚 ===== */
@@ -192,5 +198,86 @@ th {
     }
     .subtitle {
         font-size: 0.95rem;
+    }
+}
+
+/* ========== 布局框架 ========== */
+.layout {
+    display: flex;
+    min-height: 100vh;
+    width: min(95%, 1400px);
+    margin: 0 auto;
+    gap: 20px;
+    padding: 20px 0;
+}
+
+/* ========== 左侧菜单 ========== */
+.sidebar {
+    flex: 0 0 clamp(180px, 25%, 300px);
+    align-self: stretch;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    position: sticky;
+    top: 20px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    border-radius: 24px;
+    padding: 25px 15px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sidebar-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    padding: 0 10px 15px;
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    margin-bottom: 10px;
+}
+
+.nav-item {
+    display: block;
+    padding: 10px 15px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #333;
+    transition: all 0.2s ease;
+    font-size: 0.95em;
+    cursor: pointer;
+}
+
+.nav-item:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.nav-item.active {
+    background: rgba(0, 120, 255, 0.12);
+    color: #0078ff;
+    font-weight: 600;
+}
+
+/* ========== 响应式：小屏变上下布局 ========== */
+@media (max-width: 768px) {
+    .layout {
+        flex-direction: column;
+        width: 95%;
+    }
+    .sidebar {
+        width: 100%;
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        padding: 15px;
+    }
+    .sidebar-title {
+        width: 100%;
+        border-bottom: none;
+        padding-bottom: 5px;
+    }
+    .nav-item {
+        padding: 8px 12px;
+        font-size: 0.85em;
     }
 }

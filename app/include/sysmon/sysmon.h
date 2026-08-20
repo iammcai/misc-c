@@ -42,6 +42,13 @@
 extern error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
+ * @brief       get total cpu usage
+ * 
+ * @param[out]  usage   - total cpu usage
+ */
+extern void sysmon_cpu_usage_get(double *usage);
+
+/**
  * @brief       init sysmon module
  */
 extern void sysmon_module_init();

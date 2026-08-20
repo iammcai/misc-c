@@ -91,10 +91,37 @@
 |------|------|------|
 |三引脚LED模块|使用gpio控制输出给IN引脚来控制LED模块亮灭|完成|
 |SHT30温湿度计|使用i2c通信，通过IIO子系统将数据暴露给用户|完成|
+|SSD1306 0.96寸OLED显示屏|使用spi通信，接收用户程序输入显示到屏幕|完成|
 
 ---
 
 ## 🤔 TODOLIST
+
+需要添加所有模块`deinit`接口，流程分为top half和bottom half
+
+top half处理紧急事件
+
+- cli停止监听输入   ✅
+- zcap停止抓包      ✅
+
+bottom half处理非紧急事件
+
+- sysmon
+- sht30
+- led
+- web
+- nettools
+  - tftp
+  - ping
+  - arp
+
+
+统一回收资源
+
+- zcap过滤链表统一销毁
+- cli注册的命令，前缀树统一释放
+- mp申请内存统一释放
+- ev_loop注册项统一释放
 
 ---
 

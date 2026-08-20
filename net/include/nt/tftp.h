@@ -35,4 +35,9 @@
  */
 extern void tftp_module_init();
 
+/**
+ * @brief       tftp module deinit
+ */
+extern void tftp_module_deinit();
+
 #endif

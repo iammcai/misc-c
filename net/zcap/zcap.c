@@ -842,6 +842,8 @@ static void* _zcap_alz_routine(void *args)
             ev_sem_wait(&captor->alz[i].alz_sem);
     }
 
+    dbg("zcaptor %s analyze-%d thread exit", captor->if_name, i);
+
     return NULL;
 }
 
@@ -868,6 +870,68 @@ void zcap_module_init()
     ev_thd_run(zcap_rate_cal);
 
     dbg_major("zcap module init ok");
+}
+
+void zcap_module_deinit_th()
+{
+    // 遍历哈希表，停止running中的抓包
+    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+    while(captor)
+    {
+        if(ATOM_LOAD(&captor->running, MORDER_RELAXED))
+        {
+            ATOM_STORE(&captor->running, 0, MORDER_RELAXED);
+            pthread_join(captor->rx_t, NULL);
+            dbg("stop captor %s rx_t ok", captor->if_name);
+        }
+        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+    }
+
+    dbg_major("zcap module deinit top half ok");
+}
+
+void zcap_module_deinit_bh()
+{
+    // TODO:
+
+    // 结束zcap_rate_cal线程
+    ev_thd_cancel(zcap_rate_cal);
+
+    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+    while(captor)
+    {
+        // 结束alz线程，此时已经running设置为0，发送信号量唤醒
+        for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
+        {
+            if(captor->alz[i].alz_t != 0)
+            {
+                ev_sem_post(&captor->alz[i].alz_sem);
+                pthread_join(captor->alz[i].alz_t, NULL);
+            }
+        }
+
+        // 销毁过滤条件链表以及哈希表
+        zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
+        while(filter)
+        {
+            // 回收链表资源
+            zcap_pkt_field_t *field = NULL;
+            while(field = zcap_pkt_field_list_pop(&filter->fields))
+                mp_free(field, sizeof(zcap_pkt_field_t));
+
+            // 从Hash中删除
+            zcap_pkt_filter_hash_del(&captor->filters, filter);
+            mp_free(filter, sizeof(zcap_pkt_filter_t));     // 清除内存
+            // 继续拿出Hash head
+            filter = zcap_pkt_filter_hash_first(&captor->filters);
+        }
+
+        // TODO: 释放zcap资源
+
+        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+    }
+
+    dbg_major("zcap module de init bottom half ok");
 }
 
 void _zcap_init(zcap_t *captor)

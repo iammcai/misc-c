@@ -303,6 +303,18 @@ static zcap_t _ifname ## _zcaptor = {   \
 extern void zcap_module_init();
 
 /**
+ * @brief       zcap module deinit top half
+ * 
+ * @note        系统退出时，zcap需要立即停止抓包，避免产生消息到模块
+ */
+extern void zcap_module_deinit_th();
+
+/**
+ * @brief       zcap module deinit bottom half
+ */
+extern void zcap_module_deinit_bh();
+
+/**
  * @brief       内部使用，初始化抓包组件，未启动
  * 
  * @param[in]   captor  - captor

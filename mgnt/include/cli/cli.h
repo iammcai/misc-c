@@ -72,5 +72,12 @@ extern int cli_param_parse_str_2_u32(const char *str);
  */
 extern void cli_module_init();
 
+/**
+ * @brief       cli module de init top half
+ * 
+ * @note        deinit上半部，结束cli监听线程
+ */
+void cli_module_deinit_th();
+
 #endif
 /* __CLI_H__ end */

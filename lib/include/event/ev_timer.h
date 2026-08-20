@@ -73,6 +73,31 @@ static attr_force_inline error_code_e realtime_get_str(char *buf, size_t buf_siz
 }
 
 /**
+ * @brief       get sys time string, brief version
+ * 
+ * @param[out]  buf     - string
+ * @param[in]   buf_size    -  size of buf
+ * 
+ * @retval      error code
+ * 
+ * @note        精简版本，不带年份
+ */
+static attr_force_inline error_code_e realtime_get_str_brief(char *buf, size_t buf_size)
+{
+    // "MM-DD HH:MM:SS" = 14字符 + '\0' = 15B
+    pfm_ensure_ret(buf && buf_size >= 16, ERR_BAD_PARAM);
+
+    struct timespec ts = {};
+    struct tm tm_info = {};
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    localtime_r(&ts.tv_sec, &tm_info);
+    strftime(buf, buf_size, "%m-%d %H:%M:%S", &tm_info);
+
+    return ERR_NO_ERROR;
+}
+
+/**
  * @brief`      get system mono time
  * 
  * @retval      ms

@@ -328,7 +328,7 @@ void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer)
     if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
         dbg_error("start timer %s fail", hr_timer->name);
 
-    dbg("timer %s start", hr_timer->name);
+    // dbg("ev high res timer %s start", hr_timer->name);
 
     return;
 }

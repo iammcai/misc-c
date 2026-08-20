@@ -231,6 +231,40 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
     return ERR_NO_ERROR;
 }
 
+error_code_e sht30_read_temperature(double *temp)
+{
+    double temp_raw = 0.0, temp_scale = 0.0;
+
+    pfm_ensure_ret(temp, ERR_BAD_PARAM);
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+    {
+        return ERR_SHT30_HW_ERR;
+    }
+
+    *temp = temp_scale * temp_raw;
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e sht30_read_humidity(double *humi)
+{
+    double humi_raw = 0.0, humi_scale = 0.0;
+
+    pfm_ensure_ret(humi, ERR_BAD_PARAM);
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
+    {
+        return ERR_SHT30_HW_ERR;
+    }
+
+    *humi = humi_scale * humi_raw;
+
+    return ERR_NO_ERROR;
+}
+
 error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
 {
      double temp_raw = 0.0, temp_scale = 0.0;

@@ -1,0 +1,46 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2712";
+
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@1 {
+        target = <&spi0>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            // 引脚控制必须在spi0控制器级别
+            pinctrl-names = "default";
+            pinctrl-0 = <&spi0_pins>;
+
+            ssd1306@0 {
+                compatible = "miscc,ssd1306";
+
+                reg = <0>;                          /* 硬件片选CS0 */
+
+                spi-max-frequency = <4000000>;      /* spi频率, 4MHZ */
+                dc-gpios = <&rp1_gpio 22 0>;        /* 0 高电平有效 */
+                res-gpios = <&rp1_gpio 27 1>;       /* 1 低电平有效 */
+                status = "okay";
+            };
+        };
+    };
+
+    fragment@2 {
+        target = <&rp1_gpio>;
+        __overlay__ {
+            spi0_pins: spi0_pins {
+                pins = "gpio8", "gpio9", "gpio10", "gpio11";
+                function = "spi0";
+            };
+        };
+    };
+};

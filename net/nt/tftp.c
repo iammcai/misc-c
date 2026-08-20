@@ -119,6 +119,8 @@ typedef enum{
     TFTP_EVENT_RECEIVE_ERROR,           // 收到error packet
     TFTP_EVENT_RE_IDLE,                 // 清除异常，回到idle
 
+    TTFP_EVENT_FSM_EXIT,                // fsm退出
+
     TFTP_EVENT_CNT,                     // 计数
 }tftp_event_e;
 
@@ -164,6 +166,8 @@ typedef struct{
     ev_timer_t *upload_retry_timer;         // 重传报文定时器，用于上传
 
     ev_sem_t sem_done;          // 结束的sem，用来通知cli
+
+    ATOMIC_UINT8_T running;         // 运行标志
 }tftp_fsm_t;
 
 /* ========================================================================== */
@@ -191,6 +195,7 @@ const char* tftp_event_str[TFTP_EVENT_CNT] = {
     "READ_REQUEST", "RECEIVE_DATA_1", "RECEIVE_DATE", "DATA_TIMEOUT", 
     "WRITE_REQUEST", "RECEIVE_ACK0", "RECEIVE_ACK", "ACK_TIMEOUT",
     "RECEIVE_ERROR_PKT", "RETURN_IDLE", 
+    "FSM_EXIT",
 };
 
 /* ========================================================================== */
@@ -1072,10 +1077,15 @@ static void* _tftp_fsm(void *args)
     int ret = 0;
     tftp_state_e state = 0;
     tftp_event_e event = 0;
-    while(1)
+
+    ATOM_STORE(&g_tftp_fsm.running, 1, MORDER_RELAXED);
+
+    while(ATOM_LOAD(&g_tftp_fsm.running, MORDER_RELAXED))
     {
         // 阻塞等待外部消息
         msg_q_pop(tftp_fsm_mq, sizeof(tftp_msg_t), msg_q_wait_forever, &msg);
+        if(msg.event == TTFP_EVENT_FSM_EXIT)        // fsm exit，检查running标志
+            continue;
 
         state = g_tftp_fsm.state;
         event = msg.event;
@@ -1095,6 +1105,8 @@ static void* _tftp_fsm(void *args)
                 g_tftp_fsm.hook[new_state].enter_hook(&msg);
         }
     }
+
+    dbg("tftp fsm exit");
 }
 
 void tftp_module_init()
@@ -1129,4 +1141,18 @@ void tftp_module_init()
         dbg_error("tftp fsm init fail");
 
     dbg_major("tftp module init ok");
+}
+
+void tftp_module_deinit()
+{
+    // 设置退出标志，发送fsm退出事件，等待状态机线程结束
+    ATOM_STORE(&g_tftp_fsm.running, 0, MORDER_RELAXED);
+    tftp_msg_t msg = {.event = TTFP_EVENT_FSM_EXIT};
+    msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
+    pthread_join(g_tftp_fsm_tid, NULL);
+
+    // 销毁消息队列
+    msg_q_destroy(&msg_q_tftp_fsm_mq);
+
+    dbg_major("tftp module deinit ok");
 }

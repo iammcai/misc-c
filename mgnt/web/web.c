@@ -121,6 +121,13 @@ static attr_force_inline void* _web_epoll_routine(void *args);
  */
 static error_code_e _web_mgnt_init(void);
 
+/**
+ * @brief       deinit web mgnter
+ * 
+ * @note        归还资源，系统退出时调用
+ */
+static attr_force_inline void _web_mgnt_deinit(void);
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -149,6 +156,24 @@ static attr_force_inline web_connection_t* _web_connection_find(int fd)
     }
 
     return NULL;
+}
+
+/**
+ * @brief       释放所有web_connection资源，web deinit时调用
+ * 
+ * @note        移出链表，释放fd，归还内存
+ */
+static attr_force_inline void _web_connection_free()
+{
+    web_connection_t *conn = NULL;
+    while(conn = web_connection_list_pop(&g_web_conn_list))
+    {
+        close(conn->fd);
+        mp_fixed_node_put(conn);
+    }
+    web_connection_list_fini(&g_web_conn_list);
+
+    dbg("web connection resource free ok");
 }
 
 static void _web_process_http_req(int fd, http_request_t *req)
@@ -297,7 +322,10 @@ static inline void* _web_epoll_routine(void *args)
                 _web_events_handle(events[i].data.fd);
     }
 
-    dbg_error("web epoll routine exit");
+    dbg("web epoll routine exit");
+
+    // 释放web_connection资源
+    _web_connection_free();
 
     return NULL;
 }
@@ -342,6 +370,20 @@ done:
     return ERR_WEB_INIT_FAIL;
 }
 
+static inline void _web_mgnt_deinit(void)
+{
+    // web监听线程退出
+    ATOM_STORE(&g_web_mgnter.running, 0, MORDER_RELAXED);
+    pthread_join(g_web_mgnter.tid, NULL);
+
+    // socket退出epoll，关闭
+    epoll_ctl(g_web_mgnter.epoll_fd, EPOLL_CTL_DEL, g_web_mgnter.sock_fd, NULL);
+    close(g_web_mgnter.sock_fd);
+
+    // 关闭epoll
+    close(g_web_mgnter.epoll_fd);
+}
+
 /**
  * @brief       cb for web pkt
  * 
@@ -374,7 +416,8 @@ void web_module_init()
 
 void web_module_deinit()
 {
-    // 销毁web_connection list
+    // 释放资源，包括socket epoll web_conn
+    _web_mgnt_deinit();
 
     dbg_major("web module deinit ok");
 }

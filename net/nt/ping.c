@@ -351,6 +351,8 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     // 打印数据
     safe_printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
 
+    mp_free(rtt_arr, sizeof(double)*request_cnt);
+
     return NULL;
 }
 
@@ -406,4 +408,9 @@ void ping_module_init()
     zcap_register_field_pro_type("wlan0", "icmp", 0x1, 0xff);
 
     dbg_major("ping module init ok");
+}
+
+void ping_module_deinit()
+{
+    dbg_major("ping module deinit ok");
 }
