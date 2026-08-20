@@ -23,7 +23,6 @@
 #include "cli/cli.h"
 #include "event/ev_thread.h"
 #include "event/ev_lock.h"
-#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -473,6 +472,8 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
             snprintf(str, 768, "[%d]. name %s | used / total\n", i, attr->name);
             for(int j = 0; j < SLAB_SIZE_CNT; ++ j)
             {
+                if(attr->slab_node_cnt[j] == 0)
+                    continue;
                 snprintf(str+strlen(str), 768-strlen(str), "    slot%-2d (%-4d B): %-4d / %-4d, hit %.3f%%\n", j, g_slab_size_arr[j],
                     ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED), attr->slab_node_cnt[j], 
                     (double)ATOM_LOAD(&attr->slab_hit[j], MORDER_RELAXED)/ATOM_LOAD(&attr->hit_total, MORDER_RELAXED) * 100);
@@ -486,42 +487,6 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
     return NULL;
 }
 
-#include <unistd.h>
-static void* _slab_mp_monitor_routine(void *args)
-{
-    dbg_major("slab mp debug monitor start...");
-    while(1)
-    {
-        mem_type_attr_t *attr = mem_type_attr_first();
-        while(attr)
-        {
-            if(mem_type_attr_slab(attr))
-            {
-                for(int j = 0; j < SLAB_SIZE_CNT; ++ j)
-                {
-                    if(ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED) == attr->slab_node_cnt[j])
-                    {
-                        ++ attr->slab_full_times[j];
-                        if(attr->slab_full_times[j] >= 10)
-                        {
-                            char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                            snprintf(ctx, SYSLOG_ENTRY_CTX_SIZE, "mem type %s, slot %d full for a while, please check", attr->name, j);
-                            syslog_emerg(SYSLOG_MODULE_SLAB_MP, ctx);
-                        }
-                    }
-                    else
-                        attr->slab_full_times[j] = 0;
-                }
-            }
-            attr = mem_type_attr_next(attr);
-        }
-
-        sleep(10);      // 10s检查一下
-    }
-    
-    return NULL;
-}
-
 #endif
 
 void mp_slab_module_init()
@@ -532,10 +497,6 @@ void mp_slab_module_init()
 #if MP_DBG_MODE
     // 注册调试cli
     cli_register("debug show mp slab", "debug dump slab type mempool", NULL, _mp_slab_show_cli_hook);
-
-    // 创建监控线程
-    pthread_t g_slab_mp_monitor_tid;
-    pthread_create(&g_slab_mp_monitor_tid, NULL, _slab_mp_monitor_routine, NULL);
 #endif
 
     // 启动后台回收

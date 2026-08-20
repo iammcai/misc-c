@@ -38,8 +38,8 @@
 #include "plat/debug.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"
-#include "event/ev_loop.h"
 #include "mp/mp_slab.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -57,6 +57,9 @@
 
 // 内存池节点数量，通过show mp调整
 #define ZCAP_ST_MP_NODE_COUNT   (64)
+
+// 支持抓取的最大长度，标准以太网1500, + MAC 14, + FCS 4
+#define ZCAP_MTU_SIZE   (1518)
 
 // 抓包epoll超时 200ms
 #define EPOLL_TIMEOUT   (200)
@@ -78,7 +81,7 @@
 /* ========================================================================== */
 
 // 内存池，用于rx_t和alz_t之间交互报文
-declare_mem_type_slab(zcap_pkt, 8, 8, 8, 8, 4096, 4096, 64, 16, 16, 8, 8)
+declare_mem_type_slab(zcap_pkt, 8, 8, 8, 8, 4096, 4096, 256, 256, 256, 0, 0)
 
 // 封装一下，传递给alz线程入口
 typedef struct{
@@ -344,9 +347,6 @@ static attr_force_inline void _zcap_clean_up(zcap_t *captor)
     if(ATOM_CMP_XCHG_WEAK(&captor->running, &expected, 0, MORDER_SEQ_SCT, MORDER_RELAXED))
         pthread_join(captor->rx_t, NULL);   // 等待结束
 
-    // 销毁消息队列
-    zcap_packet_spsc_atom_queue_fini(&captor->aq_head);
-
     // 取消映射
     if(MAP_FAILED != captor->ring_buffer)
         munmap(captor->ring_buffer, BLOCK_SIZE*BLOCK_NR);
@@ -545,24 +545,37 @@ static void* _zcap_routine(void *args)
                 if(!memcmp(pkt_data + MAC_ADDR_SIZE, captor->if_mac, MAC_ADDR_SIZE))
                     continue;
 
+                if(pkt_len > ZCAP_MTU_SIZE)
+                {
+                    dbg("packet len %d larger than zcap handle max size", pkt_len);
+                    ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
+                    continue;
+                }
+
                 // 构建消息，将报文发给解析线程
                 zcap_packet_t *packet = mp_slab_node_get(zcap_pkt, sizeof(zcap_packet_t)+pkt_len);
                 if(!packet)
                 {
-                    dbg_error("no mem for packet node, packet loss");
+                    char syslog_ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
+                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get slab node for size %d fail, packet loss", 
+                        sizeof(zcap_packet_t) + pkt_len);
+                    syslog_warn(SYSLOG_MODULE_ZCAP, syslog_ctx);
                     ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
                     continue;
                 }
                 memset(packet, 0, sizeof(zcap_packet_t)+pkt_len);
                 memcpy(packet->packet, pkt_data, pkt_len);  // 复制内容
                 packet->len = pkt_len;
-                // 预提取五元组信息，而不是在reactor cb中进行
+                // 提取五元组信息
                 _zcap_packet_flow_key_extract(packet);
-                zcap_packet_spsc_atom_queue_push(&captor->aq_head, packet);     // 入队
+                // 根据五元组信息计算Hash发送给对应解析线程
+                unsigned long hashval = type_hash_jhash(&packet->flow_key, sizeof(zcap_pakcet_flow_key_t), 0);
+                hashval &= ZCAP_HASH_Q_MASK;
+                zcap_packet_spsc_atom_queue_push(&captor->alz[hashval].alz_aq_head, packet);
             }
-
-            // 通知解析
-            eventfd_write_one(captor->event_fd);
+            // block一批结束后统一唤醒
+            for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
+                ev_sem_post(&captor->alz[i].alz_sem);
 
             // 归还Block
             pbd->hdr.bh1.block_status = TP_STATUS_KERNEL;
@@ -579,40 +592,6 @@ clean_up:
     if(-1 != epoll_fd)
         close(epoll_fd);        // 包含EPOLL_CTL_DEL
     return NULL;
-}
-
-/**
- * @brief       cb for zcap eventfd In event loop
- * 
- * @note        收block包后，通知进行分析的回调
- */
-static void _zcap_analyze_el_cb(int fd, void *args)
-{
-    zcap_t *captor = (zcap_t*)args;
-
-    // 从spsc队列中拿报文，计算hash分发给解析线程
-    int pkt_nums = 0;
-    zcap_packet_t *packet;
-    while(packet = zcap_packet_spsc_atom_queue_pop(&captor->aq_head))
-    {
-        pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
-
-        // 根据flow key计算hash
-        unsigned int hash = type_hash_jhash(&packet->flow_key, sizeof(zcap_pakcet_flow_key_t), 0);
-        hash &= ZCAP_HASH_Q_MASK;
-
-        // 发给持有对应HashQ的线程处理
-        zcap_packet_spsc_atom_queue_push(&captor->alz[hash].alz_aq_head, packet);
-        ev_sem_post(&captor->alz[hash].alz_sem);
-
-        ++ pkt_nums;
-        if(pkt_nums >= ZCAP_ANALYZE_PKTS_ONCE)
-            break;
-    }
-
-    // 超出一次处理，自写一次eventfd，以便再次cb来消费报文
-    if(pkt_nums >= ZCAP_ANALYZE_PKTS_ONCE)
-        eventfd_write_one(captor->event_fd);
 }
 
 /**
@@ -951,18 +930,13 @@ void _zcap_init(zcap_t *captor)
     // 初始化过滤哈希表
     zcap_pkt_filter_hash_init(&captor->filters);
 
-    // rx_t、alz_t消息队列初始化
-    zcap_packet_spsc_atom_queue_init(&captor->aq_head);
+    // rx_t、alz_t spsc队列初始化
     unsigned char i = 0;
     for(; i < ZCAP_HASH_Q_SIZE; ++ i)
     {
         zcap_packet_spsc_atom_queue_init(&(captor->alz[i].alz_aq_head));
         ev_sem_init(&captor->alz[i].alz_sem);
     }
-
-    // 注册eventfd到ev_loop，用于通知进行analyze
-    captor->event_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
-    event_loop_register_file_event_eventfd(captor->event_fd, EL_FILE_EVENT_READABLE, _zcap_analyze_el_cb, captor)
 
     captor->ring_buffer = MAP_FAILED;
 

@@ -41,7 +41,7 @@
 // mac地址长度
 #define MAC_ADDR_SIZE   (6)
 
-#define ZCAP_HASH_Q_SIZE        (1)     // hash分片处理报文的队列数量，必须2的幂次
+#define ZCAP_HASH_Q_SIZE        (4)     // hash分片处理报文的队列数量，必须2的幂次
 
 // 过滤字段长度
 #define FIELD_DATA_SIZE     (6)
@@ -174,10 +174,6 @@ typedef struct{
 
     zcap_stat_t stat;           // 统计数据
 
-    zcap_packet_spsc_atom_queue_head_t aq_head; // 用于rx_t传递报文给ev_loop_cb
-
-    int event_fd;               // 内核计数器，用于通知进行解析报文
-
     zcap_pkt_filter_hash_head_t filters;    // 管理注册的过滤条件的哈希表
 
     zcaptor_hash_item_t item;   // hash item
@@ -201,7 +197,6 @@ static zcap_t _ifname ## _zcaptor = {   \
     .rx_t = 0,  \
     .running = 0,   \
     .stat.mtx = EV_MUTEX_INITIALIZER,   \
-    .event_fd = -1, \
     .alz = {},  \
 };  \
 /* _zcap_init end */
