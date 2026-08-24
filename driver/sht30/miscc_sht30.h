@@ -21,7 +21,7 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// iio对应设备名字
-#define SHT30_IIO_DEVICE_NAME       "miscc_sht30"
+// hwmon对应设备名字
+#define SHT30_HWMON_DEVICE_NAME         "miscc_sht30"
 
 #endif

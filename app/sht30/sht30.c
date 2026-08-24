@@ -34,17 +34,13 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// sysfs中iio设备目录前缀
-#define IIO_BASE_PATH       "/sys/bus/iio/devices"
+// sysfs中hwmon设备目录前缀
+#define HWMON_BASE_PATH             "/sys/class/hwmon"
 
-// sysfs iio temp raw文件
-#define SHT30_ATTR_TEMP_RAW         "in_temp_raw"
-// sysfs iio temp scale文件
-#define SHT30_ATTR_TEMP_SACLE       "in_temp_scale"
-// sysfs iio humi raw文件
-#define SHT30_ATTR_HUMI_RAW         "in_humidityrelative_raw"
-// sysfs iio humi scale文件
-#define SHT30_ATTR_HUMI_SACLE       "in_humidityrelative_scale"
+// sysfs hwmon temp raw文件
+#define SHT30_ATTR_TEMP_RAW         "temp1_input"
+// sysfs hwmon humi raw文件
+#define SHT30_ATTR_HUMI_RAW         "humidity1_input"
 
 // 设备路径最大长度
 #define FILE_PATH_MAX_LEN   (256)
@@ -61,7 +57,7 @@
 /* ========================================================================== */
 
 /**
- * @brief       find iio device path by name
+ * @brief       find hwmon device path by name
  * 
  * @param[in]   name    - device name
  * 
@@ -85,16 +81,15 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value);
  */
 static attr_force_inline void* _sht30_show_temp(unsigned char argc, char *argv[])
 {
-    double temp_raw = 0.0, temp_scale = 0.0;
+    double temp_raw = 0.0;
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
     {
         safe_printf("-sht30: Measure temperature fail.\n");
         return NULL;
     }
 
-    safe_printf("-sht30: Temperature: %.3f ℃.\n", temp_raw * temp_scale);
+    safe_printf("-sht30: Temperature: %.3f ℃.\n", temp_raw / 1000.0);
 
     return NULL;
 }
@@ -104,16 +99,15 @@ static attr_force_inline void* _sht30_show_temp(unsigned char argc, char *argv[]
  */
 static attr_force_inline void* _sht30_show_humi(unsigned char argc, char *argv[])
 {
-    double humi_raw = 0.0, humi_scale = 0.0;
+    double humi_raw = 0.0;
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
     {
         safe_printf("-sht30: Measure temperature fail.\n");
         return NULL;
     }
 
-    safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw * humi_scale);
+    safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
 
     return NULL;
     return NULL;
@@ -121,11 +115,9 @@ static attr_force_inline void* _sht30_show_humi(unsigned char argc, char *argv[]
 
 static attr_force_inline void _sht30_ev_thd_measure(void *args)
 {
-    double temp_raw = 0.0, temp_scale = 0.0, humi_raw = 0.0, humi_scale = 0.0;
+    double temp_raw = 0.0, humi_raw = 0.0;
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
         ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
     {
         syslog_err(SYSLOG_MODULE_SHT30, "Periodic temperature and humidity monitoring failed");
@@ -133,7 +125,7 @@ static attr_force_inline void _sht30_ev_thd_measure(void *args)
     }
 
     char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-    snprintf(ctx, SYSLOG_ENTRY_CTX_SIZE, "Periodic monitoring: temperature %.3f ℃ humidity %.3f %%.", temp_raw*temp_scale, humi_raw*humi_scale);
+    snprintf(ctx, SYSLOG_ENTRY_CTX_SIZE, "Periodic monitoring: temperature %.3f ℃ humidity %.3f %%.", temp_raw/1000.0, humi_raw/1000.0);
     syslog_notice(SYSLOG_MODULE_SHT30, ctx);
 }
 
@@ -158,20 +150,20 @@ static error_code_e _sht30_find_device_path_by_name(const char *name)
     char name_file[FILE_PATH_MAX_LEN] = {};
     char name_buf[FILE_PATH_MAX_LEN] = {};
 
-    dir = opendir(IIO_BASE_PATH);       // 打开IIO设备目录
+    dir = opendir(HWMON_BASE_PATH);       // 打开hwmon设备目录
     if(!dir)
     {
-        dbg_error("opendir() %s fail", IIO_BASE_PATH);
+        dbg_error("opendir() %s fail", HWMON_BASE_PATH);
         return ERR_SHT30_DEVICE_NOT_EXIST;
     }
 
     while(entry = readdir(dir))
     {
-        if(0 != strncmp(entry->d_name, "iio:device", strlen("iio:device")))
+        if(0 != strncmp(entry->d_name, "hwmon", strlen("hwmon")))
             continue;
 
         memset(name_file, 0, FILE_PATH_MAX_LEN);
-        snprintf(name_file, FILE_PATH_MAX_LEN, "%s/%s/name", IIO_BASE_PATH, entry->d_name);
+        snprintf(name_file, FILE_PATH_MAX_LEN, "%s/%s/name", HWMON_BASE_PATH, entry->d_name);
 
         int fd = open(name_file, O_RDONLY);
         if(fd < 0)
@@ -188,14 +180,14 @@ static error_code_e _sht30_find_device_path_by_name(const char *name)
 
         if(0 == strcmp(name_buf, name))
         {
-            snprintf(g_sht30_file_path, FILE_PATH_MAX_LEN, "%s/%s", IIO_BASE_PATH, entry->d_name);
+            snprintf(g_sht30_file_path, FILE_PATH_MAX_LEN, "%s/%s", HWMON_BASE_PATH, entry->d_name);
             closedir(dir);
             return ERR_NO_ERROR;
         }
     }
 
     closedir(dir);
-    dbg_error("IIO device %s not found", name);
+    dbg_error("hwmon device %s not found", name);
     return ERR_SHT30_DEVICE_NOT_EXIST;
 }
 
@@ -233,63 +225,58 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
 
 error_code_e sht30_read_temperature(double *temp)
 {
-    double temp_raw = 0.0, temp_scale = 0.0;
+    double temp_raw = 0.0;
 
     pfm_ensure_ret(temp, ERR_BAD_PARAM);
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
     {
         return ERR_SHT30_HW_ERR;
     }
 
-    *temp = temp_scale * temp_raw;
+    *temp = temp_raw / 1000.0;
 
     return ERR_NO_ERROR;
 }
 
 error_code_e sht30_read_humidity(double *humi)
 {
-    double humi_raw = 0.0, humi_scale = 0.0;
+    double humi_raw = 0.0;
 
     pfm_ensure_ret(humi, ERR_BAD_PARAM);
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
     {
         return ERR_SHT30_HW_ERR;
     }
 
-    *humi = humi_scale * humi_raw;
+    *humi = humi_raw / 1000.0;
 
     return ERR_NO_ERROR;
 }
 
 error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
 {
-     double temp_raw = 0.0, temp_scale = 0.0;
-     double humi_raw = 0.0, humi_scale = 0.0;
+     double temp_raw = 0.0;
+     double humi_raw = 0.0;
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_SACLE, &humi_scale) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) || 
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_SACLE, &temp_scale) ||
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
         ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
     {
         return ERR_SHT30_HW_ERR;
     }
 
-    snprintf(buf, buf_size, "{\"temperature\":%.1f,\"humidity\":%.1f}", temp_raw * temp_scale, humi_raw * humi_scale);
+    snprintf(buf, buf_size, "{\"temperature\":%.1f,\"humidity\":%.1f}", temp_raw / 1000.0, humi_raw / 1000.0);
     return ERR_NO_ERROR;
 }
 
 void sht30_module_init()
 {
     // 加载驱动，忽略错误
-    system("modprobe industrialio");
     system("insmod ../driver/sht30/miscc_sht30.ko");
 
     // 寻找设备节点
-    if(ERR_NO_ERROR != _sht30_find_device_path_by_name(SHT30_IIO_DEVICE_NAME))
+    if(ERR_NO_ERROR != _sht30_find_device_path_by_name(SHT30_HWMON_DEVICE_NAME))
     {
         dbg_error("sht30 device not exist, init fail");
         return;
@@ -315,7 +302,6 @@ void sht30_module_deinit()
 
     // 注销驱动
     system("rmmod miscc_sht30");
-    system("rmmod industrialio");
 
     dbg_major("sht30 module deinit ok");
 }

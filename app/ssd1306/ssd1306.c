@@ -24,8 +24,8 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "plat/atom.h"
 #include "ssd1306/ssd1306.h"
-#include "event/ev_thread.h"
 #include "sht30/sht30.h"
 #include "event/ev_timer.h"
 #include "sysmon/sysmon.h"
@@ -36,21 +36,41 @@
 
 // 定时刷新间隔，1s
 #define SSD1306_FLUSH_INTERVAL      (1000)
+// 页面更新间隔，5s
+#define SSD1306_PAGE_INC_INTERVAL   (5000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
+
+// ssd显示页面编号
+typedef enum{
+    SSD1306_PAGE_START = 0,
+
+    SSD1306_PAGE_TIME,
+    SSD1306_PAGE_SHT30,
+    SSD1306_PAGE_SYSMON,
+
+    SSD1306_PAGE_END,
+}ssd1306_page_e;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
 /**
- * @brief       flush ssd1306, for ev thd work func
+ * @brief       flush ssd1306
  * 
- * @note        ssd1306定时刷新函数
+ * @note        ssd1306定时刷新屏幕函数
  */
 static attr_force_inline void _ssd1306_flush(void *args);
+
+/**
+ * @brief       update ssd1306 page
+ * 
+ * @note        定时更新屏幕页面编号，以便展示不同信息
+ */
+static attr_force_inline void _ssd1306_page_inc(void *args);
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -59,8 +79,14 @@ static attr_force_inline void _ssd1306_flush(void *args);
 // ssd1306设备文件fd
 static int g_ssd1306_fd = -1;
 
-// 事件线程，定时刷新屏幕内容
-declare_ev_thd(ssd1306_flush, _ssd1306_flush, NULL, SSD1306_FLUSH_INTERVAL)
+// ssd1306当前页面编号
+static ATOMIC_UINT8_T g_ssd1306_page = SSD1306_PAGE_TIME;
+
+// 刷新屏幕内容定时器
+static ev_timer_t *g_ssd1306_flush_timer = NULL;
+
+// 刷新页面编号定时器
+static ev_timer_t *g_ssd1306_page_update_timer = NULL;
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -83,34 +109,101 @@ static inline void _ssd1306_flush(void *args)
     snprintf(buf, sizeof(buf), "%s", SSD1306_CLEAR);
     write(g_ssd1306_fd, buf, strlen(buf));
 
-    // 时间
-    memset(buf, 0, sizeof(buf));
-    if(ERR_NO_ERROR == realtime_get_str_brief(buf, SSD1306_BUF_SIZE))
-        write(g_ssd1306_fd, buf, strlen(buf));
-    else
-        write(g_ssd1306_fd, "--:-- --:--:--", strlen("--:-- --:--:--"));
+    // 获取当前页面编号
+    ssd1306_page_e page = ATOM_LOAD(&g_ssd1306_page, MORDER_RELAXED);
 
-    // 温度
-    memset(buf, 0, sizeof(buf));
-    if(ERR_NO_ERROR == sht30_read_temperature(&temp))
-        snprintf(buf, sizeof(buf), "%.3f degC", temp);
-    else
-        snprintf(buf, sizeof(buf), "--- degC");
-    write(g_ssd1306_fd, buf, strlen(buf));
+    switch(page)
+    {
+        case SSD1306_PAGE_TIME:                 // 时间
+            memset(buf, 0, sizeof(buf));
+            snprintf(buf, sizeof(buf), "==> Time");
+            write(g_ssd1306_fd, buf, strlen(buf));
 
-    // 湿度
-    memset(buf, 0, sizeof(buf));
-    if(ERR_NO_ERROR == sht30_read_humidity(&humi))
-        snprintf(buf, sizeof(buf), "%.3f %%RH", humi);
-    else
-        snprintf(buf, sizeof(buf), "--- %%RH");
-    write(g_ssd1306_fd, buf, strlen(buf));
+            memset(buf, 0, sizeof(buf));
+            if(ERR_NO_ERROR == realtime_get_str_brief(buf, SSD1306_BUF_SIZE))
+                write(g_ssd1306_fd, buf, strlen(buf));
+            else
+                write(g_ssd1306_fd, "--:-- --:--:--", strlen("--:-- --:--:--"));
 
-    // cpu usage
-    memset(buf, 0, sizeof(buf));
-    sysmon_cpu_usage_get(&usage);
-    snprintf(buf, sizeof(buf), "cpu %.2f%%", usage);
-    write(g_ssd1306_fd, buf, strlen(buf));
+            uint64_t running = running_time_get() / 1000;
+            uint16_t hour = running / 3600;
+            uint8_t min = (running % 3600) / 60;
+            uint8_t sec = running % 60;
+            memset(buf, 0, sizeof(buf));
+            snprintf(buf, sizeof(buf), "%uh %um %us", hour, min, sec);
+            write(g_ssd1306_fd, buf, strlen(buf));
+
+            // 计算距离下班的时间
+            int hh, mm, ss;
+            realtime_get(&hh, &mm, &ss);
+            int eod = 0;
+            if(hh <= 11 && mm < 50)
+                eod = (11 - hh) * 60 + (50 - mm);
+            else if(hh < 18)
+                eod = (18 - hh - 1) * 60 + (60 - mm);
+            else if(hh < 20)
+                eod = (20 - hh - 1) * 60 + (60 - mm);
+            memset(buf, 0, sizeof(buf));
+            if(eod)
+                snprintf(buf, sizeof(buf), "EOD left %d m", eod);
+            else
+                snprintf(buf, sizeof(buf), "EOD comes ^v^");
+            write(g_ssd1306_fd, buf, strlen(buf));
+
+            break;
+        case SSD1306_PAGE_SHT30:                // 温湿度
+            memset(buf, 0, sizeof(buf));
+            snprintf(buf, sizeof(buf), "==> Env");
+            write(g_ssd1306_fd, buf, strlen(buf));
+
+            // 温度
+            memset(buf, 0, sizeof(buf));
+            if(ERR_NO_ERROR == sht30_read_temperature(&temp))
+                snprintf(buf, sizeof(buf), "%.3f degC", temp);
+            else
+                snprintf(buf, sizeof(buf), "--- degC");
+            write(g_ssd1306_fd, buf, strlen(buf));
+            // 湿度
+            memset(buf, 0, sizeof(buf));
+            if(ERR_NO_ERROR == sht30_read_humidity(&humi))
+                snprintf(buf, sizeof(buf), "%.3f %%RH", humi);
+            else
+                snprintf(buf, sizeof(buf), "--- %%RH");
+            write(g_ssd1306_fd, buf, strlen(buf));
+            break;
+        case SSD1306_PAGE_SYSMON:               // cpu usage
+            memset(buf, 0, sizeof(buf));
+            snprintf(buf, sizeof(buf), "==> Sys");
+            write(g_ssd1306_fd, buf, strlen(buf));
+
+            memset(buf, 0, sizeof(buf));
+            sysmon_cpu_usage_get(&usage);
+            snprintf(buf, sizeof(buf), "cpu %.2f%%", usage);
+            write(g_ssd1306_fd, buf, strlen(buf));
+            break;
+        default:
+            dbg_error("ssd1306 page error");
+            break;
+    }
+
+    // 继续定时器
+    ev_timer_start(g_ssd1306_flush_timer);
+}
+
+static inline void _ssd1306_page_inc(void *args)
+{
+    ssd1306_page_e current = ATOM_LOAD(&g_ssd1306_page, MORDER_RELAXED);
+    ssd1306_page_e next;
+
+    if(g_ssd1306_page == SSD1306_PAGE_END - 1)
+        next = SSD1306_PAGE_START + 1;
+    else
+        next = current + 1;
+
+    ATOM_STORE(&g_ssd1306_page, next, MORDER_RELAXED);
+
+    // 继续定时器
+    ev_timer_start(g_ssd1306_page_update_timer);
 }
 
 void ssd1306_module_init()
@@ -126,17 +219,20 @@ void ssd1306_module_init()
         return;
     }
 
-    // 注册事件线程定时刷新
-    ev_thd_register(ssd1306_flush)
-    ev_thd_run(ssd1306_flush)
+    // 启动定时器刷新屏幕以及页面
+    g_ssd1306_flush_timer = ev_timer_create(SSD1306_FLUSH_INTERVAL, _ssd1306_flush, NULL);
+    ev_timer_start(g_ssd1306_flush_timer);
+    g_ssd1306_page_update_timer = ev_timer_create(SSD1306_PAGE_INC_INTERVAL, _ssd1306_page_inc, NULL);
+    ev_timer_start(g_ssd1306_page_update_timer);
 
     dbg_major("ssd1306 module init ok");
 }
 
 void ssd1306_module_deinit()
 {
-    // 停止ev thd
-    ev_thd_cancel(ssd1306_flush)
+    // 销毁定时器
+    if(g_ssd1306_flush_timer)
+        ev_timer_destroy(&g_ssd1306_flush_timer);
 
     // 关闭设备文件
     if(g_ssd1306_fd >= 0)

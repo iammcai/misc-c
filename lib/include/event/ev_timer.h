@@ -50,6 +50,33 @@ typedef void (*ev_timer_cb_func)(void *args);
 /* ========================================================================== */
 
 /**
+ * @brief       get sys time value
+ * 
+ * @param[out]  hour
+ * @param[out]  min
+ * @param[out]  sec
+ * 
+ * @retval      error code
+ */
+static attr_force_inline error_code_e realtime_get(int *hour, int *min, int *sec)
+{
+    pfm_ensure_ret(hour && min && sec, ERR_BAD_PARAM);
+
+    struct timespec ts = {};
+    clock_gettime(CLOCK_REALTIME, &ts);
+
+    struct tm tm_buf = {0};
+    if(localtime_r(&ts.tv_sec, &tm_buf) == NULL)
+        return ERR_NOT_SUPPORT;
+
+    *hour = tm_buf.tm_hour;
+    *min  = tm_buf.tm_min;
+    *sec  = tm_buf.tm_sec;
+
+    return ERR_NO_ERROR;
+}
+
+/**
  * @brief       get sys time string
  * 
  * @param[out]  buf     - string
@@ -103,6 +130,15 @@ static attr_force_inline error_code_e realtime_get_str_brief(char *buf, size_t b
  * @retval      ms
  */
 extern uint64_t mono_time_get();
+
+/**
+ * @brief       get running time
+ * 
+ * @retval      ms
+ * 
+ * @note        当前运行时长
+ */
+extern uint64_t running_time_get();
 
 /**
  * @brief       create an event timer

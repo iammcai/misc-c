@@ -13,6 +13,7 @@
  *
  * @history
  *   1.0 | 2026-07-31 | cai | Initial creation.
+ *   1.0 | 2026-08-24 | cai | Conver IIO to Hwmon
  */
 
 /* ========================================================================== */
@@ -21,9 +22,11 @@
 
 #include <linux/module.h>
 #include <linux/i2c.h>
-#include <linux/iio/iio.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
+#include <linux/hwmon.h>          // for hwmon
+#include <linux/hwmon-sysfs.h>
+#include <linux/err.h>            // for IS_ERR, PTR_ERR
 #include "miscc_sht30.h"
 
 /* ========================================================================== */
@@ -74,17 +77,34 @@ static u8 _sht30_crc8(const u8 *data, int len)
 }
 
 /**
- * @brief       IIO read_raw回调
+ * @brief       is_visible callback
  * 
- * @param[in]   indio_dev       - iio子系统对应设备
- * @param[in]   chan            - iio通道的信息
- * @param[out]  val             - 用于描述不同数据格式
- * @param[out]  val2            - 用于描述不同数据格式
- * @param[in]   mask            - 掩码，读取数据的类型
+ * @param[in]   type        - input type
+ * @param[in]   attr        - attr
  * 
- * @retval      表示数据类型的宏
+ * @retval      mode of file
  */
-static int sht30_read_raw(struct iio_dev *indio_dev, struct iio_chan_spec const *chan, int *val, int *val2, long mask);
+static umode_t sht30_hwmon_is_visible(const void *data, enum hwmon_sensor_types type, u32 attr, int channel)
+{
+    if((type == hwmon_temp && attr == hwmon_temp_input) || 
+        (type == hwmon_humidity && attr == hwmon_humidity_input))
+    {
+        return 0444;    // 只读
+    }
+
+    return 0;       // 不创建文件
+}
+
+/**
+ * @brief       read callback
+ * 
+ * @param[in]   dev     - device
+ * @param[in]   type    - type
+ * @param[in]   attr    - attr
+ * @param[in]   channel - channel
+ * @param[out]  val     - val
+ */
+static int sht30_hwmon_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, long *val);
 
 /**
  * @brief       probe func for sht30
@@ -98,23 +118,6 @@ static int sht30_probe(struct i2c_client *client);
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
-
-// IIO通道声明
-static const struct iio_chan_spec sht30_channels[] = {
-    {
-        .type = IIO_TEMP,
-        .info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
-    },
-    {
-        .type = IIO_HUMIDITYRELATIVE,
-        .info_mask_separate = BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),
-    },
-};
-
-// IIO回调
-static const struct iio_info sht30_iio_info = {
-    .read_raw = sht30_read_raw,
-};
 
 /* 设备树匹配表 */
 static const struct of_device_id sht30_of_match[] = {
@@ -132,6 +135,25 @@ static struct i2c_driver sht30_driver = {
     .probe = sht30_probe,
 };
 module_i2c_driver(sht30_driver);
+
+/* sht30 hwmon操作集合 */
+static const struct hwmon_ops sht30_hwmon_ops = {
+    .is_visible = sht30_hwmon_is_visible,
+    .read = sht30_hwmon_read,
+};
+
+/* sht30支持的通道信息 */
+static const struct hwmon_channel_info* sht30_hwmon_channel_info[] = {
+    HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT),        // 支持温度
+    HWMON_CHANNEL_INFO(humidity, HWMON_H_INPUT),    // 支持湿度
+    NULL,   // sential
+};
+
+/* sht30信息集合，用于注册 */
+static const struct hwmon_chip_info sht30_chip_info = {
+    .ops = &sht30_hwmon_ops,
+    .info = sht30_hwmon_channel_info,
+};
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -199,44 +221,48 @@ done:
     return ret;
 }
 
-static int sht30_read_raw(struct iio_dev *indio_dev, struct iio_chan_spec const *chan, int *val, int *val2, long mask)
+static int sht30_hwmon_read(struct device *dev, enum hwmon_sensor_types type, u32 attr, int channel, long *val)
 {
-    struct sht30_data *data = iio_priv(indio_dev);      // 从iio私有数据获取struct sht30_data
+    struct sht30_data *data = dev_get_drvdata(dev);
     int temp, humi, ret;
 
-    switch(mask)
+    if(attr != hwmon_temp_input && attr != hwmon_humidity_input)
+        return -EOPNOTSUPP;
+
+    /* 调用你的测量函数，获取物理值 */
+    ret = sht30_measure(data, &temp, &humi);
+    if(ret)
+        return ret;
+
+    /* 根据传感器类型，返回对应的值 */
+    switch(type)
     {
-        case IIO_CHAN_INFO_RAW:     // 读取原始值
-            ret = sht30_measure(data, &temp, &humi);
-            if(ret)
-                return ret;
-            *val = (chan->type == IIO_TEMP) ? temp : humi;      // 根据获取的类型来选取
-            return IIO_VAL_INT;
-        case IIO_CHAN_INFO_SCALE:       // 读取比例值，此时真实值为 RAW * (*val) / (*val2)
-            *val = 1;
-            *val2 = 1000;
-            return IIO_VAL_FRACTIONAL;
+        case hwmon_temp:
+            *val = temp;  /* 温度值，单位是毫摄氏度 (m°C) */
+            return 0;
+        case hwmon_humidity:
+            *val = humi;  /* 湿度值，单位是千分比 (m%)，表示 0.001% */
+            return 0;
         default:
-            return -EINVAL;
+            return -EOPNOTSUPP;
     }
 }
 
 static int sht30_probe(struct i2c_client *client)
 {
-    struct iio_dev *indio_dev;
     struct sht30_data *data;
     u8 reset_cmd[2];
     int ret;
+    struct device *hwmon_dev;
 
     // 检查I2C适配器是否支持基本功能
     if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
         return -EOPNOTSUPP;
 
-    // 分配IIO设备以及设置私有数据
-    indio_dev = devm_iio_device_alloc(&client->dev, sizeof(struct sht30_data));
-    if(!indio_dev)
+    // 分配设备内存以及设置私有数据
+    data = devm_kzalloc(&client->dev, sizeof(*data), GFP_KERNEL);
+    if (!data)
         return -ENOMEM;
-    data = iio_priv(indio_dev);
     data->client = client;
     mutex_init(&data->lock);
 
@@ -248,15 +274,15 @@ static int sht30_probe(struct i2c_client *client)
         return dev_err_probe(&client->dev, -EIO, "soft reset failed\n");
     msleep(2);      // 手测指出最多1ms
 
-    // 设置IIO设备属性，并注册
-    indio_dev->name = SHT30_IIO_DEVICE_NAME;
-    indio_dev->modes = INDIO_DIRECT_MODE;
-    indio_dev->channels = sht30_channels;
-    indio_dev->num_channels = ARRAY_SIZE(sht30_channels);
-    indio_dev->info = &sht30_iio_info;
-    ret = devm_iio_device_register(&client->dev, indio_dev);
-    if (ret)
-        return dev_err_probe(&client->dev, ret, "failed to register IIO device\n");
+    // 注册hwmon设备
+    hwmon_dev = devm_hwmon_device_register_with_info(&client->dev,
+                                                     SHT30_HWMON_DEVICE_NAME,
+                                                     data,
+                                                     &sht30_chip_info,
+                                                     NULL);
+    if (IS_ERR(hwmon_dev))
+        return dev_err_probe(&client->dev, PTR_ERR(hwmon_dev),
+                             "failed to register hwmon device\n");
 
     dev_info(&client->dev, "SHT30 probed successfully\n");
     return 0;
@@ -264,5 +290,5 @@ static int sht30_probe(struct i2c_client *client)
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Cai");
-MODULE_DESCRIPTION("SHT30 IIO Driver");
-MODULE_SOFTDEP("pre: industrialio");        // 模块依赖
+MODULE_DESCRIPTION("SHT30 Hwmon Driver");
+MODULE_SOFTDEP("pre: hwmon");        // 模块依赖

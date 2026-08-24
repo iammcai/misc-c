@@ -124,6 +124,9 @@ static ev_timer_heap_head_t g_ev_timer_heap = {};
 // 自旋锁，用来保护堆
 static ev_spinlock_t g_heap_spinlock = EV_SPINLOCK_INITIALIZER;
 
+// 启动时间，mono
+static uint64_t g_startup_ms = 0;
+
 declare_thp(ev_timer, THREAD_POOL_TH_COUNT_MAX)
 
 declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
@@ -343,11 +346,19 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
         dbg_error("stop timer %s fail", hr_timer->name);
 }
 
+uint64_t running_time_get()
+{
+    uint64_t curr = mono_time_get();
+    return curr - g_startup_ms;
+}
+
 void ev_timer_module_init(void)
 {
     // 更新当前时钟
     uint64_t ms = mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
+    // 设置启动时间
+    g_startup_ms = ms;
 
     // 初始化线程池
     thp_register(ev_timer);
