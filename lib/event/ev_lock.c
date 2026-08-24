@@ -60,7 +60,7 @@ void ev_rd_lock(ev_rwlock_t *lock)
         sched_yield();      // 让出CPU，挂到就绪队列尾
     }
 
-    ATOM_FETCH_ADD(&lock->readers, 1, MORDER_RELEASE);
+    ATOM_FETCH_ADD(&lock->readers, 1, MORDER_ACQ_REL);
 }
 
 void ev_wr_lock(ev_rwlock_t *lock)

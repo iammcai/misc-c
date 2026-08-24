@@ -548,7 +548,7 @@ static void* _zcap_routine(void *args)
                 if(pkt_len > ZCAP_MTU_SIZE)
                 {
                     dbg("packet len %d larger than zcap handle max size", pkt_len);
-                    ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
+                    ATOM_FETCH_ADD(&captor->stat.nonhdl_count, 1, MORDER_RELAXED);
                     continue;
                 }
 
@@ -1085,6 +1085,8 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 (double)captor->stat.size/1024,
                 captor->stat.rate_Bps/1024
             );
+            unsigned long nonhdl = ATOM_LOAD(&captor->stat.nonhdl_count, MORDER_RELAXED);
+            safe_printf("non_handle_count: %lu, %.2f%%\n", nonhdl, (double)nonhdl/captor->stat.count*100);
             unsigned long loss = ATOM_LOAD(&captor->stat.loss_count, MORDER_RELAXED);
             safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count*100);
 

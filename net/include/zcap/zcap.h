@@ -118,6 +118,7 @@ typedef struct{
     unsigned long err;          // 错包数量
 
     // 丢包统计
+    unsigned long nonhdl_count; // 不处理的个数，报文大小超出MTU
     unsigned long loss_count;   // 丢包个数
 
     //以下用于速率统计

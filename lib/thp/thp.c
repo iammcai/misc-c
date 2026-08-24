@@ -206,10 +206,12 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
         return;
     }
 
-    thp_work_t *task;
-    do{
-        task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
-    }while(!task);
+    thp_work_t *task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
+    if(!task)
+    {
+        dbg_always("thp %s, mp fixed node get task memory fail, task loss", thp->name);
+        return;
+    }
 
     task->wf = wf;
     task->args = args;

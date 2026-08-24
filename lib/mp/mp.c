@@ -26,6 +26,8 @@
 #include "plat/atom.h"
 #include "event/ev_thread.h"
 #include "cli/cli.h"
+#include "event/ev_lock.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -365,6 +367,8 @@ static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head
 static tid_t g_tid = 0;
 // 全局链表，存储所有线程独立的回收队列
 static fixed_recycle_aq_list_head_t g_fixed_recycle_aq_list_head = {};
+// 回收队列链表读写锁
+static ev_rwlock_t g_fixed_recyle_aq_list_rwlock = EV_RWLOCK_INITIALIZER;
 // 声明回收事件线程，兜底1000ms回收一次
 declare_ev_thd(fixed_node_recycle, fixed_node_recycle_work, NULL, 1000)
 // 全局统计数据
@@ -461,7 +465,8 @@ void _mp_fixed_init(mem_type_attr_t *attr)
         fixed_recycle_spsc_atom_queue_init(&free_list->recycle_aq_head.local_recycle_aq_head);
         fixed_recycle_spsc_atom_queue_init(&free_list->recycle_aq_head.remote_recycle_aq_head);
         // 加到全局链表
-        fixed_recycle_aq_list_add_tail(&g_fixed_recycle_aq_list_head, &free_list->recycle_aq_head);
+        ev_with_wrlock(&g_fixed_recyle_aq_list_rwlock)
+            fixed_recycle_aq_list_add_tail(&g_fixed_recycle_aq_list_head, &free_list->recycle_aq_head);
     }
 }
 
@@ -526,26 +531,50 @@ static inline fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr
     return free_list;
 }
 
+static inline fixed_mem_node_t* _mp_fixed_node_get_fast(mem_type_attr_t *attr)
+{
+    // 检查当前缓存
+    if(attr != g_attr_cache)
+        return NULL;
+
+    fixed_free_list_t *free_list = g_fixed_free_list;
+    return fixed_free_list_pop(&free_list->head);           // 直接pop
+}
+
 void* _mp_fixed_node_get(mem_type_attr_t *attr)
 {
     if(!mem_type_attr_fixed_size(attr))     // 检查是否固定大小
         return NULL;
+
+    fixed_mem_node_t *node = NULL;
+    // fast路径先尝试
+    node = _mp_fixed_node_get_fast(attr);
+    if(node)
+        goto done;
 
     // 找到free list，没有的话创建
     fixed_free_list_t *free_list = _mp_fixed_free_list_get_or_create(attr, 1);
 
     // 将local aq中的节点都归还回来
     fixed_mem_node_t *recycle_node = NULL;
+    int batch = 0;
     while(recycle_node = fixed_recycle_spsc_atom_queue_pop(&free_list->recycle_aq_head.local_recycle_aq_head))
     {
         fixed_free_list_add_head(&free_list->head, recycle_node);
+        ++ batch;
+#if MP_DBG_MODE
+        // 更新使用计数
+        ATOM_FETCH_SUB(&recycle_node->attr->used, 1, MORDER_ACQ_REL);
+#endif
     }
+    //dbg_always("fixed mp %s recycle batch %d", attr->name, batch);
 
     if(!fixed_free_list_count(&free_list->head))    // 检查空闲节点个数
         return NULL;
 
-    fixed_mem_node_t *node = fixed_free_list_pop(&free_list->head); // pop一个节点
+    node = fixed_free_list_pop(&free_list->head); // pop一个节点
 
+done:
 #if MP_DBG_MODE
     // 更新使用计数
     ATOM_FETCH_ADD(&attr->used, 1, MORDER_ACQ_REL);
@@ -563,10 +592,6 @@ static inline void _mp_fixed_node_put_remote(fixed_recycle_spsc_atom_queue_head_
 {
     // 将node放置到本线程的remote aq中
     fixed_recycle_spsc_atom_queue_push(aq_head, node);
-
-    // 唤醒回收线程
-    if(fixed_recycle_spsc_atom_queue_count(aq_head) >= RECYCLE_WAKE_THRESHOLD)
-        ev_thd_wake(fixed_node_recycle);
 }
 
 void _mp_fixed_node_put(void *ptr)
@@ -583,11 +608,6 @@ void _mp_fixed_node_put(void *ptr)
         _mp_fixed_node_put_local(free_list, node);
     else
         _mp_fixed_node_put_remote(&free_list->recycle_aq_head.remote_recycle_aq_head, node);
-
-#if MP_DBG_MODE
-    // 更新使用计数
-    ATOM_FETCH_SUB(&node->attr->used, 1, MORDER_ACQ_REL);
-#endif
 }
 
 tid_t tid_new()
@@ -618,28 +638,39 @@ static inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t ti
 
 static inline void fixed_node_recycle_work(void *args)
 {
+    int batch = 0;
     // 遍历所有aq，逐一将节点挂到正确的aq上
-    fixed_recycle_aq_t *aq = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
-    while(aq)
+    ev_with_rdlock(&g_fixed_recyle_aq_list_rwlock)
     {
-        fixed_mem_node_t *node = NULL;
-        while(node = fixed_recycle_spsc_atom_queue_pop(&aq->remote_recycle_aq_head))
+        fixed_recycle_aq_t *aq = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
+        while(aq)
         {
-            // 找到对应aq_t，挂到其local队列
-            fixed_recycle_aq_t *aq_target = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
-            while(aq_target)
+            fixed_mem_node_t *node = NULL;
+            while(node = fixed_recycle_spsc_atom_queue_pop(&aq->remote_recycle_aq_head))
             {
-                if(aq_target->tid == node->tid)
+                // 找到对应aq_t，挂到其local队列
+                fixed_recycle_aq_t *aq_target = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
+                while(aq_target)
                 {
-                    fixed_recycle_spsc_atom_queue_push(&aq_target->local_recycle_aq_head, node);
-                    break;
+                    if(aq_target->tid == node->tid)
+                    {
+                        fixed_recycle_spsc_atom_queue_push(&aq_target->local_recycle_aq_head, node);
+                        ++ batch;
+                        break;
+                    }
+                    aq_target = fixed_recycle_aq_list_next(aq_target);
                 }
-                aq_target = fixed_recycle_aq_list_next(aq_target);
+                if(!aq_target)
+                {
+                    char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
+                    snprintf(ctx, sizeof(ctx), "fixed mp node %p, tid %d, attr_name %s, find local aq fail", node, node->tid, node->attr->name);
+                    syslog_warn(SYSLOG_MODULE_MP, ctx);
+                }
             }
-            assert(aq_target);
+            aq = fixed_recycle_aq_list_next(aq);
         }
-        aq = fixed_recycle_aq_list_next(aq);
     }
+    // dbg_always("recycle work batch num %d", batch);
 }
 
 void mem_type_attr_module_init()

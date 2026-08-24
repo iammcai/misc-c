@@ -44,7 +44,7 @@ typedef enum{
 // 日志模块id枚举
 typedef enum{
     SYSLOG_MODULE_SYS = 0,
-    SYSLOG_MODULE_SLAB_MP,      // slab mp
+    SYSLOG_MODULE_MP,           // mp
     SYSLOG_MODULE_ZCAP,         // zcap
     SYSLOG_MODULE_WEB,
     SYSLOG_MODULE_LED,          // led
@@ -73,7 +73,7 @@ static const char* syslog_facility_str[SYSLOG_FACILITY_MAX] = {
 // 日志模块对应字符串
 static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "system",
-    "slab_mp",
+    "mp",
     "zcap",
     "web",
     "led",
