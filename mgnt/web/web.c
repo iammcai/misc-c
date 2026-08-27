@@ -26,11 +26,12 @@
 #include <pthread.h>
 #include <sys/errno.h>
 #include <stdio.h>
+#include <sys/prctl.h>
 
 #include "web/web.h"
 #include "plat/atom.h"
 #include "type/type_list.h"
-#include "mp/mp.h"
+#include "mp/mp_fixed.h"
 #include "zcap/zcap.h"
 
 /* ========================================================================== */
@@ -133,7 +134,7 @@ static attr_force_inline void _web_mgnt_deinit(void);
 /* ========================================================================== */
 
 // fixed内存池，用于connection
-declare_mem_type_fixed(web_connection, sizeof(web_connection_t), WEB_CONNECT_MAX_CNT)
+declare_mp_fixed(web_connection, WEB_CONNECT_MAX_CNT, sizeof(web_connection_t))
 
 // 全局web connection链表
 static web_connection_list_head_t g_web_conn_list = {};
@@ -198,37 +199,49 @@ static void _web_events_handle(int fd)
     if(fd == g_web_mgnter.sock_fd)      // 新连接请求
     {
         // accept
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int fd_new = accept(g_web_mgnter.sock_fd, (struct sockaddr*)&client_addr, &client_len);
-        pfm_ensure_ret_void(fd_new >= 0);
+        //while(1)
+        //{
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            int fd_new = accept(g_web_mgnter.sock_fd, (struct sockaddr*)&client_addr, &client_len);
+            if(fd_new < 0)
+            {
+                //if(errno == EAGAIN || errno == EWOULDBLOCK)
+                    //break;
+                //if(errno == EINTR)
+                    //continue;
+                dbg_error("accept fail, %s", strerror(errno));
+                return;
+                //break;
+            }
 
-        // 将socket设置为非阻塞
-        int flags = fcntl(fd_new, F_GETFL, 0);
-        fcntl(fd_new, F_SETFL, flags | O_NONBLOCK);
+            // 将socket设置为非阻塞
+            int flags = fcntl(fd_new, F_GETFL, 0);
+            fcntl(fd_new, F_SETFL, flags | O_NONBLOCK);
 
-        // 加入到epoll
-        struct epoll_event ev = {.data.fd = fd_new, .events = EPOLLIN | EPOLLET};
-        if(0 != epoll_ctl(g_web_mgnter.epoll_fd, EPOLL_CTL_ADD, fd_new, &ev))
-        {
-            dbg_error("epoll_ctl add fail");
-            close(fd_new);
-            return;
-        }
+            // 加入到epoll
+            struct epoll_event ev = {.data.fd = fd_new, .events = EPOLLIN | EPOLLET};
+            if(0 != epoll_ctl(g_web_mgnter.epoll_fd, EPOLL_CTL_ADD, fd_new, &ev))
+            {
+                dbg_error("epoll_ctl add fail");
+                close(fd_new);
+                return;
+            }
 
-        // 获取connection内存，添加到链表记录
-        web_connection_t *conn = (web_connection_t*)mp_fixed_node_get(web_connection);
-        if(!conn)
-        {
-            dbg_error("get memory for connection fail");
-            close(fd_new);
-            return;
-        }
-        memset(conn, 0, sizeof(web_connection_t));
-        conn->fd = fd_new;
-        web_connection_list_add_head(&g_web_conn_list, conn);
+            // 获取connection内存，添加到链表记录
+            web_connection_t *conn = (web_connection_t*)mp_fixed_node_get(web_connection);
+            if(!conn)
+            {
+                dbg_error("get memory for connection fail");
+                close(fd_new);
+                return;
+            }
+            memset(conn, 0, sizeof(web_connection_t));
+            conn->fd = fd_new;
+            web_connection_list_add_head(&g_web_conn_list, conn);
 
-        dbg("handle new connection, fd %d", fd_new);
+            //dbg_always("handle new connection, fd %d", fd_new);
+        //}
     }
     else
     {
@@ -302,6 +315,8 @@ static void _web_events_handle(int fd)
 static inline void* _web_epoll_routine(void *args)
 {
     struct epoll_event events[WEB_CONNECT_MAX_CNT];
+
+    prctl(PR_SET_NAME, "web_epoll");
 
     ATOM_STORE(&g_web_mgnter.running, 1, MORDER_RELAXED);
 
@@ -396,7 +411,7 @@ static attr_force_inline void zcap_web_pkt_cb(char *packet, int len, void *args)
 
 void web_module_init()
 {
-    mem_type_attr_register(web_connection);
+    mem_type_attr_fixed_register(web_connection);
     web_connection_list_init(&g_web_conn_list);
 
     _web_mgnt_init();

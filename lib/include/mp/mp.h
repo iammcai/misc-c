@@ -17,6 +17,7 @@
  *   1.3 | 2026-07-11 | cai | Add auto init mp.
  *   2.0 | 2026-07-14 | cai | Add nonfixed mp.
  *   3.0 | 2026-07-21 | cai | Add mp bin.
+ *   4.0 | 2026-08-27 | cai | Remove mp_fixed to mp_fixed.h
  */
 
 #ifndef __MP_H__
@@ -79,45 +80,6 @@ typedef struct{
     unsigned int slab_full_times[SLAB_SIZE_CNT];        // 告警次数
 #endif
 }mem_type_attr_t;
-
-/* -------------------------------- MP FIXED --------------------------------*/
-
-// 预定义固定大小内存空闲链表
-pre_declare_list(fixed_free)
-// 预定义固定大小内存回收原子队列
-pre_declare_spsc_atom_queue(fixed_recycle)
-
-// 固定大小内存节点定义
-typedef struct{
-    mem_type_attr_t *attr;                  // 所属内存类型
-    fixed_free_list_item_t item;            // free list item
-    fixed_recycle_spsc_atom_queue_item_t aq_item;     // recycle aq time
-    tid_t tid;                              // 内存所属的线程
-    unsigned int size;                      // 用户内存大小
-    char attr_aligned(8) data[];            // 柔性数组，真正给用户使用的内存区
-} attr_aligned(8) fixed_mem_node_t;
-
-// 预定义链表，存储所有回收队列
-pre_declare_list(fixed_recycle_aq)
-
-// 回收队列定义，由全局链表组织起来
-typedef struct{
-    tid_t tid;      // 回收队列所属线程
-    fixed_recycle_spsc_atom_queue_head_t local_recycle_aq_head;     // 由本线程回收的内存队列
-    fixed_recycle_spsc_atom_queue_head_t remote_recycle_aq_head;    // 由其它线程回收的内存队列
-    fixed_recycle_aq_list_item_t item;    // list item
-}fixed_recycle_aq_t;
-
-// 预定义哈希表，用于存储所有固定大小空闲链表头
-pre_declare_hash(fixed_free_list_head)
-
-// 固定大小空闲内存链表头定义，哈希表存储起来
-typedef struct{
-    fixed_free_list_head_t  head;   // 空闲链表头
-    fixed_recycle_aq_t recycle_aq_head; // 回收队列头
-    mem_type_attr_t *attr;          // 所属内存类型
-    fixed_free_list_head_hash_item_t item;  // item
-}fixed_free_list_t;
 
 /* -------------------------------- MP NONFIXED --------------------------------*/
 
@@ -186,9 +148,6 @@ extern void mem_type_attr_module_init();
  */
 extern void mp_module_init();
 
-// 定义固定大小内存空闲链表操作
-declare_list(fixed_free, fixed_free, fixed_mem_node_t, item)
-
 /**
  * @brief       封装hash add，加到全局哈希表中
  * 
@@ -230,38 +189,6 @@ extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr);
  * @note        分配一个新的逻辑ID，原子ADD保证并发可用
  */
 extern tid_t tid_new();
-
-/**
- * @brief       初始化fixed node mem pool
- * 
- * @param[in]   attr    - mem type attr
- * 
- * @note        查找空闲链表，暂不补充节点数量
- */
-extern void _mp_fixed_init(mem_type_attr_t *attr);
-
-/**
- * @brief       supply mem node from system to free list
- * 
- * @param[in]   attr    - mem type attr
- */
-extern void fixed_mp_supply(mem_type_attr_t *attr);
-
-/**
- * @brief       get node from fixed mem pool
- * 
- * @param[in]   attr    - mem type
- * 
- * @retval      ptr to buffer
- */
-extern void* _mp_fixed_node_get(mem_type_attr_t *attr);
-
-/**
- * @brief       put node to fixed mem pool
- * 
- * @param[in]   ptr     - ptr to buffer
- */
-extern void _mp_fixed_node_put(void *ptr);
 
 /**
  * @brief       init nonfixed mem pool
@@ -409,37 +336,6 @@ mem_type_attr_t _mem_type_attr_ ## _name = {    \
 #define declare_mem_type_fixed(name, node_size, node_max_num)   \
     _declare_mem_type_attr(name, MEM_TYPE_ATTR_FIXED_SIZE, node_size, node_max_num) \
 /* declare_mem_type_fixed end */
-
-/**
- * 外部使用，初始化一个固定节点大小内存池
- * 0. 初始化全局空闲链表
- * 1. 在【线程私有】的全局空闲链表头哈希表中查找有无空闲链表
- *  1.1 无的话，创建并加入哈希表
- * 2. 创建aq用于跨线程回收
-*/
-#define mp_fixed_init(name) \
-    _mp_fixed_init(&_mem_type_attr_ ## name);   \
-/* declare_mp_fixed */
-
-/**
- * 外部使用，补充空闲节点
- */
-#define mp_fixed_supply(name)   \
-    fixed_mp_supply(&_mem_type_attr_ ## name);    \
-/* mp_fixed_supply end */
-
-/**
- * 外部使用，从内存池获取一个固定大小的内存结点
- */
-#define mp_fixed_node_get(name) \
-    _mp_fixed_node_get(&_mem_type_attr_ ## name);   \
-/* mp_fixed_node_get end */
-
-/**
- * 外部使用，归还一个固定大小内存节点给内存池
- */
-#define mp_fixed_node_put(ptr)  \
-    _mp_fixed_node_put(ptr);    \
 
 /**
  * 外部使用，声明不定长内存类型，对于同个name，全局调用一次

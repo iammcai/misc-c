@@ -137,7 +137,7 @@ static inline void _ssd1306_flush(void *args)
             int hh, mm, ss;
             realtime_get(&hh, &mm, &ss);
             int eod = 0;
-            if(hh <= 11 && mm < 50)
+            if(hh < 11 || (hh == 11 && mm < 55))
                 eod = (11 - hh) * 60 + (50 - mm);
             else if(hh < 18)
                 eod = (18 - hh - 1) * 60 + (60 - mm);
@@ -220,9 +220,9 @@ void ssd1306_module_init()
     }
 
     // 启动定时器刷新屏幕以及页面
-    g_ssd1306_flush_timer = ev_timer_create(SSD1306_FLUSH_INTERVAL, _ssd1306_flush, NULL);
+    g_ssd1306_flush_timer = ev_timer_create("ssd1306_flush", SSD1306_FLUSH_INTERVAL, _ssd1306_flush, NULL);
     ev_timer_start(g_ssd1306_flush_timer);
-    g_ssd1306_page_update_timer = ev_timer_create(SSD1306_PAGE_INC_INTERVAL, _ssd1306_page_inc, NULL);
+    g_ssd1306_page_update_timer = ev_timer_create("ssd1306_page_update", SSD1306_PAGE_INC_INTERVAL, _ssd1306_page_inc, NULL);
     ev_timer_start(g_ssd1306_page_update_timer);
 
     dbg_major("ssd1306 module init ok");

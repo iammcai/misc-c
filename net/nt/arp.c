@@ -424,7 +424,7 @@ static void _arp_reply_cache_add(uint32_t ip, uint8_t *mac)
             cache = (arp_reply_cache_t*)mp_calloc(1, sizeof(arp_reply_cache_t));
             cache->ip = ip;
             memcpy(cache->mac, mac, MAC_ADDR_SIZE);
-            cache->timer = ev_timer_create(ARP_REPLY_CACHE_AGING_TIME, _arp_reply_cache_del, cache); // 创建老化定时器
+            cache->timer = ev_timer_create("arp_cache_aging", ARP_REPLY_CACHE_AGING_TIME, _arp_reply_cache_del, cache); // 创建老化定时器
 
             // 加入哈希表，启动老化
             arp_reply_cache_hash_add(&g_arp_reply_cache, cache);
@@ -440,7 +440,7 @@ static void _arp_reply_cache_add(uint32_t ip, uint8_t *mac)
 
             // 重置老化时间
             ev_timer_destroy(&cache->timer);
-            cache->timer = ev_timer_create(ARP_REPLY_CACHE_AGING_TIME, _arp_reply_cache_del, cache);
+            cache->timer = ev_timer_create("arp_cache_aging", ARP_REPLY_CACHE_AGING_TIME, _arp_reply_cache_del, cache);
             ev_timer_start(cache->timer);
 
             dbg("arp cache update for ip %08x, mac %02x:%02x:%02x:%02x:%02x:%02x",

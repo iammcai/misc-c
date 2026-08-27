@@ -52,7 +52,7 @@ int test_ev_timer()
     ev_timer_t *timer = NULL;
     for(; i < 10; ++ i)
     {
-        timer = ev_timer_create(i*1000, test_timer_cb, NULL);
+        timer = ev_timer_create("ev_timer_test", i*1000, test_timer_cb, NULL);
         ev_timer_start(timer);
     }
     ev_timer_stop(timer);

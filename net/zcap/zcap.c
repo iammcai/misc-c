@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <sys/mman.h>           // for mmap
 #include <sys/epoll.h>          // for epoll
+#include <sys/prctl.h>
 
 #include "zcap/zcap.h"
 #include "plat/debug.h"
@@ -484,6 +485,10 @@ static void* _zcap_routine(void *args)
 {
     zcap_t *captor = (zcap_t*)args;
 
+    char buf[16] = {};
+    snprintf(buf, sizeof(buf), "zcap_%s", captor->if_name);
+    prctl(PR_SET_NAME, buf);
+
     // 创建epoll et，监听抓包socket
     int epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if(-1 == epoll_fd)
@@ -803,6 +808,10 @@ static void* _zcap_alz_routine(void *args)
     unsigned char i = arg->index;
     zcap_t *captor = arg->cap;
     zcap_packet_t *packet = NULL;
+
+    char buf[16] = {};
+    snprintf(buf, sizeof(buf), "zcalz_%s_%d", captor->if_name, i);
+    prctl(PR_SET_NAME, buf);
 
     mp_free(args, sizeof(alz_arg_packed));   // 释放入参
 

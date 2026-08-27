@@ -46,6 +46,26 @@ Chapter 4.13 介绍了温湿度数据的转换计算方法
 
 ## I2C子系统
 
+```mermaid
+sequenceDiagram
+    participant Master as 主设备
+    participant Slave as 从设备
+
+    Note over Master,Slave: 起始条件：SCL高 → SDA下降
+    Master->>Slave: 发送地址字节 (7位地址 + R/W位)
+    Slave-->>Master: ACK应答 (SDA拉低)
+    Note over Master,Slave: 地址匹配，通信建立
+
+    loop 数据收发
+        Master->>Slave: 发送/接收 1字节数据 (8位)
+        Slave-->>Master: ACK/NACK (SDA低/高)
+    end
+
+    Note over Master,Slave: 停止条件：SCL高 → SDA上升
+    Master->>Slave: 停止通信
+```
+
+
 ## IIO子系统
 
 IIO (Industrial I/O) 是Linux内核中专门为数据采集类设备设计的标准框架。它位于`/sys/bus/iio/`下，提供了一套统一的接口来访问ADC、DAC、温湿度传感器、加速度计、陀螺仪等设备。

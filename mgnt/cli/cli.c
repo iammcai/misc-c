@@ -23,6 +23,8 @@
 #include <pthread.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/prctl.h>
+
 #include "cli/cli.h"
 #include "cli/cli_gnurl.h"
 #include "event/ev_lock.h"
@@ -107,6 +109,8 @@ static attr_force_inline void* _cli_shell_cli_hook(unsigned char argc, char *arg
 
 static void* _cli_routine(void *args)
 {
+    prctl(PR_SET_NAME, "cli_main");
+
     ev_sem_wait(&g_platform_init_ok);
 
     ATOM_STORE(&cli_task_running, 1, MORDER_RELAXED);

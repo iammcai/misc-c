@@ -128,8 +128,9 @@ static attr_force_inline void _ev_thd_timer_cb(void *args)
     ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
 
     ev_sem_post(&attr->sem);    // 写sem唤醒工作线程
+
     // 重新启动定时器
-    ev_high_res_timer_start(attr->timer);
+    // ev_high_res_timer_start(attr->timer);
 }
 
 /**

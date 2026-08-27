@@ -18,6 +18,8 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <sys/prctl.h>
+
 #include "nt/tftp.h"
 #include "cli/cli.h"
 #include "mp/mp_slab.h"
@@ -829,8 +831,8 @@ static attr_force_inline void _tftp_fsm_init()
     // 初始化fsm信息
     memset(&g_tftp_fsm, 0, sizeof(g_tftp_fsm));
     g_tftp_fsm.state = TFTP_STATE_IDLE;
-    g_tftp_fsm.download_retry_timer = ev_timer_create(TFTP_RETRY_INTERVAL*1000, _tftp_download_retry_timer_cb, NULL);
-    g_tftp_fsm.upload_retry_timer = ev_timer_create(TFTP_RETRY_INTERVAL*1000, _tftp_upload_retry_timer_cb, NULL);
+    g_tftp_fsm.download_retry_timer = ev_timer_create("tftp_download_retry", TFTP_RETRY_INTERVAL*1000, _tftp_download_retry_timer_cb, NULL);
+    g_tftp_fsm.upload_retry_timer = ev_timer_create("tftp_upload_retry", TFTP_RETRY_INTERVAL*1000, _tftp_upload_retry_timer_cb, NULL);
     ev_sem_init(&g_tftp_fsm.sem_done);
 
     // IDLE
@@ -1070,6 +1072,8 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args)
 
 static void* _tftp_fsm(void *args)
 {
+    prctl(PR_SET_NAME, "tftp_fsm");
+
     // 状态机初始化，设置hook等
     _tftp_fsm_init();
 

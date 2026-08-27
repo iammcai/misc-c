@@ -45,6 +45,8 @@ typedef enum{
 typedef enum{
     SYSLOG_MODULE_SYS = 0,
     SYSLOG_MODULE_MP,           // mp
+    SYSLOG_MODULE_TIMER,        // timer
+    SYSLOG_MODULE_THP,          // thread pool
     SYSLOG_MODULE_ZCAP,         // zcap
     SYSLOG_MODULE_WEB,
     SYSLOG_MODULE_LED,          // led
@@ -74,6 +76,8 @@ static const char* syslog_facility_str[SYSLOG_FACILITY_MAX] = {
 static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "system",
     "mp",
+    "timer",
+    "thp",
     "zcap",
     "web",
     "led",

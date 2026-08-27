@@ -229,7 +229,7 @@ static int sht30_hwmon_read(struct device *dev, enum hwmon_sensor_types type, u3
     if(attr != hwmon_temp_input && attr != hwmon_humidity_input)
         return -EOPNOTSUPP;
 
-    /* 调用你的测量函数，获取物理值 */
+    /* 测量 */
     ret = sht30_measure(data, &temp, &humi);
     if(ret)
         return ret;

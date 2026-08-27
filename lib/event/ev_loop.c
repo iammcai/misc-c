@@ -21,6 +21,8 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 #include <sys/errno.h>
+#include <sys/prctl.h>
+
 #include "event/ev_loop.h"
 #include "mp/mp.h"
 #include "plat/debug.h"
@@ -175,6 +177,8 @@ void _el_reg_fe(int fd, el_file_event_type_e type, unsigned char mask, el_file_e
 
 static void* _el_main(void *args)
 {
+    prctl(PR_SET_NAME, "ev_loop_main");
+
     while(1)    // 事件循环检测永不终止
     {
         // 等待事件

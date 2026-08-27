@@ -24,6 +24,8 @@
 #include <sys/timerfd.h>
 #include <sys/epoll.h>
 #include <sys/errno.h>
+#include <sys/prctl.h>
+
 #include "plat/atom.h"
 #include "event/ev_timer.h"
 #include "event/ev_thread.h"
@@ -32,6 +34,7 @@
 #include "mp/mp.h"
 #include "thp/thp.h"
 #include "event/ev_loop.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                            Macro Definitions                               */
@@ -49,6 +52,7 @@
 
 // 定时器定义
 struct ev_timer_s{
+    char *name;                 // name
     uint64_t expired_time;      // 绝对超时时间
     uint32_t timeout;           // 超时时间
     ev_timer_cb_func cb;        // 回调函数
@@ -105,18 +109,18 @@ uint64_t mono_time_get()
 static void _low_res_clock_work(void *args);
 
 /**
- * @brief       ctor hook for low_res_clock
+ * @brief       epoll routine for high res timer
  * 
- * @note        低精度线程ctor钩子，用来创建线程池
+ * @note        高精度定时器的tfd独立管理，不注册到ev_loop，避免调用开销太大影响精度
  */
-static attr_force_inline void _low_res_clock_init();
+static void* _ev_timer_high_res_epoll_main(void *args);
 
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
 
-// 低精度时钟更新线程，每100ms唤醒一次
-declare_ev_thd(low_res_clock, _low_res_clock_work, NULL, 100)
+// 低精度时钟更新线程
+declare_ev_thd(low_res_clock, _low_res_clock_work, NULL, 0)
 // 当前时间，ms表示
 static ATOMIC_UINT64_T g_curr_ms = 0;
 // 最小堆，管理定时器
@@ -127,9 +131,15 @@ static ev_spinlock_t g_heap_spinlock = EV_SPINLOCK_INITIALIZER;
 // 启动时间，mono
 static uint64_t g_startup_ms = 0;
 
+// 低精度线程池
 declare_thp(ev_timer, THREAD_POOL_TH_COUNT_MAX)
-
+// 高精度线程池
 declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
+
+// 高精度定时器epoll线程id
+static pthread_t g_high_res_timer_epoll_tid = -1;
+// epoll_fd
+static int g_high_res_timer_epoll_fd = -1;
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -138,58 +148,58 @@ declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
 // 定义堆操作
 declare_heap(ev_timer, ev_timer, ev_timer_t, item, 1, 1024, _ev_timer_cmp)
 
-static inline void _low_res_clock_init()
-{
-    // 启动
-    thp_run(ev_timer);
-}
-
 static void _low_res_clock_work(void *args)
 {
-    uint64_t ms = mono_time_get();
-    ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
-    ev_timer_t *expired_batch[EV_TIMER_BATCH] = {};
-    int batch_count = 0;
-
-    ev_with_spinlock(&g_heap_spinlock)
+    while(1)
     {
-        ev_timer_t *timer;
+        uint64_t ms = mono_time_get();
+        ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
+        ev_timer_t *expired_batch[EV_TIMER_BATCH] = {};
+        int batch_count = 0;
 
-        while((batch_count < EV_TIMER_BATCH) && (timer = ev_timer_heap_top(&g_ev_timer_heap)))
+        ev_with_spinlock(&g_heap_spinlock)
         {
-            if(ATOM_LOAD(&timer->deleted, MORDER_ACQUIRE))  // 存在deleted标记，说明定时器被取消了
+            ev_timer_t *timer;
+
+            while((batch_count < EV_TIMER_BATCH) && (timer = ev_timer_heap_top(&g_ev_timer_heap)))
             {
-                ev_timer_heap_pop(&g_ev_timer_heap);    // 移出堆
-                // 重置actived和deleted
+                if(ATOM_LOAD(&timer->deleted, MORDER_ACQUIRE))  // 存在deleted标记，说明定时器被取消了
+                {
+                    ev_timer_heap_pop(&g_ev_timer_heap);    // 移出堆
+                    // 重置actived和deleted
+                    ATOM_STORE(&timer->actived, 0, MORDER_RELEASE);
+                    ATOM_STORE(&timer->deleted, 0, MORDER_RELEASE);
+                    continue;
+                }
+
+                if(ms < timer->expired_time)
+                    break;
+
+                dbg("low res timer [%s] expired", timer->name);
+
+                // 定时器移出堆顶
+                ev_timer_heap_pop(&g_ev_timer_heap);
+                // 设置actived为0，等待重启
                 ATOM_STORE(&timer->actived, 0, MORDER_RELEASE);
-                ATOM_STORE(&timer->deleted, 0, MORDER_RELEASE);
-                continue;
+
+                expired_batch[batch_count++] = timer;
             }
-
-            if(ms < timer->expired_time)
-                break;
-
-            dbg("timer expired, cur %lu", ms);
-
-            // 定时器移出堆顶
-            ev_timer_heap_pop(&g_ev_timer_heap);
-            // 设置actived为0，等待重启
-            ATOM_STORE(&timer->actived, 0, MORDER_RELEASE);
-
-            expired_batch[batch_count++] = timer;
         }
-    }
 
-    // 锁外提交任务，避免回调函数删除定时器导致内存踩踏
-    for(int i = 0; i < batch_count; ++ i)
-        thp_submit_task(ev_timer, expired_batch[i]->cb, expired_batch[i]->args);
+        // 锁外提交任务，避免回调函数删除定时器导致内存踩踏
+        for(int i = 0; i < batch_count; ++ i)
+            thp_submit_task(ev_timer, expired_batch[i]->cb, expired_batch[i]->args);
+
+        usleep(100 * 1000);
+    }
 }
 
-ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args)
+ev_timer_t* ev_timer_create(const char *name, uint32_t timeout, ev_timer_cb_func cb, void *args)
 {
-    assert(timeout && cb);
+    assert(name && timeout && cb);
 
     ev_timer_t *timer = mp_calloc(1, sizeof(ev_timer_t));
+    timer->name = mp_strdup(name);
     timer->expired_time = ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE) + timeout;
     timer->timeout = timeout;
     timer->cb = cb;
@@ -210,6 +220,7 @@ void ev_timer_destroy(ev_timer_t **timer)
     }
 
     // 释放内存
+    mp_free((*timer)->name, strlen((*timer)->name));
     mp_free(*timer, sizeof(ev_timer_t));
     *timer = NULL;
 }
@@ -235,8 +246,6 @@ void ev_timer_start(ev_timer_t *timer)
         timer->expired_time = ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE) + timer->timeout;
         ev_with_spinlock(&g_heap_spinlock)
             ev_timer_heap_add(&g_ev_timer_heap, timer); // 加入堆
-
-        dbg("start timer %dms", timer->expired_time);
     }
 }
 
@@ -273,7 +282,7 @@ static void _ev_high_res_timer_el_cb(int fd, void *args)
 {
     ev_high_res_timer_t *hr_timer = (ev_high_res_timer_t*)args;
 
-    //dbg_always("High res timer callback for %s", hr_timer->name);
+    dbg("High res timer [%s] expired, put task into thread pool", hr_timer->name);
 
     thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);   // 投递到线程池
 }
@@ -305,7 +314,14 @@ ev_high_res_timer_t* ev_high_res_timer_create(const char *name, uint64_t timeout
     }
 
     // tfd注册到evloop
-    event_loop_register_file_event_timerfd(hr_timer->tfd, EL_FILE_EVENT_READABLE, _ev_high_res_timer_el_cb, hr_timer);
+    //event_loop_register_file_event_timerfd(hr_timer->tfd, EL_FILE_EVENT_READABLE, _ev_high_res_timer_el_cb, hr_timer);
+    // 加入epoll监听EPOLLIN
+    struct epoll_event ev = {
+        .events = EPOLLIN,
+        .data.ptr = hr_timer,
+    };
+    if(0 != epoll_ctl(g_high_res_timer_epoll_fd, EPOLL_CTL_ADD, hr_timer->tfd, &ev))
+        goto error;
 
     return hr_timer;
 
@@ -323,15 +339,18 @@ void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer)
 
     // 设置参数，启动定时器
     struct itimerspec its = {
-        .it_interval = 0,   // 单次启动
+        .it_interval.tv_nsec = (hr_timer->tv % 1000) * 1000000L,
+        .it_interval.tv_sec = hr_timer->tv / 1000,
         .it_value.tv_nsec = (hr_timer->tv % 1000) * 1000000L,
         .it_value.tv_sec = hr_timer->tv / 1000,
     };
 
     if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
-        dbg_error("start timer %s fail", hr_timer->name);
-
-    // dbg("ev high res timer %s start", hr_timer->name);
+    {
+        char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
+        snprintf(ctx, sizeof(ctx), "ev_hr_timer [%s] start fail", hr_timer->name);
+        syslog_warn(SYSLOG_MODULE_TIMER, ctx);
+    }
 
     return;
 }
@@ -346,6 +365,39 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
         dbg_error("stop timer %s fail", hr_timer->name);
 }
 
+static void* _ev_timer_high_res_epoll_main(void *args)
+{
+    prctl(PR_SET_NAME, "hrt_epoll_main");\
+
+    struct epoll_event events[EV_HIGH_RES_TIMER_COUNT_MAX] = {};
+
+    while(1)
+    {
+        int nfds = epoll_wait(g_high_res_timer_epoll_fd, events, EV_HIGH_RES_TIMER_COUNT_MAX, -1);     // 阻塞等待
+        if(nfds < 0)
+        {
+            if(errno == EINTR)
+                continue;
+            perror("high_res epoll_wait");
+            break;
+        }
+
+        // 处理就绪事件
+        for(int i = 0; i < nfds; ++ i)
+        {
+            ev_high_res_timer_t *hr_timer = events[i].data.ptr;
+            // 先把eventfd读取完毕
+            eventfd_read_all(hr_timer->tfd);
+
+            dbg("high res timer [%s] expired, put task into thp", hr_timer->name);
+
+            thp_submit_task(ev_high_res_timer, hr_timer->cb, hr_timer->args);
+        }
+    }
+
+    return NULL;
+}
+
 uint64_t running_time_get()
 {
     uint64_t curr = mono_time_get();
@@ -354,13 +406,17 @@ uint64_t running_time_get()
 
 void ev_timer_module_init(void)
 {
-    // 更新当前时钟
+    // 创建epoll_fd用于高精度定时器
+    g_high_res_timer_epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    pfm_ensure_ret_void(g_high_res_timer_epoll_fd >= 0);
+
+    // 更新当前低精度时钟
     uint64_t ms = mono_time_get();
     ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
     // 设置启动时间
     g_startup_ms = ms;
 
-    // 初始化线程池
+    // 低精度定时器执行回调的线程池
     thp_register(ev_timer);
     thp_run(ev_timer);
 
@@ -371,8 +427,11 @@ void ev_timer_module_init(void)
     ev_timer_heap_init(&g_ev_timer_heap);
 
     ev_thd_register(low_res_clock);
-    declare_ev_thd_ctor(low_res_clock, _low_res_clock_init);
     ev_thd_run(low_res_clock);
+    ev_thd_wake(low_res_clock);     // 唤醒一次
+
+    // 高精度定时器管理线程
+    pthread_create(&g_high_res_timer_epoll_tid, NULL, _ev_timer_high_res_epoll_main, NULL);
 
     dbg_major("ev timer module init ok");
 }

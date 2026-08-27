@@ -27,6 +27,8 @@
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <linux/if_packet.h>
+#include <sys/prctl.h>
+
 #include "ftx/ftx.h"
 #include "mp/mp_slab.h"
 #include "msg_q/msg_q.h"
@@ -359,6 +361,10 @@ static void* _ftx_tx_routine(void *args)
     struct mmsghdr mmsg[FTX_TX_MSGQ_SIZE] = {};         // 内核消息
     struct iovec iov[FTX_TX_MSGQ_SIZE] = {};
     int pendings = 0;   // 待发送数量
+
+    char buf[16] = {};
+    snprintf(buf, sizeof(buf), "ftx_%s", ftxor->if_name);
+    prctl(PR_SET_NAME, buf);
 
     // 初始填充消息
     int i = 0;

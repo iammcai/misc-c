@@ -19,9 +19,14 @@
 /* ========================================================================== */
 
 #include <string.h>
+#include <stdio.h>
+#include <sys/prctl.h>
+
 #include "thp/thp.h"
 #include "cli/cli.h"
-#include "mp/mp.h"
+#include "mp/mp_fixed.h"
+#include "plat/atom.h"
+#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -32,7 +37,7 @@
 /* ========================================================================== */
 
 // 工作队列使用内存池的大小
-#define THP_WORK_COUNT_MAX      (64*4)
+#define THP_WORK_COUNT_MAX      (16*4)
 
 // 打印格式：name count state
 #define THP_DUMP_HEAD_DMT   "%-12s%-8s%-12s\n"
@@ -46,7 +51,10 @@
 static thp_hash_head_t g_thp_hash = {};
 
 // 全局内存池，用于线程池任务节点
-declare_mem_type_fixed(thp_work_node, sizeof(thp_work_t), THP_WORK_COUNT_MAX)
+declare_mp_fixed(thp_work_node, THP_WORK_COUNT_MAX, sizeof(thp_work_t))
+
+// 全局工作线程编号
+ATOMIC_UINT32_T g_thp_work_thread_id = 0;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -126,7 +134,7 @@ void thp_init(thp_t *thp, const char *name, unsigned char thread_count)
 {
     assert(thp && name);
 
-    thp->name = mp_strdup(name);
+    thp->name = strdup(name);
     pthread_mutex_init(&thp->mtx, NULL);
     pthread_cond_init(&thp->cond, NULL);
     thp->thread_count = thread_count;
@@ -151,7 +159,7 @@ void _thp_run(thp_t *thp)
         }
     }
     // 申请线程id数组空间
-    thp->thread_array = (pthread_t*)mp_calloc(thp->thread_count, sizeof(pthread_t));
+    thp->thread_array = (pthread_t*)calloc(thp->thread_count, sizeof(pthread_t));
     // 创建工作线程
     unsigned char i = 0;
     for(i = 0; i < thp->thread_count; ++ i)
@@ -165,6 +173,10 @@ void _thp_run(thp_t *thp)
 void* _thp_thread_routine(void *args)
 {
     thp_t *thp = (thp_t*)args;
+
+    char buf[16] = {};      // 用来设置name，prctl限制15
+    snprintf(buf, sizeof(buf), "thp_thread%d", ATOM_FETCH_ADD(&g_thp_work_thread_id, 1, MORDER_ACQ_REL));
+    prctl(PR_SET_NAME, buf);
 
     while(1)
     {
@@ -209,9 +221,12 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
     thp_work_t *task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
     if(!task)
     {
-        dbg_always("thp %s, mp fixed node get task memory fail, task loss", thp->name);
+        char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
+        snprintf(ctx, sizeof(ctx), "thp %s get task node memory fail, task lose.", thp->name);
+        syslog_warn(SYSLOG_MODULE_THP, ctx);
         return;
     }
+    memset(task, 0, sizeof(thp_work_t));
 
     task->wf = wf;
     task->args = args;
@@ -237,7 +252,7 @@ void _thp_shutdown(thp_t *thp)
         for(; i < thp->thread_count; ++ i)
             pthread_join(thp->thread_array[i], NULL);
         // 释放内存
-        mp_free(thp->thread_array, thp->thread_count * sizeof(pthread_t));
+        free(thp->thread_array);
     }
 
     dbg("thp %s shutdown", thp->name);
@@ -268,7 +283,7 @@ void thp_module_init(void)
 
     cli_register("show thread pool", "show all thread pools info", NULL, _thp_dump_cli_hook);
 
-    mem_type_attr_register(thp_work_node);
+    mem_type_attr_fixed_register(thp_work_node);
 
     dbg_major("thp module init ok");
 }

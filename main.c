@@ -30,6 +30,7 @@
 #include "ftx/ftx.h"
 #include "syslog/syslog.h"
 #include "mp/mp_slab.h"
+#include "mp/mp_fixed.h"
 #include "event/ev_thread.h"
 #include "thp/thp.h"
 #include "event/ev_timer.h"
@@ -125,15 +126,18 @@ static attr_force_inline void _platfrom_init()
     // mem type attr先初始化
     mem_type_attr_module_init();
     
+    mp_fixed_module_init_th();
     // 线程池初始化
     thp_module_init();
+
+    // 时钟初始化
+    ev_timer_module_init();
+
+    mp_fixed_module_init_bh();
 
     // 内存池初始化
     mp_module_init();
     mp_slab_module_init();
-
-    // 时钟初始化
-    ev_timer_module_init();
 
     // debug初始化
     debug_init();

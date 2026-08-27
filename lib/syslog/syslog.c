@@ -22,6 +22,8 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/prctl.h>
+
 #include "syslog/syslog.h"
 #include "plat/debug.h"
 #include "msg_q/msg_q.h"
@@ -193,6 +195,7 @@ static void _syslog_analyze(syslog_entry_t *entry);
  */
 static void* _syslog_consumer(void *args)
 {
+    prctl(PR_SET_NAME, "syslog_consumer");
     dbg_major("syslog consumer start working");
     while(1)
     {

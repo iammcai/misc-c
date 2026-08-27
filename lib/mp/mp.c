@@ -16,6 +16,7 @@
  *   1.2 | 2026-06-15 | cai | Add debug method.
  *   1.3 | 2026-07-11 | cai | Add auto init mp.
  *   2.0 | 2026-07-14 | cai | Add nonfixed mp.
+ *   3.0 | 2026-08-27 | cai | Remove mp_fixed to mp_fixed.c
  */
 
 /* ========================================================================== */
@@ -40,11 +41,6 @@
 
 // 非固定大小内存碎片阈值，64B给用户使用
 #define NONFIXED_MP_MEM_PIECE   (64)
-
-// 获取node中的data给用户
-#define mp_fixed_node_data(_node)   (_node)->data;
-// 根据data获取node
-#define mp_fixed_data_node(_data)   container_of(_data, fixed_mem_node_t, data)
 
 // 获取nonfixed node中的data
 #define mp_nonfixed_node_data(_node)    (_node)->data
@@ -81,22 +77,6 @@ static attr_pure_inline int _mem_type_attr_cmp(mem_type_attr_t *a1, mem_type_att
 }
 
 /**
- * @brief       free list cmp func
- * 
- * @param[in]   l1  - list 1
- * @param[in]   l2  - list 2
- * 
- * @retval      cmp val
- * 
- * @note        cmp by attr name
- */
-static attr_pure_inline int _fixed_free_list_cmp(fixed_free_list_t *l1, fixed_free_list_t *l2)
-{
-    assert(l1 && l1->attr && l1->attr->name && l2 && l2->attr && l2->attr->name);
-    return strcmp(l1->attr->name, l2->attr->name);
-}
-
-/**
  * @brief       mem type attr hash func
  * 
  * @param[in]   a   - attr
@@ -109,21 +89,6 @@ static attr_pure_inline unsigned int _mem_type_attr_hash(mem_type_attr_t *a)
 {
     assert(a && a->name);
     return type_hash_jhash(a->name, strlen(a->name), 0);
-}
-
-/**
- * @brief       fixed free list hash func
- * 
- * @param[in]   l   - list
- * 
- * @retval      hash val
- * 
- * @note        hash by attr name
- */
-static attr_pure_inline unsigned int _fixed_free_list_hash(fixed_free_list_t *l)
-{
-    assert(l && l->attr && l->attr->name);
-    return type_hash_jhash(l->attr->name, strlen(l->attr->name), 0);
 }
 
 /**
@@ -142,94 +107,6 @@ extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr)
 {
     return attr->flag & MEM_TYPE_ATTR_SLAB;
 }
-
-/**
- * @brief       获取tid
- * 
- * @param[in]
- */
-static attr_pure_inline tid_t tid_get(mem_type_attr_t *attr);
-
-static attr_pure_inline int _mp_fixed_node_belong_local(fixed_mem_node_t *node)
-{
-    return node->tid == tid_get(node->attr);
-}
-
-/**
- * @brief       put node local
- * 
- * @param[in]   free_list   - ptr to free_list
- * @param[in]   node        - ptr to node
- */
-static attr_force_inline void _mp_fixed_node_put_local(fixed_free_list_t *free_list, fixed_mem_node_t *node);
-
-/**
- * @brief       put node remote
- * 
- * @param[in]   aq_head - remote aq head
- * @param[in]   node    - ptr to node
- */
-static attr_force_inline void _mp_fixed_node_put_remote(fixed_recycle_spsc_atom_queue_head_t *aq_head, fixed_mem_node_t *node);
-
-/**
- * @brief       find free_list_t ptr by tid
- * 
- * @param[in]   tid     - tid
- */
-static attr_force_inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t tid);
-
-/**
- * @brief       new fixed mem node from system
- * 
- * @param[in]   attr    - mem type attr
- * 
- * @retval      ptr to node
- */
-static attr_force_inline fixed_mem_node_t* fixed_mem_node_new(mem_type_attr_t *attr)
-{
-    assert(mem_type_attr_fixed_size(attr));     // 检查是否固定大小
-
-    fixed_mem_node_t* node = mp_calloc(1, sizeof(fixed_mem_node_t)+attr->node_size);    // 柔性数组分配需添加node_size
-    assert(node);
-
-    node->size = attr->node_size;
-    node->attr = attr;
-    node->tid = tid_get(attr);
-
-    // 更新分配计数
-    ATOM_FETCH_ADD(&attr->allocated, 1, MORDER_ACQ_REL);
-
-    return node;
-}
-
-/**
- * @brief       recycle fixed node work func
- * 
- * @note        固定大小节点内存回收线程的工作函数
- */
-static attr_force_inline void fixed_node_recycle_work(void *args);
-
-/**
- * @brief       cli hook for: show mp
- */
-static void* _mp_show_mp_hook(unsigned char argc, char *argv[]);
-
-/**
- * @brief       find mp fixed free list of self thread, if not exist, create it.
- * 
- * @param[in]   attr    - mem type attr
- * @param[in]   supply  - if create, supply or not
- * 
- * @retval      ptr to free list
- */
-static attr_force_inline fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply);
-
-/**
- * @brief       auto init global free list hash table
- * 
- * @note        检查线程所见的hashtable是否初始化，没有的话，调用
- */
-static void _g_fixed_free_list_hash_init();
 
 /**
  * @brief       cmp two nonfixed mp
@@ -359,18 +236,12 @@ static void _nonfixed_node_recycle_work(void *args);
 
 // 全局哈希表，存储所有内存类型属性
 static mem_type_attr_hash_head_t g_mem_type_attr_hash_head = {};
-
-// 全局哈希表，存储所有固定大小空闲链表头。使用线程私有属性，每个线程持有一个同名的副本，互不干扰，做到隔离
-static thread_local fixed_free_list_head_hash_head_t g_fixed_free_list_hash_head = {};
+// 全局哈希表的锁
+static ev_rwlock_t g_mem_type_attr_hash_rwlock = EV_RWLOCK_INITIALIZER;
 
 // 全局tid，用于自行管理分配逻辑线程ID
 static tid_t g_tid = 0;
-// 全局链表，存储所有线程独立的回收队列
-static fixed_recycle_aq_list_head_t g_fixed_recycle_aq_list_head = {};
-// 回收队列链表读写锁
-static ev_rwlock_t g_fixed_recyle_aq_list_rwlock = EV_RWLOCK_INITIALIZER;
-// 声明回收事件线程，兜底1000ms回收一次
-declare_ev_thd(fixed_node_recycle, fixed_node_recycle_work, NULL, 1000)
+
 // 全局统计数据
 ATOMIC_UINT32_T g_mp_calloc_cnt = 0;     // 申请次数
 ATOMIC_UINT64_T g_mp_calloc_size = 0;    // 申请大小
@@ -379,8 +250,6 @@ ATOMIC_UINT64_T g_mp_free_size = 0;      // 释放大小
 
 // 线程独立的缓存，当前attr
 static thread_local mem_type_attr_t *g_attr_cache = NULL;
-// 线程独立的缓存，当前free_list
-static thread_local fixed_free_list_t *g_fixed_free_list = NULL;
 
 // 全局哈希表，存储所有非固定大小内存池
 static thread_local nonfixed_mp_hash_head_t g_nonfixed_mp_hash = {};
@@ -403,15 +272,6 @@ declare_ev_thd(nonfixed_node_recycle, _nonfixed_node_recycle_work, NULL, 1000)
 // 定义内存类型属性哈希表相关操作
 declare_hash(mem_type_attr, mem_type_attr, mem_type_attr_t, item, 1, 31, _mem_type_attr_cmp, _mem_type_attr_hash)
 
-// 定义空闲链表头哈希表相关操作
-declare_hash(fixed_free_list_head, fixed_free_list_head, fixed_free_list_t, item, 1, 31, _fixed_free_list_cmp, _fixed_free_list_hash)
-
-// 定义回收队列链表相关操作
-declare_list(fixed_recycle_aq, fixed_recycle_aq, fixed_recycle_aq_t, item)
-
-// 定义回收队列的相关操作
-declare_spsc_atom_queue(fixed_recycle, fixed_recycle, fixed_mem_node_t, aq_item)
-
 void mem_type_attr_init(mem_type_attr_t *attr)
 {
     assert(attr && attr->name);
@@ -421,7 +281,8 @@ void mem_type_attr_init(mem_type_attr_t *attr)
     ATOM_STORE(&attr->used, 0, MORDER_RELEASE);
 #endif
 
-    mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
+    ev_with_wrlock(&g_mem_type_attr_hash_rwlock)
+        mem_type_attr_hash_add(&g_mem_type_attr_hash_head, attr);
 }
 
 mem_type_attr_t* mem_type_attr_find(const char *name)
@@ -429,248 +290,33 @@ mem_type_attr_t* mem_type_attr_find(const char *name)
     if(!name)
         return NULL;
     mem_type_attr_t key = {.name = name};
-    return mem_type_attr_hash_find(&g_mem_type_attr_hash_head, &key);
+    mem_type_attr_t *result = NULL;
+
+    ev_with_rdlock(&g_mem_type_attr_hash_rwlock)
+        result = mem_type_attr_hash_find(&g_mem_type_attr_hash_head, &key);
+
+    return result;
 }
 
 mem_type_attr_t* mem_type_attr_first()
 {
-    return mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
+    mem_type_attr_t *result = NULL;
+    ev_with_rdlock(&g_mem_type_attr_hash_rwlock)
+        result = mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
+    return result;
 }
 
 mem_type_attr_t* mem_type_attr_next(mem_type_attr_t *attr)
 {
-    return mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
-}
-
-void _mp_fixed_init(mem_type_attr_t *attr)
-{
-    // 重要：检查g_fixed_free_list_hash_head是否空，是的话先初始化一下
-    _g_fixed_free_list_hash_init();
-
-    assert(attr && attr->name && mem_type_attr_fixed_size(attr));   // 检查参数
-
-    // 在线程私有的g_fixed_free_list_hash_head哈希表中查找是否存在对应free list
-    fixed_free_list_t key = {.attr = attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    if(!free_list)  // 没有对应free_list，则创建
-    {
-        free_list = mp_calloc(1, sizeof(fixed_free_list_t));
-        assert(free_list);
-        free_list->attr = attr;
-        fixed_free_list_init(&free_list->head);     // 初始化空闲链表头
-        fixed_free_list_head_hash_add(&g_fixed_free_list_hash_head, free_list);     // 加到全局哈希表
-
-        // 初始化内存回收队列相关
-        free_list->recycle_aq_head.tid = tid_new();
-        fixed_recycle_spsc_atom_queue_init(&free_list->recycle_aq_head.local_recycle_aq_head);
-        fixed_recycle_spsc_atom_queue_init(&free_list->recycle_aq_head.remote_recycle_aq_head);
-        // 加到全局链表
-        ev_with_wrlock(&g_fixed_recyle_aq_list_rwlock)
-            fixed_recycle_aq_list_add_tail(&g_fixed_recycle_aq_list_head, &free_list->recycle_aq_head);
-    }
-}
-
-void fixed_mp_supply(mem_type_attr_t *attr)
-{
-    int count = 0;
-    fixed_mem_node_t *node = NULL;
-
-    assert(attr);
-
-    fixed_free_list_t key = {.attr = attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    assert(free_list);
-
-    fixed_free_list_head_t *head = &free_list->head;
-
-    while(fixed_free_list_count(head) < attr->node_max_num)
-    {
-        node = fixed_mem_node_new(attr);
-        fixed_free_list_add_head(head, node);
-    }
-}
-
-static void _g_fixed_free_list_hash_init()
-{
-    fixed_free_list_head_hash_head_t empty = {};
-    if(!memcmp(&g_fixed_free_list_hash_head, &empty, sizeof(fixed_free_list_head_hash_head_t)))
-        fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
-}
-
-static inline fixed_free_list_t* _mp_fixed_free_list_get_or_create(mem_type_attr_t *attr, int supply)
-{
-    assert(attr);
-
-    if(attr == g_attr_cache)
-        return g_fixed_free_list;
-
-    g_attr_cache = attr;
-
-    // 初始化哈希表，若有必要
-    _g_fixed_free_list_hash_init();
-    // 先查找哈希表中是否存在对应记录
-    fixed_free_list_t key = {.attr = attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    
-    if(free_list)
-    {
-        g_fixed_free_list = free_list;
-        return free_list;
-    }
-
-    // 如果不存在，说明没有显式初始化，这里初始化，并且补充节点
-    _mp_fixed_init(attr);
-    if(supply)
-        fixed_mp_supply(attr);
-
-    free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    assert(free_list);
-
-    g_fixed_free_list = free_list;
-
-    return free_list;
-}
-
-static inline fixed_mem_node_t* _mp_fixed_node_get_fast(mem_type_attr_t *attr)
-{
-    // 检查当前缓存
-    if(attr != g_attr_cache)
-        return NULL;
-
-    fixed_free_list_t *free_list = g_fixed_free_list;
-    return fixed_free_list_pop(&free_list->head);           // 直接pop
-}
-
-void* _mp_fixed_node_get(mem_type_attr_t *attr)
-{
-    if(!mem_type_attr_fixed_size(attr))     // 检查是否固定大小
-        return NULL;
-
-    fixed_mem_node_t *node = NULL;
-    // fast路径先尝试
-    node = _mp_fixed_node_get_fast(attr);
-    if(node)
-        goto done;
-
-    // 找到free list，没有的话创建
-    fixed_free_list_t *free_list = _mp_fixed_free_list_get_or_create(attr, 1);
-
-    // 将local aq中的节点都归还回来
-    fixed_mem_node_t *recycle_node = NULL;
-    int batch = 0;
-    while(recycle_node = fixed_recycle_spsc_atom_queue_pop(&free_list->recycle_aq_head.local_recycle_aq_head))
-    {
-        fixed_free_list_add_head(&free_list->head, recycle_node);
-        ++ batch;
-#if MP_DBG_MODE
-        // 更新使用计数
-        ATOM_FETCH_SUB(&recycle_node->attr->used, 1, MORDER_ACQ_REL);
-#endif
-    }
-    //dbg_always("fixed mp %s recycle batch %d", attr->name, batch);
-
-    if(!fixed_free_list_count(&free_list->head))    // 检查空闲节点个数
-        return NULL;
-
-    node = fixed_free_list_pop(&free_list->head); // pop一个节点
-
-done:
-#if MP_DBG_MODE
-    // 更新使用计数
-    ATOM_FETCH_ADD(&attr->used, 1, MORDER_ACQ_REL);
-#endif
-
-    return mp_fixed_node_data(node);
-}
-
-static inline void _mp_fixed_node_put_local(fixed_free_list_t *free_list, fixed_mem_node_t *node)
-{
-    fixed_free_list_add_head(&free_list->head, node);   // 返回空闲链表
-}
-
-static inline void _mp_fixed_node_put_remote(fixed_recycle_spsc_atom_queue_head_t *aq_head, fixed_mem_node_t *node)
-{
-    // 将node放置到本线程的remote aq中
-    fixed_recycle_spsc_atom_queue_push(aq_head, node);
-}
-
-void _mp_fixed_node_put(void *ptr)
-{
-    assert(ptr);
-    fixed_mem_node_t *node = mp_fixed_data_node(ptr);
-    assert(node && mem_type_attr_fixed_size(node->attr));       // 确认是否fixed
-
-    // 找到free list，没有的话创建
-    fixed_free_list_t *free_list = _mp_fixed_free_list_get_or_create(node->attr, 0);
-
-    // 本地归还 or 异地归还
-    if(node->tid == free_list->recycle_aq_head.tid)
-        _mp_fixed_node_put_local(free_list, node);
-    else
-        _mp_fixed_node_put_remote(&free_list->recycle_aq_head.remote_recycle_aq_head, node);
+    mem_type_attr_t *result = NULL;
+    ev_with_rdlock(&g_mem_type_attr_hash_rwlock)
+        result = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
+    return result;
 }
 
 tid_t tid_new()
 {
     return ATOM_ADD_FETCH(&g_tid, 1, MORDER_ACQ_REL);
-}
-
-static inline tid_t tid_get(mem_type_attr_t *attr)
-{
-    assert(attr);
-    fixed_free_list_t key = {.attr = attr};
-    fixed_free_list_t *free_list = fixed_free_list_head_hash_find(&g_fixed_free_list_hash_head, &key);
-    assert(free_list);
-    return free_list->recycle_aq_head.tid;
-}
-
-static inline fixed_free_list_t* _fixed_free_list_head_hash_find_by_tid(tid_t tid)
-{
-    fixed_free_list_t *fl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
-    while(fl)
-    {
-        if(fl->recycle_aq_head.tid == tid)
-            return fl;
-        fl = fixed_free_list_head_hash_next(&g_fixed_free_list_hash_head, fl);
-    }
-    return NULL;
-}
-
-static inline void fixed_node_recycle_work(void *args)
-{
-    int batch = 0;
-    // 遍历所有aq，逐一将节点挂到正确的aq上
-    ev_with_rdlock(&g_fixed_recyle_aq_list_rwlock)
-    {
-        fixed_recycle_aq_t *aq = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
-        while(aq)
-        {
-            fixed_mem_node_t *node = NULL;
-            while(node = fixed_recycle_spsc_atom_queue_pop(&aq->remote_recycle_aq_head))
-            {
-                // 找到对应aq_t，挂到其local队列
-                fixed_recycle_aq_t *aq_target = fixed_recycle_aq_list_first(&g_fixed_recycle_aq_list_head);
-                while(aq_target)
-                {
-                    if(aq_target->tid == node->tid)
-                    {
-                        fixed_recycle_spsc_atom_queue_push(&aq_target->local_recycle_aq_head, node);
-                        ++ batch;
-                        break;
-                    }
-                    aq_target = fixed_recycle_aq_list_next(aq_target);
-                }
-                if(!aq_target)
-                {
-                    char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                    snprintf(ctx, sizeof(ctx), "fixed mp node %p, tid %d, attr_name %s, find local aq fail", node, node->tid, node->attr->name);
-                    syslog_warn(SYSLOG_MODULE_MP, ctx);
-                }
-            }
-            aq = fixed_recycle_aq_list_next(aq);
-        }
-    }
-    // dbg_always("recycle work batch num %d", batch);
 }
 
 void mem_type_attr_module_init()
@@ -683,19 +329,10 @@ void mem_type_attr_module_init()
 
 void mp_module_init()
 {
-    // fixed mp初始化
-    fixed_free_list_head_hash_init(&g_fixed_free_list_hash_head);
-    fixed_recycle_aq_list_init(&g_fixed_recycle_aq_list_head);
-    ev_thd_register(fixed_node_recycle);
-    ev_thd_run(fixed_node_recycle);
-
     // 初始化存储所有recycle aq的哈希表
     nonfixed_recycle_aq_hash_init(&g_nonfixed_recycle_aq_hash);
     ev_thd_register(nonfixed_node_recycle);
     ev_thd_run(nonfixed_node_recycle);
-
-    // cli注册
-    cli_register("show mp", "dump mem pool info", NULL, _mp_show_mp_hook);
 
     dbg_major("mp module init ok");
 }
@@ -1002,98 +639,11 @@ static void _nonfixed_node_recycle_work(void *args)
     }
 }
 
-static void* _mp_show_mp_hook(unsigned char argc, char *argv[])
-{
-    unsigned long calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_ACQUIRE);
-    unsigned long free_size = ATOM_LOAD(&g_mp_free_size, MORDER_ACQUIRE);
-    ATOMIC_UINT32_T total = 0, used = 0;
-
-    // sys calloc
-
-    safe_printf("\nalloc count: %u, size: %luB\n", ATOM_LOAD(&g_mp_calloc_cnt, MORDER_ACQUIRE), calloc_size);
-    safe_printf("free  count: %u, size: %luB\n", ATOM_LOAD(&g_mp_free_cnt, MORDER_ACQUIRE), free_size);
-    safe_printf("current used: %lu B, %.3f KB\n\n", calloc_size - free_size, (double)(calloc_size - free_size)/1024);
-
-    safe_printf("MP debug mode: [%s], Use-Free-Usage-Piece invalid while close!\n\n", MP_DBG_MODE ? "open" : "close");
-
-    safe_printf(MEM_ATTR_FMT_HEAD MEM_ATTR_FMT_HEAD, 
-        "Name", "Type", "Node_Size", "Total", "Use", "Free", "Usage(%)", "piece",
-        "----", "----", "---------", "-----", "---", "----", "--------",  "-----"
-    );
-
-    // mem type attr
-
-        mem_type_attr_t *attr = mem_type_attr_hash_first(&g_mem_type_attr_hash_head);
-        while(attr)
-        {
-            total = ATOM_LOAD(&attr->allocated, MORDER_ACQUIRE);
-#if MP_DBG_MODE
-            used = ATOM_LOAD(&attr->used, MORDER_ACQUIRE);
-#endif
-            if(mem_type_attr_fixed_size(attr))
-#if MP_DBG_MODE
-                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, used, total-used, total ? (double)used/total*100 : 0, "/");
-#else
-                safe_printf(MEM_ATTR_FIXED_FMT_DATA, attr->name, "fixed", attr->node_size, total, 0, 0, 0.0, "/");
-#endif
-            else if(mem_type_attr_slab(attr))
-#if MP_DBG_MODE
-                safe_printf(MEM_ATTR_SLAB_FMT_DATA, attr->name, "slab", "/", total, used, total-used, total ? (double)used/total*100 : 0, "/");
-#else
-                safe_printf(MEM_ATTR_SLAB_FMT_DATA, attr->name, "slab", "/", total, 0, 0, 0.0, "/");
-#endif
-            else
-#if MP_DBG_MODE
-                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, used, total-used, total ? (double)used/total*100 : 0, ATOM_LOAD(&attr->piece, MORDER_RELAXED));
-#else
-                safe_printf(MEM_ATTR_NONFIXED_FMT_DATA, attr->name, "nonfixed", "/", total, 0, 0, 0.0, 0);
-#endif
-            attr = mem_type_attr_hash_next(&g_mem_type_attr_hash_head, attr);
-    }
-
-    safe_printf("\n");
-
-    return NULL;
-}
-
 /* ========================================================================== */
 /*                              Debug Function                                */
 /* ========================================================================== */
 
 #if MP_TRACE
-
-void mp_dump_fixed_free_list()
-{
-    fixed_free_list_t *ffl = NULL;
-
-    printf("dump fixed free list info\n");
-
-    ffl = fixed_free_list_head_hash_first(&g_fixed_free_list_hash_head);
-    while(ffl)
-    {
-        // 查看回收队列情况
-        fixed_recycle_aq_t *recycle_aq = &ffl->recycle_aq_head;
-        printf("recycle aq: pos %p, tid %u, local aq count %u, remote aq count %u\n",
-            recycle_aq, recycle_aq->tid,
-            fixed_recycle_spsc_atom_queue_count(&recycle_aq->local_recycle_aq_head),
-            fixed_recycle_spsc_atom_queue_count(&recycle_aq->remote_recycle_aq_head)
-        );
-
-        // 查看空闲节点
-        fixed_free_list_head_t *head = &ffl->head;
-        fixed_mem_node_t *node = fixed_free_list_first(head);
-        printf("dump fixed free list, count %u\n", fixed_free_list_count(head));
-        while(node)
-        {
-            printf("\tpos %p, attr->name %s, tid %u, size %u, user pos %p\n",
-                node, node->attr->name, node->tid, node->size, node->data);
-            node = fixed_free_list_next(node);
-        }
-        printf("========\n");
-
-        ffl = fixed_free_list_head_hash_next(&g_fixed_free_list_hash_head, ffl);
-    }
-}
 
 void nonfixed_mp_dump()
 {

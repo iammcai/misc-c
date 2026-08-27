@@ -143,13 +143,14 @@ extern uint64_t running_time_get();
 /**
  * @brief       create an event timer
  * 
+ * @param[in]   name        - name
  * @param[in]   timeout     - timeout, ms
  * @param[in]   cb          - callback function
  * @param[in]   args        - args for cb
  * 
  * @retval      ptr to timer
  */
-extern ev_timer_t* ev_timer_create(uint32_t timeout, ev_timer_cb_func cb, void *args);
+extern ev_timer_t* ev_timer_create(const char *name, uint32_t timeout, ev_timer_cb_func cb, void *args);
 
 /**
  * @brief       destroy an event timer
