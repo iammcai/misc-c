@@ -172,7 +172,7 @@ static void* _test_multi_mp_consumer(void *args)
     for(i = 0; i < TEST_SLAB_OPS_PER_PRODUCER * TEST_SLAB_PRODUCER_COUNT; ++ i)
     {
         void *ptr = NULL;
-        msg_q_pop(test_multi_mp, sizeof(void*), msg_q_wait_forever, &ptr);
+        msg_q_pop(test_multi_mp, sizeof(void*), msg_q_wait_forever, 0, &ptr);
         mp_slab_node_put(ptr);
     }
 
@@ -186,7 +186,7 @@ static void* _test_multi_sys_consumer(void *args)
     for(i = 0; i < TEST_SLAB_OPS_PER_PRODUCER * TEST_SLAB_PRODUCER_COUNT; ++ i)
     {
         void *ptr = NULL;
-        msg_q_pop(test_multi_sys, sizeof(void*), msg_q_wait_forever, &ptr);
+        msg_q_pop(test_multi_sys, sizeof(void*), msg_q_wait_forever, 0, &ptr);
         free(ptr);
     }
 

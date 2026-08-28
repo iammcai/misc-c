@@ -16,6 +16,7 @@ add_library(Lib STATIC
     event/ev_timer.c
     event/ev_loop.c
     syslog/syslog.c
+    swdg/swdg.c
 )
 
 # 保存临时文件

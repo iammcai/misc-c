@@ -26,13 +26,14 @@
 #include "event/ev_loop.h"
 #include "mp/mp.h"
 #include "plat/debug.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// epoll永久阻塞等待时间
-#define EV_LOOP_WAIT_4EVER      (-1)
+// epoll阻塞等待时间
+#define EV_LOOP_EPOLL_INTERVAL      (200)
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -64,8 +65,8 @@ static void* _el_main(void *args);
  */
 static attr_force_inline int _el_epoll_wait(void)
 {
-    // 阻塞等待，直到事件产生
-    int nums = epoll_wait(g_event_loop.epoll_fd, g_event_loop.events, EV_LOOP_FILE_EVENT_COUNT_MAX, EV_LOOP_WAIT_4EVER);
+    // 非阻塞等待，需要定时退出喂狗，检查运行状态
+    int nums = epoll_wait(g_event_loop.epoll_fd, g_event_loop.events, EV_LOOP_FILE_EVENT_COUNT_MAX, EV_LOOP_EPOLL_INTERVAL);
 
     // 复制快照
     int i = 0;
@@ -179,9 +180,13 @@ static void* _el_main(void *args)
 {
     prctl(PR_SET_NAME, "ev_loop_main");
 
-    while(1)    // 事件循环检测永不终止
+    ATOM_STORE(&g_event_loop.run, 1, MORDER_RELEASE);
+    // 注册看门狗
+    swdg_register("el_main", EV_LOOP_EPOLL_INTERVAL * 3);
+    while(ATOM_LOAD(&g_event_loop.run, MORDER_ACQUIRE))
     {
         // 等待事件
+        swdg_feed();
         int ready = _el_epoll_wait();
         // 处理被信号打断的场合
         if(ready < 0)

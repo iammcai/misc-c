@@ -44,6 +44,7 @@ typedef enum{
 // 日志模块id枚举
 typedef enum{
     SYSLOG_MODULE_SYS = 0,
+    SYSLOG_MODULE_SWDG,         // watch dog
     SYSLOG_MODULE_MP,           // mp
     SYSLOG_MODULE_TIMER,        // timer
     SYSLOG_MODULE_THP,          // thread pool
@@ -75,6 +76,7 @@ static const char* syslog_facility_str[SYSLOG_FACILITY_MAX] = {
 // 日志模块对应字符串
 static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "system",
+    "swdg",
     "mp",
     "timer",
     "thp",

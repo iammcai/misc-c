@@ -100,6 +100,8 @@ typedef struct el_s{
     pthread_t ev_loop_th;       // 进行loop的线程id
     #define EV_LOOP_FILE_EVENT_COUNT_MAX    (512)               // 支持的file事件最大数量
     struct epoll_event events[EV_LOOP_FILE_EVENT_COUNT_MAX];    // 事件缓冲区
+
+    ATOMIC_UINT8_T run;     // 运行标志
 }el_t;
 
 /* ========================================================================== */

@@ -30,6 +30,7 @@
 #include "plat/atom.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -58,6 +59,10 @@ _Static_assert((SYSLOG_RING_SIZE & (SYSLOG_RING_SIZE-1)) == 0, "Ring size must b
 #define SYSLOG_FLUSH_OFFSET_THRESHOLD       ((SYSLOG_RING_SIZE >> 1) * SYSLOG_STR_SIZE)
 // 刷盘间隔，单位ms
 #define SYSLOG_FLUSH_INTERVAL_MS    (10000)
+
+// syslog等待日志时间
+#define SYSLOG_CONSUMER_WAIT_TIME   (30000)
+
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -196,11 +201,19 @@ static void _syslog_analyze(syslog_entry_t *entry);
 static void* _syslog_consumer(void *args)
 {
     prctl(PR_SET_NAME, "syslog_consumer");
+    swdg_register("syslog_consumer", SYSLOG_CONSUMER_WAIT_TIME * 3);
+
     dbg_major("syslog consumer start working");
+
+    syslog_entry_t entry = {};
     while(1)
     {
-        syslog_entry_t entry = {};
-        msg_q_pop(syslog, sizeof(syslog_entry_t), msg_q_wait_forever, &entry);
+        swdg_feed();
+
+        msg_q_ret_type_e ret = msg_q_pop(syslog, sizeof(syslog_entry_t), msg_q_wait_timeout, SYSLOG_CONSUMER_WAIT_TIME, &entry);
+        if(ret == msg_q_ret_non_msg)
+            continue;
+
         _syslog_analyze(&entry);
     }
     return NULL;

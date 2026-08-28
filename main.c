@@ -43,6 +43,7 @@
 #include "sht30/sht30.h"
 #include "ssd1306/ssd1306.h"
 #include "sysmon/sysmon.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -114,6 +115,9 @@ static attr_force_inline void _platfrom_init()
 
     debug_level_set(debug_level_all);
 
+    // 看门狗初始化，上半部
+    swdg_module_init_th();
+
     // cli初始化
     cli_module_init();
 
@@ -175,6 +179,9 @@ static attr_force_inline void _platfrom_init()
     ssd1306_module_init();
     // sysmon初始化
     sysmon_module_init();
+
+    // 看门狗初始化下半部，启动监听
+    swdg_module_init_bh();
 
     // sigint处理器注册
     _platform_sigint_register();

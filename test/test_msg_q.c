@@ -69,7 +69,7 @@ void* receiver(void *agrs)
     for(i = 0; i < MSG_COUNT_PER_SENDER * MSG_Q_SENDER; ++ i)
     {
         int data;
-        msg_q_pop(test0, sizeof(int), msg_q_wait_forever, &data);
+        msg_q_pop(test0, sizeof(int), msg_q_wait_forever, 0, &data);
         sum += data;
     }
 }

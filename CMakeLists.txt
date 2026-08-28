@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(MISC-C)
 
+add_compile_definitions(_GNU_SOURCE)
+
 # set(CMAKE_BUILD_TYPE Debug)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)

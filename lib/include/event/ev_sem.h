@@ -23,6 +23,8 @@
 
 #include <errno.h>
 #include <semaphore.h>
+#include <stdint.h>
+
 #include "plat/compiler.h"
 
 /* ========================================================================== */
@@ -33,6 +35,12 @@
 typedef struct{
     sem_t sem;  // posix信号量
 }ev_sem_t;
+
+// 超时等待信号量返回值枚举
+typedef enum{
+    EV_SEM_WAKE = 0,        // 被信号量唤醒
+    EV_SEM_TIMEOUT,         // 超时退出
+}ev_sem_ret_e;
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -56,6 +64,38 @@ static attr_force_inline void ev_sem_init(ev_sem_t *sem)
 static attr_force_inline void ev_sem_wait(ev_sem_t *sem)
 {
     while(sem_wait(&sem->sem) && EINTR == errno);
+}
+
+/**
+ * @brief       wait sem, with timeout exit
+ * 
+ * @param[in]   sem
+ * @param[in]   ms  - timeout, unit ms
+ * 
+ * @retval      exit method, post or timeout
+ */
+static attr_force_inline ev_sem_ret_e ev_sem_wait_ms(ev_sem_t *sem, uint32_t ms)
+{
+    int ret;
+    struct timespec ts = {};    // sem_timedwait必须使用绝对超时时间，且类型realtime
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += (ms / 1000);
+    ts.tv_nsec += ((ms % 1000) * 1000000L);
+    if (ts.tv_nsec >= 1000000000L)
+    {
+        ts.tv_sec ++;
+        ts.tv_nsec -= 1000000000L;
+    }
+
+    do{
+        ret = sem_timedwait(&sem->sem, &ts);
+    }while(ret == -1 && errno == EINTR);
+
+    if(ret == 0)                // 被唤醒
+        return EV_SEM_WAKE;
+
+    return EV_SEM_TIMEOUT;  // 超时退出
 }
 
 /**

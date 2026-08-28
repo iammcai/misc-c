@@ -35,6 +35,7 @@
 #include "thp/thp.h"
 #include "event/ev_loop.h"
 #include "syslog/syslog.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                            Macro Definitions                               */
@@ -45,6 +46,9 @@
 
 // 批量处理到期定时器个数
 #define EV_TIMER_BATCH      (32)
+
+// 高精度epoll等待时间
+#define EV_HIGH_RES_EPOLL_WAIT      (200)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -140,6 +144,8 @@ declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
 static pthread_t g_high_res_timer_epoll_tid = -1;
 // epoll_fd
 static int g_high_res_timer_epoll_fd = -1;
+// 运行标志
+static ATOMIC_UINT8_T g_high_res_timer_run;
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -152,6 +158,9 @@ static void _low_res_clock_work(void *args)
 {
     while(1)
     {
+        // 不走ev_thd定时唤醒，需要手动喂狗
+        swdg_feed();
+
         uint64_t ms = mono_time_get();
         ATOM_STORE(&g_curr_ms, ms, MORDER_RELEASE);
         ev_timer_t *expired_batch[EV_TIMER_BATCH] = {};
@@ -367,13 +376,17 @@ void ev_high_res_timer_stop(ev_high_res_timer_t *hr_timer)
 
 static void* _ev_timer_high_res_epoll_main(void *args)
 {
-    prctl(PR_SET_NAME, "hrt_epoll_main");\
+    prctl(PR_SET_NAME, "hrt_epoll_main");
+    swdg_register("hrt_epoll_main", EV_HIGH_RES_EPOLL_WAIT * 3);
+
+    ATOM_STORE(&g_high_res_timer_run, 1, MORDER_RELEASE);
 
     struct epoll_event events[EV_HIGH_RES_TIMER_COUNT_MAX] = {};
 
-    while(1)
+    while(ATOM_LOAD(&g_high_res_timer_run, MORDER_ACQUIRE))
     {
-        int nfds = epoll_wait(g_high_res_timer_epoll_fd, events, EV_HIGH_RES_TIMER_COUNT_MAX, -1);     // 阻塞等待
+        swdg_feed();
+        int nfds = epoll_wait(g_high_res_timer_epoll_fd, events, EV_HIGH_RES_TIMER_COUNT_MAX, EV_HIGH_RES_EPOLL_WAIT);     // 阻塞等待
         if(nfds < 0)
         {
             if(errno == EINTR)
@@ -396,6 +409,11 @@ static void* _ev_timer_high_res_epoll_main(void *args)
     }
 
     return NULL;
+}
+
+uint64_t low_res_cur_time_get()
+{
+    return ATOM_LOAD(&g_curr_ms, MORDER_ACQUIRE);
 }
 
 uint64_t running_time_get()

@@ -41,6 +41,7 @@
 #include "event/ev_thread.h"
 #include "mp/mp_slab.h"
 #include "syslog/syslog.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -76,6 +77,9 @@
 #define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-8s%-8s\n"
 #define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-8s%-8u\n"  // 打印各类型报文数量的格式，type num
 #define ZCAP_DUMM_PKT_INFO_FMT              "if-%s,len-%-4d: %s\n"      // 打印报文信息格式
+
+// alz线程等待时间
+#define ZCAP_ALZ_WAIT_TIME      (500)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -508,11 +512,17 @@ static void* _zcap_routine(void *args)
         goto clean_up;
     }
 
+    // 注册看门狗
+    swdg_register(buf, EPOLL_TIMEOUT * 3);
+
     dbg_major("start capture rx thread");
 
     unsigned int block_idx = 0;     // 环形缓冲区下标
     while(ATOM_LOAD(&captor->running, MORDER_ACQUIRE))  // 主循环，检查running标志
     {
+        // 喂狗
+        swdg_feed();
+
         // 等待内核通知block就绪
         struct epoll_event evs[1];
         int n = epoll_wait(epoll_fd, evs, 1, EPOLL_TIMEOUT);    // 200ms用于检查running
@@ -810,24 +820,26 @@ static void* _zcap_alz_routine(void *args)
     zcap_packet_t *packet = NULL;
 
     char buf[16] = {};
-    snprintf(buf, sizeof(buf), "zcalz_%s_%d", captor->if_name, i);
+    snprintf(buf, sizeof(buf), "zc_alz_%s_%d", captor->if_name, i);
     prctl(PR_SET_NAME, buf);
+    swdg_register(buf, ZCAP_ALZ_WAIT_TIME * 3);
 
     mp_free(args, sizeof(alz_arg_packed));   // 释放入参
 
     while(ATOM_LOAD(&captor->running, MORDER_ACQUIRE))
     {
+        swdg_feed();
         // 先尝试批量 drain 队列
         int processed = 0;
-        while ((packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head)))
+        while((packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head)))
         {
             _zcap_analyze_a_packet(captor, packet);
             mp_slab_node_put(packet);
             processed++;
         }
 
-        if (processed == 0)
-            ev_sem_wait(&captor->alz[i].alz_sem);
+        if(processed == 0)
+            ev_sem_wait_ms(&captor->alz[i].alz_sem, ZCAP_ALZ_WAIT_TIME);
     }
 
     dbg("zcaptor %s analyze-%d thread exit", captor->if_name, i);

@@ -18,7 +18,6 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
-#define _GNU_SOURCE         // for mmsg
 #include <unistd.h>
 #include <string.h>
 #include <sys/socket.h>     // for socket
@@ -33,6 +32,7 @@
 #include "mp/mp_slab.h"
 #include "msg_q/msg_q.h"
 #include "cli/cli.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -46,6 +46,9 @@
 
 // 报文长度
 #define FTX_FRAME_SIZE      (1600)
+
+// ftx等待消息队列时长
+#define FTX_MSGQ_WAIT_TIME      (2000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -365,6 +368,7 @@ static void* _ftx_tx_routine(void *args)
     char buf[16] = {};
     snprintf(buf, sizeof(buf), "ftx_%s", ftxor->if_name);
     prctl(PR_SET_NAME, buf);
+    swdg_register(buf, FTX_MSGQ_WAIT_TIME * 3);
 
     // 初始填充消息
     int i = 0;
@@ -378,15 +382,21 @@ static void* _ftx_tx_routine(void *args)
 
     while(ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE))
     {
-        // 阻塞等待消息
+        // feed
+        swdg_feed();
+
+        // 超时等待消息
         pendings = 0;
-        _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_wait_forever, &packet_batch[pendings]);
+        msg_q_ret_type_e ret = _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_wait_timeout, FTX_MSGQ_WAIT_TIME, &packet_batch[pendings]);
+        if(ret == msg_q_ret_non_msg)    // 没有消息，continue
+            continue;
+        
         iov[pendings].iov_base = packet_batch[pendings].packet;
         iov[pendings].iov_len = packet_batch[pendings].len;
 
         // 非阻塞取完所有剩余信息，最多一次拿64个
         pendings ++;
-        while(pendings < FTX_TX_MSGQ_SIZE && msg_q_ret_ok == _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_no_wait, &packet_batch[pendings]))
+        while(pendings < FTX_TX_MSGQ_SIZE && msg_q_ret_ok == _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_no_wait, 0, &packet_batch[pendings]))
         {
             iov[pendings].iov_base = packet_batch[pendings].packet; // 设置报文内容
             iov[pendings].iov_len = packet_batch[pendings].len;     // 更新长度

@@ -50,7 +50,7 @@ msg_q_ret_type_e _msg_q_push(msg_q_t *msg_q, void *ctx, size_t len)
     return msg_q_ret_ok;
 }
 
-msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_type, void *ctx)
+msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_type, uint32_t ms, void *ctx)
 {
     assert(msg_q && len <= msg_q->elem_size && ctx);
 
@@ -58,8 +58,13 @@ msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_t
     {
         if(msg_q_no_wait == wait_type)
             return msg_q_ret_non_msg;
-        else
-            ev_sem_wait(&msg_q->sem_out);       // 等待
+        else if(msg_q_wait_forever == wait_type)
+            ev_sem_wait(&msg_q->sem_out);       // 永久等待
+        else if(msg_q_wait_timeout == wait_type)    
+        {
+            if(EV_SEM_TIMEOUT == ev_sem_wait_ms(&msg_q->sem_out, ms))       // 等待，超时退出
+                return msg_q_ret_non_msg;
+        }
     }
 
     // 获取数据

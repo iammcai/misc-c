@@ -33,6 +33,7 @@
 #include "type/type_list.h"
 #include "mp/mp_fixed.h"
 #include "zcap/zcap.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -317,6 +318,7 @@ static inline void* _web_epoll_routine(void *args)
     struct epoll_event events[WEB_CONNECT_MAX_CNT];
 
     prctl(PR_SET_NAME, "web_epoll");
+    swdg_register("web_epoll", WEB_EPOLL_WAIT_MS * 3);
 
     ATOM_STORE(&g_web_mgnter.running, 1, MORDER_RELAXED);
 
@@ -324,6 +326,7 @@ static inline void* _web_epoll_routine(void *args)
 
     while(ATOM_LOAD(&g_web_mgnter.running, MORDER_ACQUIRE))
     {
+        swdg_feed();
         int ready = epoll_wait(g_web_mgnter.epoll_fd, events, WEB_CONNECT_MAX_CNT, WEB_EPOLL_WAIT_MS);
         if(ready == 0)          // 超时
             continue;

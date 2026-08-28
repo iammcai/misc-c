@@ -25,10 +25,7 @@
 #include "event/ev_thread.h"
 #include "plat/atom.h"
 #include "event/ev_loop.h"
-
-/* ========================================================================== */
-/*                             Type Definitions                               */
-/* ========================================================================== */
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -42,6 +39,9 @@
     }   \
 }while(0);  \
 /* ev_fd_close end */
+
+// 等待唤醒时间
+#define EV_THD_EVENT_WAIT_TIME      (2000)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -161,11 +161,13 @@ static attr_force_inline void ev_thd_event_init(ev_thd_attr_t *attr);
  * 
  * @param[in]   attr    - ev thd attr
  * 
+ * @retval      status, 0 - no wake, 1 - wake
+ * 
  * @note        通过sem阻塞等待eventfd可写事件，由ev_loop通知
  */
-static attr_force_inline void ev_thd_event_wait(ev_thd_attr_t *attr)
+static attr_force_inline int ev_thd_event_wait(ev_thd_attr_t *attr)
 {
-    ev_sem_wait(&attr->sem);
+    return ev_sem_wait_ms(&attr->sem, EV_THD_EVENT_WAIT_TIME) == EV_SEM_WAKE ? 1 : 0;
 }
 
 /**
@@ -318,6 +320,7 @@ static void* ev_thd_routine(void *args)
     ev_thd_attr_t *attr = (ev_thd_attr_t*)args;
 
     prctl(PR_SET_NAME, attr->name);     // 设置线程名，方便调试
+    swdg_register(attr->name, EV_THD_EVENT_WAIT_TIME * 3);
 
     // 运行ctor钩子
     ev_thd_hook_walk(attr, EV_THD_HOOK_TYPE_CTOR);
@@ -331,7 +334,9 @@ static void* ev_thd_routine(void *args)
     // 进入循环等待-工作，检查run标志，1说明线程还没结束
     while(ATOM_LOAD(&attr->run, MORDER_ACQUIRE))
     {
-        ev_thd_event_wait(attr);    // 进入等待，这里阻塞
+        swdg_feed();
+        if(!ev_thd_event_wait(attr))    // 进入等待，这里超时阻塞阻塞
+            continue;
 
         // 再次检查run标志，防止已经cancel
         if(ATOM_LOAD(&attr->run, MORDER_ACQUIRE))

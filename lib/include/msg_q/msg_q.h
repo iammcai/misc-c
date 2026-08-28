@@ -50,7 +50,8 @@ typedef struct{
 // 等待类型枚举
 typedef enum{
     msg_q_no_wait,
-    msg_q_wait_forever
+    msg_q_wait_forever,
+    msg_q_wait_timeout,         // 带超时等待
 }msg_q_wait_type_e;
 
 // 消息队列错误码枚举
@@ -92,9 +93,9 @@ static attr_force_inline void _msg_q_ ## _name ## _init()   \
 /**
  * 外部使用，获取消息
  */
-#define msg_q_pop(_name, len, _wait_type, ctx)   \
+#define msg_q_pop(_name, len, _wait_type, ms, ctx)      \
 ({  \
-    _msg_q_pop(msg_q_ ## _name, len, _wait_type, ctx);  \
+    _msg_q_pop(msg_q_ ## _name, len, _wait_type, ms, ctx);  \
 })  \
 
 /* ========================================================================== */
@@ -118,11 +119,12 @@ extern msg_q_ret_type_e _msg_q_push(msg_q_t *msg_q, void *ctx, size_t len);
  * @param[in]   msg_q       - msg q
  * @param[in]   len         - msg len
  * @param[in]   wait_type   - wait type
+ * @param[in]   ms          - timeout ms, valid for (msg_q_wait_timeout == wait_type)
  * @param[out]  ctx         - msg context
  * 
  * @retval      err code
  */
-extern msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_type, void *ctx);
+extern msg_q_ret_type_e _msg_q_pop(msg_q_t *msg_q, size_t len, msg_q_wait_type_e wait_type, uint32_t ms, void *ctx);
 
 /**
  * @brief       外部使用，创建消息队列

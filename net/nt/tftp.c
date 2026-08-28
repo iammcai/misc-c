@@ -25,6 +25,7 @@
 #include "mp/mp_slab.h"
 #include "msg_q/msg_q.h"
 #include "event/ev_timer.h"
+#include "swdg/swdg.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -55,6 +56,9 @@
 #define TFTP_DOWNLOAD_PATH_PREFIX   "../net/nt/tftp/download/"
 // TFTP上传路径前缀
 #define TFTP_UPLOAD_PATH_PREFIX     "../net/nt/tftp/upload/"
+
+// TFTP FSM等待时间，不常用功能可以比较久
+#define TFTP_FSM_WAIT_TIME      (60000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -1073,6 +1077,7 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args)
 static void* _tftp_fsm(void *args)
 {
     prctl(PR_SET_NAME, "tftp_fsm");
+    swdg_register("tftp_fsm", TFTP_FSM_WAIT_TIME * 3);
 
     // 状态机初始化，设置hook等
     _tftp_fsm_init();
@@ -1086,9 +1091,10 @@ static void* _tftp_fsm(void *args)
 
     while(ATOM_LOAD(&g_tftp_fsm.running, MORDER_RELAXED))
     {
-        // 阻塞等待外部消息
-        msg_q_pop(tftp_fsm_mq, sizeof(tftp_msg_t), msg_q_wait_forever, &msg);
-        if(msg.event == TTFP_EVENT_FSM_EXIT)        // fsm exit，检查running标志
+        swdg_feed();
+        // 阻塞超时等待外部消息
+        msg_q_ret_type_e ret = msg_q_pop(tftp_fsm_mq, sizeof(tftp_msg_t), msg_q_wait_timeout, TFTP_FSM_WAIT_TIME, &msg);
+        if(ret == msg_q_ret_non_msg || msg.event == TTFP_EVENT_FSM_EXIT)        // fsm exit，检查running标志
             continue;
 
         state = g_tftp_fsm.state;
