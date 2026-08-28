@@ -96,7 +96,7 @@ struct ftx_s{
 static ftx_hash_head_t g_ftx_hash = {};
 
 // 声明发包使用的slab attr
-declare_mem_type_slab(ftx, 8, 8, 8, 8, 2048, 2048, 512, 16, 16, 8, 8)
+declare_mem_type_slab(ftx, 8, 8, 8, 2048, 2048, 2048, 512, 16, 16, 8, 8)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -424,7 +424,7 @@ static void* _ftx_tx_routine(void *args)
                 }
             }
 
-            dbg_major("send %d packet ok", send);
+            // dbg_major("send %d packet ok", send);
 
             // 统计信息更新
             ATOM_FETCH_ADD(&ftxor->stat.tx_count, send, MORDER_ACQ_REL);
@@ -472,7 +472,7 @@ void _ftx_send(const char *if_name, void *ctx, unsigned int len)
         if(msg_q_ret_ok == _msg_q_push(ftxor->tx_q, &packet, sizeof(packet)))
             break;
 
-    dbg_major("push msg to send packet ok");
+    //dbg_major("push msg to send packet ok");
 }
 
 void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx, unsigned int len)

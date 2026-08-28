@@ -29,6 +29,7 @@
 #include "event/ev_lock.h"
 #include "event/ev_timer.h"
 #include "mp/mp_slab.h"
+#include "event/ev_thread.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -101,17 +102,8 @@ typedef struct{
 // ARP扫描结果打印格式
 #define ARP_SCAN_FMT                "%-16s%-20s\n"
 
-/* ========================================================================== */
-/*                             Global Variables                               */
-/* ========================================================================== */
-
-// arp reply缓存哈希表
-static arp_reply_cache_hash_head_t g_arp_reply_cache = {};
-// 读写锁，保护cache hash
-static ev_rwlock_t g_arp_reply_cache_rwlock = {};
-
-// 声明发包内存池
-declare_mem_type_slab_extern(ftx)
+// ARP半老化周期探测线程执行间隔
+#define ARP_HALF_AGE_DETECT_INTERVAL    (2000)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -208,7 +200,30 @@ static error_code_e _arp_request_build(char *buf, const char *if_name, struct in
  */
 static void* _arp_probe_cli_hook(unsigned char argc, char *argv[]);
 
+/**
+ * @brief       arp cb for zcap filter
+ */
 static void _arp_zcap_filter_cb(char *packet, int size, void *args);
+
+/**
+ * @brief       wf for ev thd
+ */
+static void _arp_half_age_detect_wf(void *agrs);
+
+/* ========================================================================== */
+/*                             Global Variables                               */
+/* ========================================================================== */
+
+// arp reply缓存哈希表
+static arp_reply_cache_hash_head_t g_arp_reply_cache = {};
+// 读写锁，保护cache hash
+static ev_rwlock_t g_arp_reply_cache_rwlock = {};
+
+// 声明发包内存池
+declare_mem_type_slab_extern(ftx)
+
+// arp cache半老化周期探测线程
+declare_ev_thd(arp_half_age_detect, _arp_half_age_detect_wf, NULL, ARP_HALF_AGE_DETECT_INTERVAL)
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -524,6 +539,9 @@ error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)
 
 error_code_e arp_request_send(const char *if_name, uint32_t dst_ip)
 {
+    if(!ftx_status_get(if_name))
+        return ERR_NT_IF_ERROR;
+
     uint8_t *buffer = (uint8_t*)mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!buffer)
         return ERR_NO_MEM;
@@ -539,6 +557,47 @@ error_code_e arp_request_send(const char *if_name, uint32_t dst_ip)
 
     ftx_send(if_name, buffer, ARP_STANDER_SIZE);
     return ERR_NO_ERROR;
+}
+
+static void _arp_scan_interface(const char *if_name)
+{
+    if(!ftx_status_get(if_name))
+        return;
+
+    uint32_t ip_net;
+    ftx_ip_get(if_name, &ip_net);
+
+    uint32_t ip_host = ntohl(ip_net);
+    uint32_t mask = 0xffffff00;     // 24位
+
+    uint32_t network = ip_host & mask;
+    uint32_t ip_start = network + 1;
+    uint32_t ip_end =  (network | ~mask) - 1;
+
+    for(uint32_t ip = ip_start; ip <= ip_end; ++ ip)
+        if(ip != ip_host)
+        {
+            arp_request_send(if_name, ip);
+            usleep(ARP_SCAN_SEND_INTERVAL * 1000);      // 限制速率
+        }
+}
+
+static void _arp_half_age_detect_wf(void *agrs)
+{
+    ev_with_rdlock(&g_arp_reply_cache_rwlock)
+    {
+        arp_reply_cache_t *cache = arp_reply_cache_hash_first(&g_arp_reply_cache);
+        while(cache)
+        {
+            if(ev_timer_remain(cache->timer) < (ARP_REPLY_CACHE_AGING_TIME / 2))
+            {
+                // 发送探测
+                arp_request_send("eth0", cache->ip);
+                arp_request_send("wlan0", cache->ip);
+            }
+            cache = arp_reply_cache_hash_next(&g_arp_reply_cache, cache);
+        }
+    }
 }
 
 void arp_module_init(void)
@@ -568,11 +627,22 @@ void arp_module_init(void)
     zcap_register_pkt_filter("wlan0", "arp", _arp_zcap_filter_cb, NULL);
     zcap_register_field_len_type("wlan0", "arp", 0x0806, 0xffff);
 
+    // 往外发送arp探测
+    _arp_scan_interface("eth0");
+    _arp_scan_interface("wlan0");
+
+    // 启动arp半老化周期维护线程
+    ev_thd_register(arp_half_age_detect);
+    ev_thd_run(arp_half_age_detect);
+
     dbg_major("arp module init ok");
 }
 
 void arp_module_deinit()
 {
+    // 关闭定时探测线程
+    ev_thd_cancel(arp_half_age_detect);
+
     // 归还arp cache
     ev_with_wrlock(&g_arp_reply_cache_rwlock)
     {

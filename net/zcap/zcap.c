@@ -564,6 +564,8 @@ static void* _zcap_routine(void *args)
                 {
                     dbg("packet len %d larger than zcap handle max size", pkt_len);
                     ATOM_FETCH_ADD(&captor->stat.nonhdl_count, 1, MORDER_RELAXED);
+                    ATOM_FETCH_ADD(&captor->stat.count, 1, MORDER_RELAXED);
+                    ATOM_FETCH_ADD(&captor->stat.size, pkt_len, MORDER_RELAXED);
                     continue;
                 }
 
