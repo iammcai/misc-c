@@ -18,6 +18,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <stdio.h>
 #include <time.h>
 #include <stdint.h>
 #include <fcntl.h>

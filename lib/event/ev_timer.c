@@ -19,6 +19,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <stdio.h>
 #include <unistd.h>
 #include <time.h>
 #include <sys/timerfd.h>

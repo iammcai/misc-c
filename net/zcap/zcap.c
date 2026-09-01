@@ -39,7 +39,7 @@
 #include "plat/debug.h"
 #include "cli/cli.h"
 #include "event/ev_thread.h"
-#include "mp/mp_slab.h"
+#include "mp/mp_nonfixed.h"
 #include "syslog/syslog.h"
 #include "swdg/swdg.h"
 
@@ -85,8 +85,8 @@
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-// 内存池，用于rx_t和alz_t之间交互报文
-declare_mem_type_slab(zcap_pkt, 8, 8, 8, 8, 4096, 4096, 256, 256, 256, 0, 0)
+// 内存池，用于rx_t和alz_t之间交互报文，大小4MB
+declare_mp_nonfixed(zcap, 4 << 20)
 
 // 封装一下，传递给alz线程入口
 typedef struct{
@@ -560,21 +560,12 @@ static void* _zcap_routine(void *args)
                 if(!memcmp(pkt_data + MAC_ADDR_SIZE, captor->if_mac, MAC_ADDR_SIZE))
                     continue;
 
-                if(pkt_len > ZCAP_MTU_SIZE)
-                {
-                    dbg("packet len %d larger than zcap handle max size", pkt_len);
-                    ATOM_FETCH_ADD(&captor->stat.nonhdl_count, 1, MORDER_RELAXED);
-                    ATOM_FETCH_ADD(&captor->stat.count, 1, MORDER_RELAXED);
-                    ATOM_FETCH_ADD(&captor->stat.size, pkt_len, MORDER_RELAXED);
-                    continue;
-                }
-
                 // 构建消息，将报文发给解析线程
-                zcap_packet_t *packet = mp_slab_node_get(zcap_pkt, sizeof(zcap_packet_t)+pkt_len);
+                zcap_packet_t *packet = mp_nonfixed_node_get(zcap, sizeof(zcap_packet_t)+pkt_len);
                 if(!packet)
                 {
                     char syslog_ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get slab node for size %d fail, packet loss", 
+                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get mem node for size %d fail, packet loss", 
                         sizeof(zcap_packet_t) + pkt_len);
                     syslog_warn(SYSLOG_MODULE_ZCAP, syslog_ctx);
                     ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
@@ -836,7 +827,7 @@ static void* _zcap_alz_routine(void *args)
         while((packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head)))
         {
             _zcap_analyze_a_packet(captor, packet);
-            mp_slab_node_put(packet);
+            mp_nonfixed_node_put(packet);
             processed++;
         }
 
@@ -857,8 +848,8 @@ void zcap_module_init()
 {
     zcaptor_hash_init(&g_zcaptor_hash_head);
 
-    // mem type attr注册
-    mem_type_attr_register(zcap_pkt);
+    // 内存池注册
+    mp_nonfixed_register(zcap);
 
     // 注册cli
     cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook);
@@ -1108,8 +1099,6 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 (double)captor->stat.size/1024,
                 captor->stat.rate_Bps/1024
             );
-            unsigned long nonhdl = ATOM_LOAD(&captor->stat.nonhdl_count, MORDER_RELAXED);
-            safe_printf("non_handle_count: %lu, %.2f%%\n", nonhdl, (double)nonhdl/captor->stat.count*100);
             unsigned long loss = ATOM_LOAD(&captor->stat.loss_count, MORDER_RELAXED);
             safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count*100);
 

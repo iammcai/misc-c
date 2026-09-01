@@ -206,7 +206,7 @@ static void _sysmon_cpu_usage_cal(void *args)
                 if(i == 0)
                     snprintf(buf, sizeof(buf), "cpu total usage %.2f %% is ltoo high, please check", g_sysmon_cpu_usages[i]);
                 else
-                    snprintf(buf, sizeof(buf), "cpu core %d usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i]);
+                    snprintf(buf, sizeof(buf), "cpu core %zu usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i]);
                 syslog_warn(SYSLOG_MODULE_SYSMON, buf);
             }
         }
@@ -227,7 +227,7 @@ static void* _sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
     {
         char cpu_str[8] = {};
         if(i > 0)
-            snprintf(cpu_str, sizeof(cpu_str), "cpu_%d", i-1);
+            snprintf(cpu_str, sizeof(cpu_str), "cpu_%zu", i-1);
         else
             snprintf(cpu_str, sizeof(cpu_str), "cpu");
         safe_printf(SYSMON_CPU_USAGE_FMT_DATA, cpu_str, temp[i]);

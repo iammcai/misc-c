@@ -193,7 +193,7 @@ static attr_pure_inline skiplist_item_t* type_skiplist_next(skiplist_item_t *ite
  * 
  * @retval      count
  */
-static attr_pure_inline unsigned int type_skiplist_count(skiplist_head_t *head)
+static attr_pure_inline unsigned int type_skiplist_count(const skiplist_head_t *head)
 {
     return head->count;
 }

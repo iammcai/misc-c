@@ -31,6 +31,7 @@
 #include "syslog/syslog.h"
 #include "mp/mp_slab.h"
 #include "mp/mp_fixed.h"
+#include "mp/mp_nonfixed.h"
 #include "event/ev_thread.h"
 #include "thp/thp.h"
 #include "event/ev_timer.h"
@@ -118,6 +119,9 @@ static attr_force_inline void _platfrom_init()
     // 看门狗初始化，上半部
     swdg_module_init_th();
 
+    // 内存池初始化 th
+    mp_nonfixed_module_init_th();
+
     // cli初始化
     cli_module_init();
 
@@ -142,6 +146,7 @@ static attr_force_inline void _platfrom_init()
     // 内存池初始化
     mp_module_init();
     mp_slab_module_init();
+    mp_nonfixed_module_init_bh();
 
     // debug初始化
     debug_init();

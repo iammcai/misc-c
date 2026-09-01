@@ -149,9 +149,13 @@ make
 
 ### 运行测试
 
+在`build`目录执行编译产物，即可运行程序
+
 ```bash
 sudo ./Main
 ```
+
+在项目根目录运行`cppcheck.sh`脚本，可在`cppcheck_html`目录下查看代码检查结果
 
 ---
 

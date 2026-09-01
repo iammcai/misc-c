@@ -1,7 +1,7 @@
 /*
  * Copyright (C) cai<sybstudy@yeah.net>. All rights reserved.
  *
- * @file    swdg.h
+ * @file    swdg.c
  * @brief   软件看门狗实现
  *
  * @author  cai<sybstudy@yeah.net>
@@ -18,6 +18,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <stdio.h>
 #include <pthread.h>
 
 #include "swdg/swdg.h"

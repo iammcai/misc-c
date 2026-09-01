@@ -271,7 +271,7 @@ static void _fixed_mp_supply_node(fixed_mp_t *mp)
     uint32_t count = mp_fixed_node_list_count(&mp->free_list);
     while(count++ < attr->node_cnt)
     {
-        mp_fixed_node_t *node = calloc(1, sizeof(mp_fixed_node_t) + attr->node_size);
+        mp_fixed_node_t *node = mp_calloc(1, sizeof(mp_fixed_node_t) + attr->node_size);
         node->attr = attr;
         node->size = attr->node_size;
         node->tid = mp->recycle.tid;
@@ -297,7 +297,7 @@ static fixed_mp_t* _fixed_mp_find_or_create(mem_type_attr_fixed_t *attr, uint8_t
 
     // 搜索不到，需要初始化，加入全局哈希
     mp_fixed_tid_t tid = mp_fixed_tid_new();        // 获取新的tid
-    mp = (fixed_mp_t*)calloc(1, sizeof(fixed_mp_t));
+    mp = (fixed_mp_t*)mp_calloc(1, sizeof(fixed_mp_t));
     mp->attr = attr;
     mp_fixed_node_list_init(&mp->free_list);
     mp_fixed_recycle_spsc_atom_queue_init(&mp->recycle.local);

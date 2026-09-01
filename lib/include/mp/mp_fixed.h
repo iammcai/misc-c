@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 
+#include "mp/mp.h"
 #include "plat/compiler.h"
 #include "type/type_hash.h"
 #include "type/type_atom_queue.h"

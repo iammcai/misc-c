@@ -158,7 +158,7 @@ extern void type_heap_destroy(heap_head_t *head);
  * 
  * @param[in]   head    - heap head
  */
-static attr_pure_inline int type_heap_full(heap_head_t *head)
+static attr_pure_inline int type_heap_full(const heap_head_t *head)
 {
     return head->count == head->size;
 }
@@ -170,7 +170,7 @@ static attr_pure_inline int type_heap_full(heap_head_t *head)
  * 
  * @retval      1 - yes, 0 - no
  */
-static attr_pure_inline int type_heap_resize_tresh_up(heap_head_t *head)
+static attr_pure_inline int type_heap_resize_tresh_up(const heap_head_t *head)
 {
     if(head->size == head->max_size)
         return 0;
@@ -184,7 +184,7 @@ static attr_pure_inline int type_heap_resize_tresh_up(heap_head_t *head)
  * 
  * @retval      1 - yes, 0 - no
  */
-static attr_pure_inline int type_heap_resize_tresh_down(heap_head_t *head)
+static attr_pure_inline int type_heap_resize_tresh_down(const heap_head_t *head)
 {
     if(head->size == head->min_size)
         return 0;
@@ -235,7 +235,7 @@ static attr_force_inline void type_heap_add(heap_head_t *head, heap_item_t *item
  * 
  * @note        将堆为交换到需要删除的位置
  */
-static attr_force_inline unsigned int type_heap_del(heap_head_t *head, heap_item_t *item)
+static attr_force_inline unsigned int type_heap_del(heap_head_t *head, const heap_item_t *item)
 {
     assert(head->array[item->index] == item);
 

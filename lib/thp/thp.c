@@ -159,7 +159,7 @@ void _thp_run(thp_t *thp)
         }
     }
     // 申请线程id数组空间
-    thp->thread_array = (pthread_t*)calloc(thp->thread_count, sizeof(pthread_t));
+    thp->thread_array = (pthread_t*)mp_calloc(thp->thread_count, sizeof(pthread_t));
     // 创建工作线程
     unsigned char i = 0;
     for(i = 0; i < thp->thread_count; ++ i)

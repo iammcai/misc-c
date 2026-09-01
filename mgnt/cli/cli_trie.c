@@ -20,8 +20,10 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <stdio.h>
 #include <stddef.h>
 #include <string.h>
+
 #include "cli/cli_trie.h"
 #include "mp/mp.h"
 #include "plat/debug.h"

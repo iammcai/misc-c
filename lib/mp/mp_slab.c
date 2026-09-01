@@ -18,6 +18,8 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include <stdio.h>
+
 #include "mp/mp_slab.h"
 #include "plat/debug.h"
 #include "cli/cli.h"

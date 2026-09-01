@@ -49,10 +49,6 @@
 #define SHT30_MEASURE_INTERVAL      (120 * 1000)
 
 /* ========================================================================== */
-/*                             Type Definitions                               */
-/* ========================================================================== */
-
-/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
@@ -110,7 +106,6 @@ static attr_force_inline void* _sht30_show_humi(unsigned char argc, char *argv[]
     safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
 
     return NULL;
-    return NULL;
 }
 
 static attr_force_inline void _sht30_ev_thd_measure(void *args)
@@ -146,7 +141,7 @@ declare_ev_thd(sht30_measure, _sht30_ev_thd_measure, NULL, SHT30_MEASURE_INTERVA
 static error_code_e _sht30_find_device_path_by_name(const char *name)
 {
     DIR *dir = NULL;
-    struct dirent *entry = NULL;
+    const struct dirent *entry = NULL;
     char name_file[FILE_PATH_MAX_LEN] = {};
     char name_buf[FILE_PATH_MAX_LEN] = {};
 

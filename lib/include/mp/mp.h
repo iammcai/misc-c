@@ -81,49 +81,6 @@ typedef struct{
 #endif
 }mem_type_attr_t;
 
-/* -------------------------------- MP NONFIXED --------------------------------*/
-
-// 预定义哈希表，用来存储所有的非固定节点内存池
-pre_declare_hash(nonfixed_mp)
-// 预定义跳表，用来存储空闲的非固定内存节点
-pre_declare_skiplist(nonfixed_free)
-// 预定义spsc队列，用来存储待回收的非固定内存节点
-pre_declare_spsc_atom_queue(nonfixed_recycle)
-// 预定义哈希表，用来存储所有线程的非固定内存回收队列，给后台回收线程遍历用
-pre_declare_hash(nonfixed_recycle_aq)
-
-// 非固定大小内存节点定义
-typedef struct{
-    mem_type_attr_t *attr;      // 所属内存类型
-    tid_t tid;                      // 逻辑tid
-    union{
-        nonfixed_free_skiplist_item_t sl_item;          // 跳表item
-        nonfixed_recycle_spsc_atom_queue_item_t aq_item;  // 回收队列item
-    }item;                          // item，内存节点要么在空闲跳表，要么在回收队列，可使用union压缩
-    unsigned char fl;               // 是否位于空闲跳表中，用于判断能否合并
-    int prev_size;                  // 前一个内存块的size
-    int size;                       // 实际可以用的内存块大小，也就是data部分
-    char attr_aligned(8) data[];    // 用户内存
-} attr_aligned(8) nonfixed_mem_node_t;
-
-// 非固定大小内存节点回收队列定义
-typedef struct{
-    tid_t tid;          // 所属线程
-    nonfixed_recycle_spsc_atom_queue_head_t local_recycle_aq;   // 需要本线程回收
-    nonfixed_recycle_spsc_atom_queue_head_t remote_recycle_aq;  // 需要其他线程回收
-    nonfixed_recycle_aq_hash_item_t item;                       // 全局哈希表中的item
-}nonfixed_recycle_aq_t;
-
-// 非固定大小内存池定义
-typedef struct{
-    mem_type_attr_t *attr;                      // 池内节点的内存类型
-    nonfixed_free_skiplist_head_t free_sl;      // 空闲跳表头
-    nonfixed_recycle_aq_t recycle_aq;               // 待回收队列头
-    void *pool_start;
-    void *pool_end;                 // 边界
-    nonfixed_mp_hash_item_t item;               // 哈希表item
-}nonfixed_mp_t;
-
 /* -------------------------------- SYS --------------------------------*/
 
 // extern 全局统计数据
@@ -189,39 +146,6 @@ extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr);
  * @note        分配一个新的逻辑ID，原子ADD保证并发可用
  */
 extern tid_t tid_new();
-
-/**
- * @brief       init nonfixed mem pool
- * 
- * @param[in]   attr    - mem type attr
- */
-extern void _mp_nonfixed_init(mem_type_attr_t *attr);
-
-/**
- * @brief       supply nonfixed node into pool
- * 
- * @param[in]   attr    - mem type attr
- * 
- * @note        从系统申请大块内存，加到内存池中
- */
-extern void _mp_nonfixed_supply(mem_type_attr_t *attr);
-
-/**
- * @brief       get node from mem pool
- * 
- * @param[in]   attr    - mem type attr
- * @param[in]   size    - user need size
- * 
- * @retval      ptr to node
- */
-extern void* _mp_nonfixed_node_get(mem_type_attr_t *attr, int size);
-
-/**
- * @brief       put mem back to nonfixed mp
- * 
- * @param[in]   ptr - ptr to node
- */
-extern void _mp_nonfixed_node_put(void *ptr);
 
 /**
  * @brief       call system calloc
@@ -337,76 +261,9 @@ mem_type_attr_t _mem_type_attr_ ## _name = {    \
     _declare_mem_type_attr(name, MEM_TYPE_ATTR_FIXED_SIZE, node_size, node_max_num) \
 /* declare_mem_type_fixed end */
 
-/**
- * 外部使用，声明不定长内存类型，对于同个name，全局调用一次
- */
-#define declare_mem_type_nonfixed(name) \
-    _declare_mem_type_attr(name, 0, 0, 0)   \
-/* declare_mem_type_nonfixed end */
-
-/**
- * 外部使用，声明不定长内存类型
- */
-#define declare_mem_type_nonfixed_extern(name) \
-    extern mem_type_attr_t _mem_type_attr_ ## name; \
-/* declare_mem_type_nonfixed_extern end */
-
-/**
- * 外部使用，初始化非固定大小内存池
- */
-#define mp_nonfixed_init(name)  \
-    _mp_nonfixed_init(&_mem_type_attr_ ## name);    \
-/* mp_nonfixed_init end */
-
-/**
- * 外部使用，补充非固定大小内存节点
- */
-#define mp_nonfixed_supply(name)    \
-    _mp_nonfixed_supply(&_mem_type_attr_ ## name);  \
-/* mp_nonfixed_supply end */
-
-/**
- * 外部使用，申请非固定大小内存
- */
-#define mp_nonfixed_node_get(name, size)    \
-    _mp_nonfixed_node_get(&_mem_type_attr_ ## name, size);  \
-/* mp_nonfixed_node_get end */
-
-/**
- * 外部使用，返还内存回池子
- */
-#define mp_nonfixed_node_put(ptr)   \
-    _mp_nonfixed_node_put(ptr); \
-/* mp_nonfixed_node_put end */
-
 /* ========================================================================== */
 /*                              Debug Function                                */
 /* ========================================================================== */
-
-#define MP_TRACE    (1)
-
-#if MP_TRACE
-
-#include <stdio.h>
-
-/**
- * @brief       dump all fixed free list info
- */
-extern void mp_dump_fixed_free_list();
-
-/**
- * @brief       dump all nonfixed mp
- * 
- * @note        调试函数，打印非固定大小内存池跳表。需要在没有内存分配和回收时使用
- */
-extern void nonfixed_mp_dump();
-
-#else
-
-#define mp_dump_fixed_free_list()   
-#define nonfixed_mp_dump()  
-
-#endif
 
 #endif
 /* __MP_H__ end*/

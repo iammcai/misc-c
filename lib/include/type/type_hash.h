@@ -192,7 +192,7 @@ extern hash_item_t* type_hash_del(hash_head_t *head, hash_item_t *item);
  * 
  * @note       当前策略：负载因子>1.0时，执行扩容
  */
-static attr_pure_inline int type_hash_resize_tresh_up(hash_head_t *head);
+static attr_pure_inline int type_hash_resize_tresh_up(const hash_head_t *head);
 
 /**
  * @brief       check if need to tresh down hash
@@ -203,7 +203,7 @@ static attr_pure_inline int type_hash_resize_tresh_up(hash_head_t *head);
  * 
  * @note       当前策略：负载因子<0.5时，执行缩容
  */
-static attr_pure_inline int type_hash_resize_tresh_down(hash_head_t *head);
+static attr_pure_inline int type_hash_resize_tresh_down(const hash_head_t *head);
 
 /**
  * @brief       check if need to tresh up hash
@@ -354,7 +354,7 @@ static attr_const_inline unsigned int type_hash_jhash_96bit(unsigned int a, unsi
 /*                         Static Function Implementations                    */
 /* ========================================================================== */
 
-static inline int type_hash_resize_tresh_up(hash_head_t *head)
+static inline int type_hash_resize_tresh_up(const hash_head_t *head)
 {
     if(head->tab_shift == head->max_shift)
         return 0;
@@ -362,7 +362,7 @@ static inline int type_hash_resize_tresh_up(hash_head_t *head)
     return head->count >= hash_size(head->tab_shift);
 }
 
-static inline int type_hash_resize_tresh_down(hash_head_t *head)
+static inline int type_hash_resize_tresh_down(const hash_head_t *head)
 {
     if(head->tab_shift == head->min_shift)
         return 0;
