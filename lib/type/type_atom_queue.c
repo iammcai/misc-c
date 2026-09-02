@@ -116,7 +116,6 @@ void type_spsc_atom_queue_push(spsc_atom_queue_head_t *head, spsc_atom_queue_ite
 spsc_atom_queue_item_t* type_spsc_atom_queue_pop(spsc_atom_queue_head_t *head)
 {
     uintptr_t first = 0;
-    uintptr_t expect = 0;
     uintptr_t next = 0;
     spsc_atom_queue_item_t *it = NULL;
     unsigned int n = 0;
@@ -125,7 +124,6 @@ spsc_atom_queue_item_t* type_spsc_atom_queue_pop(spsc_atom_queue_head_t *head)
     if(!first)
         return NULL;
 
-    expect = first;
     it = ATOM_UINT2PTR(first);
     n = ATOM_SUB_FETCH(&head->count, 1, MORDER_SEQ_SCT);        // count --
     if(n)   // 如果还有，那么更新first->next

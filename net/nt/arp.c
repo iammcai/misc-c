@@ -156,7 +156,6 @@ declare_hash(arp_reply_cache, arp_reply_cache, arp_reply_cache_t, item, 1, 31, _
  */
 static error_code_e _arp_request_build(char *buf, const char *if_name, struct in_addr *dip)
 {
-    struct in_addr addr = {};
     uint8_t if_mac[MAC_ADDR_SIZE] = {};
 
     if(ERR_NO_ERROR != ftx_mac_get(if_name, if_mac))
@@ -349,12 +348,12 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
 
     safe_printf("-arp: Start Send Arp Rquest...\n");
 
-    for(uint32_t dip = dip_start; dip <= dip_end; ++ dip)
+    for(uint32_t dip_iter = dip_start; dip_iter <= dip_end; ++ dip_iter)
     {
-        arp->target_ip[0] = (dip >> 24) & 0xff;
-        arp->target_ip[1] = (dip >> 16) & 0xff;
-        arp->target_ip[2] = (dip >> 8)  & 0xff;
-        arp->target_ip[3] = (dip >> 0)  & 0xff;
+        arp->target_ip[0] = (dip_iter >> 24)    & 0xff;
+        arp->target_ip[1] = (dip_iter >> 16)    & 0xff;
+        arp->target_ip[2] = (dip_iter >> 8)     & 0xff;
+        arp->target_ip[3] = (dip_iter >> 0)     & 0xff;
         ftx_send(if_name, packet, ARP_STANDER_SIZE);
         // 限制速率，休眠1ms
         usleep(ARP_SCAN_SEND_INTERVAL * 1000);
@@ -367,9 +366,9 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
     safe_printf("\n" ARP_SCAN_FMT, "ipv4 addr", "mac addr");
     safe_printf(     ARP_SCAN_FMT, "---------", "--------");
     arp_reply_cache_t *cache = NULL;
-    for(uint32_t dip = dip_start; dip <= dip_end; ++ dip)
+    for(uint32_t dip_iter = dip_start; dip_iter <= dip_end; ++ dip_iter)
     {
-        arp_reply_cache_t key = {.ip = dip};
+        arp_reply_cache_t key = {.ip = dip_iter};
         ev_with_rdlock(&g_arp_reply_cache_rwlock)
             cache = arp_reply_cache_hash_find(&g_arp_reply_cache, &key);
         if(cache)
@@ -473,7 +472,6 @@ static void _arp_zcap_filter_cb(char *packet, int size, void *args)
         return;
     }
 
-    pkthdr_l2_t *l2_hdr = (pkthdr_l2_t*)packet;
     pkthdr_arp_t *arp_hdr = (pkthdr_arp_t*)((uint8_t*)packet + sizeof(pkthdr_l2_t));
 
     if(ntohs(arp_hdr->op_code) == ARP_REPLY)        // 处理ARP响应
@@ -526,7 +524,7 @@ error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)
 
     // 在哈希表中查找
     arp_reply_cache_t key = {.ip = ip};
-    arp_reply_cache_t *cache = NULL;
+    const arp_reply_cache_t *cache = NULL;
     ev_with_rdlock(&g_arp_reply_cache_rwlock)
         cache = arp_reply_cache_hash_find(&g_arp_reply_cache, &key);
     

@@ -76,7 +76,7 @@ void cli_gnurl_add_history(const char *input)
     if(!input)
         return;
 
-    HIST_ENTRY *last = history_get(history_length);     // 获取最近的一条历史
+    const HIST_ENTRY *last = history_get(history_length);       // 获取最近的一条历史
     if(!last || 0 != strcmp(last->line, input))         // 不重复才添加历史
     {
         add_history(input);

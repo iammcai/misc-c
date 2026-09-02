@@ -82,7 +82,7 @@ typedef struct{
 #define MEM_TYPE_ATTR_FIXED_FLAG_DYNAMIC    (1 << 0)
 
 // 获取node中的data字段
-#define mp_fixed_node_data(node)    (node)->data
+#define mp_fixed_node_data(node)    ((mp_fixed_node_t*)node)->data
 // 根据data指针反推node
 #define mp_fixed_data_node(_data)   container_of(_data, mp_fixed_node_t, data)
 
@@ -113,7 +113,7 @@ typedef struct{
 /**
  * @brief       cmp func for hash
  */
-static attr_pure_inline int _mem_type_attr_fixed_cmp(mem_type_attr_fixed_t *attr1, mem_type_attr_fixed_t *attr2)
+static attr_pure_inline int _mem_type_attr_fixed_cmp(const mem_type_attr_fixed_t *attr1, const mem_type_attr_fixed_t *attr2)
 {
     return strcmp(attr1->name, attr2->name);
 }
@@ -121,7 +121,7 @@ static attr_pure_inline int _mem_type_attr_fixed_cmp(mem_type_attr_fixed_t *attr
 /**
  * @brief       hash func for hash
  */
-static attr_pure_inline unsigned int _mem_type_attr_fixed_hash(mem_type_attr_fixed_t *attr)
+static attr_pure_inline unsigned int _mem_type_attr_fixed_hash(const mem_type_attr_fixed_t *attr)
 {
     return type_hash_jhash(attr->name, strlen(attr->name), 0);
 }
@@ -135,7 +135,7 @@ declare_list(mp_fixed_node, mp_fixed_node, mp_fixed_node_t, item.list_item)
 /**
  * @brief       cmp func for hash
  */
-static attr_pure_inline int _fixed_mp_cmp(fixed_mp_t *mp1, fixed_mp_t *mp2)
+static attr_pure_inline int _fixed_mp_cmp(const fixed_mp_t *mp1, const fixed_mp_t *mp2)
 {
     return strcmp(mp1->attr->name, mp2->attr->name);
 }
@@ -143,7 +143,7 @@ static attr_pure_inline int _fixed_mp_cmp(fixed_mp_t *mp1, fixed_mp_t *mp2)
 /**
  * @brief       hash func for hash
  */
-static attr_pure_inline unsigned int _fixed_mp_hash(fixed_mp_t *mp)
+static attr_pure_inline unsigned int _fixed_mp_hash(const fixed_mp_t *mp)
 {
     return type_hash_jhash(mp->attr->name, strlen(mp->attr->name), 0);
 }
@@ -154,7 +154,7 @@ declare_hash(fixed_mp, fixed_mp, fixed_mp_t, item, 1, 31, _fixed_mp_cmp, _fixed_
 /**
  * @brief       cmp func for hash
  */
-static attr_pure_inline int _mp_fixed_recycle_cmp(mp_fixed_recycle_t *r1, mp_fixed_recycle_t *r2)
+static attr_pure_inline int _mp_fixed_recycle_cmp(const mp_fixed_recycle_t *r1, const mp_fixed_recycle_t *r2)
 {
     return r1->tid - r2->tid;
 }
@@ -201,7 +201,7 @@ static fixed_mp_t* _fixed_mp_find_or_create(mem_type_attr_fixed_t *attr, uint8_t
  * 
  * @retval      mem
  */
-static attr_hot void* _mp_fixed_node_get_fast(mem_type_attr_fixed_t *attr);
+static attr_hot void* _mp_fixed_node_get_fast(const mem_type_attr_fixed_t *attr);
 
 /**
  * @brief       get node slow path
@@ -315,13 +315,13 @@ done:
     return mp;
 }
 
-static void* _mp_fixed_node_get_fast(mem_type_attr_fixed_t *attr)
+static void* _mp_fixed_node_get_fast(const mem_type_attr_fixed_t *attr)
 {
     // 检查当前cache
     if(unlikely(attr != g_mem_type_attr_fixed_cache))
         return NULL;
     // cache匹配，直接pop一个空闲节点
-    mp_fixed_node_t *node = mp_fixed_node_list_pop(&g_fixed_mp_cache->free_list);
+    const mp_fixed_node_t *node = mp_fixed_node_list_pop(&g_fixed_mp_cache->free_list);
     if(unlikely(!node))
         return NULL;
     return mp_fixed_node_data(node);

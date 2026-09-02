@@ -128,7 +128,7 @@ typedef struct{
 /**
  * @brief       cmp for sl
  */
-static attr_pure_inline int _mp_nonfixed_node_cmp(mp_nonfixed_node_t *node1, mp_nonfixed_node_t *node2)
+static attr_pure_inline int _mp_nonfixed_node_cmp(const mp_nonfixed_node_t *node1, const mp_nonfixed_node_t *node2)
 {
     if(node1->size < node2->size)
         return -1;
@@ -143,7 +143,7 @@ declare_skiplist(mp_nonfixed_node, mp_nonfixed_node, mp_nonfixed_node_t, item.sl
 /**
  * @brief       cmp for sl
  */
-static attr_pure_inline int _mp_nonfixed_node_cmp_by_addr(mp_nonfixed_node_t *node1, mp_nonfixed_node_t *node2)
+static attr_pure_inline int _mp_nonfixed_node_cmp_by_addr(const mp_nonfixed_node_t *node1, const mp_nonfixed_node_t *node2)
 {
     if(node1 < node2)
         return -1;
@@ -158,7 +158,7 @@ declare_skiplist(mp_nonfixed_node_addr, mp_nonfixed_node_addr, mp_nonfixed_node_
 /**
  * @brief       cmp for hash
  */
-static attr_pure_inline int _mem_type_attr_nonfixed_cmp(mem_type_attr_nonfixed_t *attr1, mem_type_attr_nonfixed_t *attr2)
+static attr_pure_inline int _mem_type_attr_nonfixed_cmp(const mem_type_attr_nonfixed_t *attr1, const mem_type_attr_nonfixed_t *attr2)
 {
     return strcmp(attr1->name, attr2->name);
 }
@@ -166,7 +166,7 @@ static attr_pure_inline int _mem_type_attr_nonfixed_cmp(mem_type_attr_nonfixed_t
 /**
  * @brief       hash for hashtable
  */
-static attr_pure_inline unsigned int _mem_type_attr_nonfixed_hash(mem_type_attr_nonfixed_t *attr)
+static attr_pure_inline unsigned int _mem_type_attr_nonfixed_hash(const mem_type_attr_nonfixed_t *attr)
 {
     return type_hash_jhash(attr->name, strlen(attr->name), 0);
 }
@@ -177,7 +177,7 @@ declare_hash(mem_type_attr_nonfixed, mem_type_attr_nonfixed, mem_type_attr_nonfi
 /**
  * @brief       cmp for hash
  */
-static attr_pure_inline int _nonfixed_mp_cmp(nonfixed_mp_t *mp1, nonfixed_mp_t *mp2)
+static attr_pure_inline int _nonfixed_mp_cmp(const nonfixed_mp_t *mp1, const nonfixed_mp_t *mp2)
 {
     return strcmp(mp1->attr->name, mp2->attr->name);
 }
@@ -185,7 +185,7 @@ static attr_pure_inline int _nonfixed_mp_cmp(nonfixed_mp_t *mp1, nonfixed_mp_t *
 /**
  * @brief       hash for hashtable
  */
-static attr_pure_inline unsigned int _nonfixed_mp_hash(nonfixed_mp_t *mp)
+static attr_pure_inline unsigned int _nonfixed_mp_hash(const nonfixed_mp_t *mp)
 {
     return type_hash_jhash(mp->attr->name, strlen(mp->attr->name), 0);
 }
@@ -199,7 +199,7 @@ declare_spsc_atom_queue(mp_nonfixed_recycle, mp_nonfixed_recycle, mp_nonfixed_no
 /**
  * @brief       cmp for hash
  */
-static attr_pure_inline int _mp_nonfixed_recycle_cmp(mp_nonfixed_recycle_t *re1, mp_nonfixed_recycle_t *re2)
+static attr_pure_inline int _mp_nonfixed_recycle_cmp(const mp_nonfixed_recycle_t *re1, const mp_nonfixed_recycle_t *re2)
 {
     return (int)re1->tid - re2->tid;
 }

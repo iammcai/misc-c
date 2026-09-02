@@ -304,12 +304,9 @@ static void _tftp_send_data()
     // 从文件中读取最多512Bytes
     // 如果是重传，那么需要先偏移回去
     if(g_tftp_fsm.retry > 0)
-    {
-        long current_pos = ftell(g_tftp_fsm.fp);
         fseek(g_tftp_fsm.fp, -(long)g_tftp_fsm.send_data_size, SEEK_CUR);
-    }
     size_t read_bytes = fread(data, 1, TFTP_DATA_BLOCK_SIZE, g_tftp_fsm.fp);
-    if(read_bytes < 0)
+    if(ferror(g_tftp_fsm.fp))
     {
         safe_printf("-tftp_fsm: fread() file for block #%d fail\n", ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE));
         mp_slab_node_put(buffer);
@@ -501,7 +498,7 @@ static attr_force_inline void _tftp_state_wait_data1_poll(tftp_msg_t *msg)
             else
             {
                 // 下载block1 data
-                int ret = _tftp_download_data(msg);
+                ret = _tftp_download_data(msg);
                 if(ERR_NO_ERROR != ret)
                     g_tftp_fsm.state = TFTP_STATE_ERROR;
                 else
@@ -689,7 +686,7 @@ static attr_force_inline void _tftp_state_upload_enter(tftp_msg_t *msg)
 /**
  * @brief       upload状态切换
  */
-static attr_force_inline void _tftp_state_upload_poll(tftp_msg_t *msg)
+static attr_force_inline void _tftp_state_upload_poll(tftp_msg_t *msg)      // cppcheck-suppress constParameterCallback
 {
     tftp_event_e event = msg->event;
 
@@ -758,7 +755,7 @@ static attr_force_inline void _tftp_state_success_enter(tftp_msg_t *msg)
 /**
  * @brief       success状态切换
  */
-static attr_force_inline void _tftp_state_success_poll(tftp_msg_t *msg)
+static attr_force_inline void _tftp_state_success_poll(tftp_msg_t *msg) // cppcheck-suppress constParameterCallback
 {
     tftp_event_e event = msg->event;
 
@@ -800,7 +797,7 @@ static attr_force_inline void _tftp_state_error_enter(tftp_msg_t *msg)
 /**
  * @brief       error状态切换
  */
-static attr_force_inline void _tftp_state_error_poll(tftp_msg_t *msg)
+static attr_force_inline void _tftp_state_error_poll(tftp_msg_t *msg)   // cppcheck-suppress constParameterCallback
 {
     tftp_event_e event = msg->event;
 
@@ -1027,7 +1024,7 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args)
             if(ATOM_LOAD(&g_tftp_fsm.expect_block_id, MORDER_ACQUIRE) != block_id)
                 return;
 
-            char *data = (char*)tftp_data_hdr + sizeof(pkthdr_tftp_data_t);
+            const char *data = (char*)tftp_data_hdr + sizeof(pkthdr_tftp_data_t);
             int data_size = len - (sizeof(pkthdr_l2_t) + sizeof(pkthdr_ipv4_t) + sizeof(pkthdr_udp_t) + sizeof(pkthdr_tftp_data_t));
             // 如果block_id为1，推送RECEIVE_DATA1事件
             if(block_id == 1)
@@ -1065,7 +1062,6 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args)
             }
             break;
         case TFTP_ERROR:
-            return;
             msg.event = TFTP_EVENT_RECEIVE_ERROR;
             msg_q_push(tftp_fsm_mq, &msg, sizeof(msg));
             break;
@@ -1083,7 +1079,6 @@ static void* _tftp_fsm(void *args)
     _tftp_fsm_init();
 
     tftp_msg_t msg = {};
-    int ret = 0;
     tftp_state_e state = 0;
     tftp_event_e event = 0;
 

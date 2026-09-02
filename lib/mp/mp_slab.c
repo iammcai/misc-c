@@ -79,7 +79,7 @@ static ev_rwlock_t g_recyle_aq_hash_rwlock = EV_RWLOCK_INITIALIZER;
  * 
  * @retval      cmp result
  */
-static attr_pure_inline int _slab_mp_cmp(slab_mp_t *p1, slab_mp_t *p2)
+static attr_pure_inline int _slab_mp_cmp(const slab_mp_t *p1, const slab_mp_t *p2)
 {
     return strcmp(p1->attr->name, p2->attr->name);
 }
@@ -91,7 +91,7 @@ static attr_pure_inline int _slab_mp_cmp(slab_mp_t *p1, slab_mp_t *p2)
  * 
  * @retval      hash val
  */
-static attr_pure_inline unsigned int _slab_mp_hash(slab_mp_t *p)
+static attr_pure_inline unsigned int _slab_mp_hash(const slab_mp_t *p)
 {
     return type_hash_jhash(p->attr->name, strlen(p->attr->name), 0);
 }
@@ -104,7 +104,7 @@ static attr_pure_inline unsigned int _slab_mp_hash(slab_mp_t *p)
  * 
  * @retval      cmp result
  */
-static attr_pure_inline int _slab_recycle_aq_cmp(slab_recycle_aq_t *a1, slab_recycle_aq_t *a2)
+static attr_pure_inline int _slab_recycle_aq_cmp(const slab_recycle_aq_t *a1, const slab_recycle_aq_t *a2)
 {
     return a1->tid - a2->tid;
 }
@@ -476,7 +476,7 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
             {
                 if(attr->slab_node_cnt[j] == 0)
                     continue;
-                snprintf(str+strlen(str), 768-strlen(str), "    slot%-2d (%-4d B): %-4d / %-4d, hit %.3f%%\n", j, g_slab_size_arr[j],
+                snprintf(str+strlen(str), 768-strlen(str), "    slot%-2d (%-4d B): %-4u / %-4u, hit %.3f%%\n", j, g_slab_size_arr[j],
                     ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED), attr->slab_node_cnt[j], 
                     (double)ATOM_LOAD(&attr->slab_hit[j], MORDER_RELAXED)/ATOM_LOAD(&attr->hit_total, MORDER_RELAXED) * 100);
             }

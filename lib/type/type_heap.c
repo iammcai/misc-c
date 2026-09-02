@@ -133,14 +133,12 @@ void type_heap_resize(heap_head_t *head, heap_size_op_e op)
 
 void type_heap_heapify_up(heap_head_t *head, unsigned int index, type_heap_cmp_func cmp)
 {
-    unsigned int move_to = 0;
-
     if(index >= head->size)
         return;
 
     while(index)    // 交换最多到index == 0
     {
-        move_to = (index - 1) >> 1;      // 父节点位置
+        unsigned int move_to = (index - 1) >> 1;        // 父节点位置
         if(_heap_cmp(head, move_to, index, cmp) <= 0)   // 父节点不大于，则完成
             break;
         // 交换父节点和当前节点

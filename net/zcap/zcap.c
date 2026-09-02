@@ -565,7 +565,7 @@ static void* _zcap_routine(void *args)
                 if(!packet)
                 {
                     char syslog_ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get mem node for size %d fail, packet loss", 
+                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get mem node for size %zu fail, packet loss", 
                         sizeof(zcap_packet_t) + pkt_len);
                     syslog_warn(SYSLOG_MODULE_ZCAP, syslog_ctx);
                     ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
@@ -582,8 +582,8 @@ static void* _zcap_routine(void *args)
                 zcap_packet_spsc_atom_queue_push(&captor->alz[hashval].alz_aq_head, packet);
             }
             // block一批结束后统一唤醒
-            for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
-                ev_sem_post(&captor->alz[i].alz_sem);
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                ev_sem_post(&captor->alz[q].alz_sem);
 
             // 归还Block
             pbd->hdr.bh1.block_status = TP_STATUS_KERNEL;
@@ -618,7 +618,6 @@ static void _zcap_pkt_info_extract(zcap_packet_t *packet, zcap_pkt_info_t *info)
     memset(info, 0, sizeof(zcap_pkt_info_t));
 
     // 提取l2信息
-    uint32_t len = packet->len;
     const struct ethhdr *eth = (const struct ethhdr*)packet->packet;    // l2头部
     memcpy(info->mac_da, eth->h_dest, MAC_ADDR_SIZE);
     memcpy(info->mac_sa, eth->h_source, MAC_ADDR_SIZE);
@@ -630,10 +629,6 @@ static void _zcap_pkt_info_extract(zcap_packet_t *packet, zcap_pkt_info_t *info)
     if(ETH_P_IP == info->ether_type)
     {
         const struct iphdr *ip = (const struct iphdr*)((uint8_t*)packet->packet + offset);  // l3头部
-        uint32_t ip_hdr_len = ip->ihl * 4;      // l3的长度，以4B为单位，包含头部
-
-        uint32_t ip_da_h = ntohl(ip->daddr);
-        uint32_t ip_sa_h = ntohl(ip->saddr);
 
         info->ip_pro = ip->protocol;
 
@@ -653,7 +648,7 @@ static void _zcap_pkt_info_extract(zcap_packet_t *packet, zcap_pkt_info_t *info)
  * 
  * @retval      1 - match, 0 - not match
  */
-static int _zcap_pkt_filed_match(zcap_pkt_field_t *field, zcap_pkt_info_t *info)
+static int _zcap_pkt_filed_match(zcap_pkt_field_t *field, const zcap_pkt_info_t *info)
 {
     switch(field->field)
     {
@@ -1155,7 +1150,7 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
     }
 
     snprintf(buf, buf_size,
-        "{\"eth0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%u\"},\"wlan0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%u\"}}",
+        "{\"eth0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%lu\"},\"wlan0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%lu\"}}",
         eth0_rx_rate, eth0_rx_size, wlan0_rx_rate, wlan0_rx_size);
 
     return ERR_NO_ERROR;

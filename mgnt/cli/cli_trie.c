@@ -189,7 +189,7 @@ void _cli_trie_insert(const char *cmd, const char *help,
     cli_param_t *param, unsigned char param_size, cli_hook_func hook)
 {
     char **items = NULL;
-    char *token = NULL;
+    const char *token = NULL;
     cli_trie_item_t *trie_item = &g_cli_trie.root;
 
     // cmd首先需要分割为多个item
@@ -318,13 +318,12 @@ cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
 {
     cli_match_info_t match = {};
     cli_trie_item_t *trie_item = &g_cli_trie.root;
-    unsigned char i = 0;
     unsigned char remain = items_count;
     cli_trie_item_t *last_end_item = NULL;
 
     ev_with_mutex(&g_cli_trie_mtx)
     {
-        for(i = 0; i < items_count && items[i]; ++ i) // 遍历所有items
+        for(unsigned char i = 0; i < items_count && items[i]; ++ i)     // 遍历所有items
         {
             cli_trie_item_t *prefix_match_item = NULL;      // 前缀匹配节点
             unsigned char prefix_match_cnt = 0;
@@ -444,8 +443,8 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
 
     void *ret = NULL;
     // 传给用户的agrv[]必须按照注册顺序
-    cli_param_t *usr_param = match->params;
-    unsigned char usr_param_cnt = match->params_count;
+    const cli_param_t *usr_param = match->params;
+    const unsigned char usr_param_cnt = match->params_count;
     unsigned char real_param_cnt = 0;
     char **usr_argv = (char**)mp_calloc(usr_param_cnt, sizeof(char*));      // 给用户的argv
     unsigned char *is_fill = (unsigned char*)mp_calloc(usr_param_cnt, sizeof(unsigned char));   // 是否填充
@@ -459,7 +458,7 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
         // 匹配-标识的短名
         if(strlen(cur_arg) == 2 && cur_arg[0] == '-')
         {
-            char *short_name = cur_arg+1;
+            const char *short_name = cur_arg + 1;
             unsigned char j = 0;
             for(; j < usr_param_cnt; ++ j)    // 遍历找到long_name匹配
                 if(*short_name == match->params[j].short_name && is_fill[j] == 0)
@@ -558,7 +557,7 @@ void* _cli_trie_excute(const char *cmd)
 char** cli_trie_completion(const char *prefix, int start, int end, const char *text)
 {
     char **result = NULL;
-    cli_trie_item_t *item = NULL;
+    const cli_trie_item_t *item = NULL;
 
     //dbg_always("prefix: %s, start %d, end %d", prefix, start, end);
 
@@ -577,10 +576,25 @@ char** cli_trie_completion(const char *prefix, int start, int end, const char *t
     {
         item = &g_cli_trie.root;
         result = calloc(item->size+2, sizeof(char*));
+        pfm_ensure_ret(result, NULL);
         result[0] = strdup("");
+        if(unlikely(!result[0]))
+        {
+            free(result);
+            return NULL;
+        }
         int k = 0;
         for(; k < item->size; ++ k)
+        {
             result[k+1] = strdup(item->next[k]->name);
+            if(unlikely(!result[k+1]))
+            {
+                for(; k >=0 ; -- k)
+                    free(result[k]);
+                free(result);
+                return NULL;
+            }
+        }
         return result;
     }
 
@@ -599,18 +613,40 @@ char** cli_trie_completion(const char *prefix, int start, int end, const char *t
         return NULL;
 
     result = (char**)calloc(item->size+2, sizeof(char*));   // [0]位置为LCP，也就是text，最后一个为NULL
+    pfm_ensure_ret(result, NULL);
     result[0] = strdup(text);
+    if(unlikely(!result[0]))
+    {
+        free(result);
+        return NULL;
+    }
     int i = 0;
     int result_size = 1;    // 从1开始填充
     for(; i < item->size; ++ i)
         // 遍历Next，使用前缀匹配
         if(!strncmp(text, item->next[i]->name, strlen(text)))
-            result[result_size ++] = strdup(item->next[i]->name);
+        {
+            result[result_size] = strdup(item->next[i]->name);
+            if(unlikely(!result[result_size]))
+            {
+                for(result_size --; result_size >= 1; -- result_size)
+                    free(result[result_size]);
+                free(result);
+                return NULL;
+            }
+            result_size ++;
+        }
 
     if(result_size == 2)    // 如果只有一个匹配项，[0]位置需要和1一致才可以tab补全
     {
         free(result[0]);
         result[0] = strdup(result[1]);
+        if(unlikely(!result[0]))
+        {
+            free(result[1]);
+            free(result);
+            return NULL;
+        }
     }
 
     return result;

@@ -69,7 +69,7 @@ typedef struct{
 /**
  * @brief       cmp stats
  */
-static attr_pure_inline int _swdg_thd_stats_cmp(swdg_thd_stats_t *st1, swdg_thd_stats_t *st2)
+static attr_pure_inline int _swdg_thd_stats_cmp(const swdg_thd_stats_t *st1, const swdg_thd_stats_t *st2)
 {
     return st1->tid - st2->tid;
 }

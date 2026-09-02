@@ -91,7 +91,7 @@ static attr_force_inline const char* cli_gnurl_history_get(int index)
 {
     if(index >= history_base + history_length || index < history_base)
         return NULL;
-    HIST_ENTRY *history = history_get(index);
+    const HIST_ENTRY *history = history_get(index);
     if(!history)
         return NULL;
     return (const char*)history->line;

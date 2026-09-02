@@ -407,7 +407,7 @@ static inline void _web_mgnt_deinit(void)
  * 
  * @note        捕获dstport 8080 tcp报文回调，不做任何操作，仅为增加zcap计数
  */
-static attr_force_inline void zcap_web_pkt_cb(char *packet, int len, void *args)
+static attr_force_inline void zcap_web_pkt_cb(char *packet, int len, void *args)    // cppcheck-suppress constParameterCallback
 {
     // nothing
 }

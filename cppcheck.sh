@@ -5,6 +5,7 @@ rm -rf cppcheck_html
 
 cppcheck \
     --enable=warning,style,performance,portability \
+	--check-level=exhaustive \
     --std=c11 \
     --platform=unix64 \
     --suppress=missingIncludeSystem \

@@ -138,7 +138,7 @@ extern mem_type_attr_t* mem_type_attr_next(mem_type_attr_t *attr);
  * 
  * @retval      0 - no, else - yes
  */
-extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr);
+extern unsigned int mem_type_attr_slab(const mem_type_attr_t *attr);
 
 /**
  * @brief       new a logic tid

@@ -63,11 +63,12 @@ hash_item_t* type_hash_add(hash_head_t *head, hash_item_t *item, type_hash_cmp_f
     unsigned int high_bits = 0;
     hash_item_t **it = NULL;
 
-    assert(head->entries);
+    assert(head && head->entries && item);
     assert(cmp_func && hash_func);
 
-    item->hash_val = hash_func(item);
-    high_bits = hash_key(head->tab_shift, item->hash_val);  // 计算放入的桶的索引
+    item->hash_val = hash_func(item);       // cppcheck-suppress nullPointerRedundantCheck
+    // 计算放入的桶的索引
+    high_bits = hash_key(head->tab_shift, item->hash_val);  // cppcheck-suppress nullPointerRedundantCheck
     it = &head->entries[high_bits];
 
     // 找到首个hash_val不小于item的hash_val的节点
@@ -96,9 +97,9 @@ hash_item_t* type_hash_del(hash_head_t *head, hash_item_t *item)
     unsigned int high_bits = 0;
     hash_item_t **it = NULL;
 
-    assert(head->entries);
-
-    high_bits = hash_key(head->tab_shift, item->hash_val);  // 获取item所在桶索引
+    assert(head && head->entries && item);
+    // 获取item所在桶索引
+    high_bits = hash_key(head->tab_shift, item->hash_val);  // cppcheck-suppress nullPointerRedundantCheck
     it = &head->entries[high_bits];
 
     while(hash_val_cmp(*it, item, <))   // 跳过所有hash_val小于item的
@@ -123,7 +124,6 @@ void type_hash_grow(hash_head_t *head, unsigned char new_shift)
     unsigned int range = 0;
     unsigned int old_size = 0;
     unsigned int new_size = 0;
-    unsigned int i = 0;
 
     assert(head->entries);
 
@@ -153,7 +153,7 @@ void type_hash_grow(hash_head_t *head, unsigned char new_shift)
         old_size --;
 
         pos = &head->entries[old_size];
-        for(i = 0; i < range; ++ i)             // 遍历分裂的新桶
+        for(unsigned int i = 0; i < range; ++ i)        // 遍历分裂的新桶
         {
             unsigned int index = 0;
 
@@ -186,7 +186,6 @@ void type_hash_shrink(hash_head_t *head, unsigned char new_shift)
     unsigned int old_size = 0;
     unsigned int new_size = 0;
     unsigned int i = 0;
-    unsigned int j = 0;
 
     assert(head->entries);
 
@@ -201,7 +200,7 @@ void type_hash_shrink(hash_head_t *head, unsigned char new_shift)
         hash_item_t **pos = NULL;
 
         pos = &head->entries[i];
-        for(j = 0; j < range; j ++)
+        for(unsigned int j = 0; j < range; j ++)
         {
             unsigned index = 0;
 
@@ -220,11 +219,11 @@ hash_item_t* type_hash_find(hash_head_t *head, hash_item_t *item, type_hash_cmp_
     unsigned int high_bits = 0;
     hash_item_t *it = NULL;
 
-    assert(head->entries);
-    assert(cmp_func && hash_func);
+    assert(head && head->entries);
+    assert(item && cmp_func && hash_func);
 
-    item->hash_val = hash_func(item);
-    high_bits = hash_key(head->tab_shift, item->hash_val);
+    item->hash_val = hash_func(item);                           // cppcheck-suppress nullPointerRedundantCheck
+    high_bits = hash_key(head->tab_shift, item->hash_val);      // cppcheck-suppress nullPointerRedundantCheck
     it = head->entries[high_bits];
 
     while(hash_val_cmp(it, item, <))

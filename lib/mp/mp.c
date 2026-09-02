@@ -78,12 +78,12 @@ static attr_pure_inline unsigned int _mem_type_attr_hash(mem_type_attr_t *a)
  * 
  * @retval      0 - no, else - yes
  */
-static attr_pure_inline unsigned int mem_type_attr_fixed_size(mem_type_attr_t *attr)
+static attr_pure_inline unsigned int mem_type_attr_fixed_size(const mem_type_attr_t *attr)
 {
     return attr->flag & MEM_TYPE_ATTR_FIXED_SIZE;
 }
 
-extern unsigned int mem_type_attr_slab(mem_type_attr_t *attr)
+extern unsigned int mem_type_attr_slab(const mem_type_attr_t *attr)
 {
     return attr->flag & MEM_TYPE_ATTR_SLAB;
 }

@@ -158,7 +158,14 @@ static error_code_e _ping_get_dst_mac(const char *if_name, uint32_t dst_ip, uint
  * 
  * @note        构建icmp echo request报文
  */
-static error_code_e _ping_icmp_echo_request_build(uint8_t *packet, uint8_t *dmac, uint8_t *smac, uint32_t dip, uint32_t sip, uint16_t icmp_seq)
+static error_code_e _ping_icmp_echo_request_build(
+    uint8_t *packet, 
+    const uint8_t *dmac, 
+    const uint8_t *smac, 
+    uint32_t dip, 
+    uint32_t sip, 
+    uint16_t icmp_seq
+)
 {
     if(!packet)
         return ERR_BAD_PARAM;

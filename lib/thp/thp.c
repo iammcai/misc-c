@@ -121,7 +121,7 @@ void _thp_init(thp_t *thp)
     thp_work_list_init(&thp->wl);
 
     // 限制线程数量
-    if(thp->thread_count <= 0)
+    if(thp->thread_count == 0)
         thp->thread_count = 1;
     else if(thp->thread_count > THREAD_POOL_TH_COUNT_MAX)
         thp->thread_count = THREAD_POOL_TH_COUNT_MAX;

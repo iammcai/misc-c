@@ -76,7 +76,7 @@ static void* _cli_routine(void *args);
  * 
  * @note        ? 的回调函数
  */
-static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])
+static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])  // cppcheck-suppress constParameterCallback
 {
     _cli_trie_dump();
     return NULL;
@@ -100,7 +100,7 @@ extern ev_sem_t g_platform_init_ok;
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static attr_force_inline void* _cli_shell_cli_hook(unsigned char argc, char *argv[])
+static attr_force_inline void* _cli_shell_cli_hook(unsigned char argc, char *argv[])    // cppcheck-suppress constParameterCallback
 {
     safe_printf("-cli: Shell mode, Enter <config> for coming back.\n");
     g_cli_mode = CLI_MODE_SHELL;

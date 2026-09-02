@@ -131,8 +131,8 @@ static void* _syslog_direction_get_cli_hook(unsigned char argc, char* argv[])
     uint8_t flag = ATOM_LOAD(&g_syslog_direction, MORDER_ACQUIRE);
     safe_printf(
         "terminal %d, flash %d\n", 
-        0 != (g_syslog_direction & SYSLOG_DIRECTION_TERMINAL),
-        0 != (g_syslog_direction & SYSLOG_DIRECTION_FLASH)
+        0 != (flag & SYSLOG_DIRECTION_TERMINAL),
+        0 != (flag & SYSLOG_DIRECTION_FLASH)
     );
 }
 
@@ -141,7 +141,6 @@ static void* _syslog_direction_get_cli_hook(unsigned char argc, char* argv[])
  */
 static void* _syslog_direction_cli_hook(unsigned char argc, char* argv[])
 {
-    unsigned char i = 0;
     int dirs[2] = {
         0 != (g_syslog_direction & SYSLOG_DIRECTION_TERMINAL),
         0 != (g_syslog_direction & SYSLOG_DIRECTION_FLASH)
@@ -249,7 +248,7 @@ static void _syslog_flush_file(int need_lock)
 /**
  * @brief       workfunc of ev thd, flush file
  */
-static void _syslog_flush_thd_wf(void *args)
+static void _syslog_flush_thd_wf(void *args)    // cppcheck-suppress constParameterCallback
 {
     _syslog_flush_file(1);  // 内部需要上锁
 }
@@ -265,9 +264,6 @@ static void _syslog_analyze(syslog_entry_t *entry)
 {
     pfm_ensure_ret_void(entry);
 
-    syslog_str_t str = {};
-    uint32_t head_mask;
-
     // 时间戳转换
     struct tm tm_info;
     char time_str[32] = {};
@@ -276,7 +272,7 @@ static void _syslog_analyze(syslog_entry_t *entry)
 
     // [time] [module] [facility] ctx
     char prefix[64] = {};
-    snprintf(prefix, 64, "[%s][%s][%d/%s]", time_str, syslog_module_str[entry->module], entry->facility, syslog_facility_str[entry->facility]);
+    snprintf(prefix, 64, "[%s][%s][%u/%s]", time_str, syslog_module_str[entry->module], entry->facility, syslog_facility_str[entry->facility]);
 
     // 设置到缓冲区
     ev_with_wrlock(&g_syslog_ring.lock)
@@ -285,7 +281,7 @@ static void _syslog_analyze(syslog_entry_t *entry)
         if(_syslog_ring_full())
             g_syslog_ring.tail ++;
 
-        head_mask = syslog_ring_mask(g_syslog_ring.head);
+        uint32_t head_mask = syslog_ring_mask(g_syslog_ring.head);
         memset(&g_syslog_ring.entries[head_mask], 0, sizeof(syslog_str_t));
         snprintf(g_syslog_ring.entries[head_mask].str, SYSLOG_STR_SIZE, SYSLOG_STR_FMT, prefix, entry->ctx);
 

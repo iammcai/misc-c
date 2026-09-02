@@ -127,8 +127,8 @@ error_code_e if_status_get(const char *if_name, if_status_t *status)
                 goto done;
             if(nlh->nlmsg_type != RTM_NEWADDR)
                 continue;
-        
-            struct ifaddrmsg *ifa = (struct ifaddrmsg*)NLMSG_DATA(nlh);
+
+            const struct ifaddrmsg *ifa = (struct ifaddrmsg*)NLMSG_DATA(nlh);
             if(ifa->ifa_index == if_index && ifa->ifa_family == AF_INET)
             {
                 status->has_ipv4 = 1;

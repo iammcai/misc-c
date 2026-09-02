@@ -322,7 +322,7 @@ void _ftx_init(const char *if_name)
 
     // 检查是否已存在
     ftx_t key = {.if_name = if_name};
-    ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);
+    const ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);
     if(result)
         return;
 
@@ -363,7 +363,6 @@ static void* _ftx_tx_routine(void *args)
     ftx_packet_t packet_batch[FTX_TX_MSGQ_SIZE] = {};   // 待发送报文信息
     struct mmsghdr mmsg[FTX_TX_MSGQ_SIZE] = {};         // 内核消息
     struct iovec iov[FTX_TX_MSGQ_SIZE] = {};
-    int pendings = 0;   // 待发送数量
 
     char buf[16] = {};
     snprintf(buf, sizeof(buf), "ftx_%s", ftxor->if_name);
@@ -386,7 +385,7 @@ static void* _ftx_tx_routine(void *args)
         swdg_feed();
 
         // 超时等待消息
-        pendings = 0;
+        int pendings = 0;
         msg_q_ret_type_e ret = _msg_q_pop(ftxor->tx_q, sizeof(ftx_packet_t), msg_q_wait_timeout, FTX_MSGQ_WAIT_TIME, &packet_batch[pendings]);
         if(ret == msg_q_ret_non_msg)    // 没有消息，continue
             continue;
@@ -429,12 +428,11 @@ static void* _ftx_tx_routine(void *args)
             // 统计信息更新
             ATOM_FETCH_ADD(&ftxor->stat.tx_count, send, MORDER_ACQ_REL);
             // 统计数据，释放内存
-            int i = 0;
             uint64_t size = 0;
-            for(; i < send; ++ i)
+            for(int j = 0; j < send; ++ j)
             {
-                size += pkt_ptr[i].len;
-                mp_slab_node_put(pkt_ptr[i].packet);
+                size += pkt_ptr[j].len;
+                mp_slab_node_put(pkt_ptr[j].packet);
             }
             ATOM_FETCH_ADD(&ftxor->stat.tx_size, size, MORDER_ACQ_REL);
 
@@ -541,7 +539,7 @@ error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr)
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
-    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    const ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
     pfm_ensure_ret(ftxor, ERR_NT_IF_ERROR);
 
     memcpy(mac_addr, ftxor->if_mac, MAC_ADDR_SIZE);
