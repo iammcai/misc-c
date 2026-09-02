@@ -108,27 +108,6 @@ typedef struct{
 // 预定义hash，用于存zcap_t
 pre_declare_hash(zcaptor)
 
-// 报文统计结构
-typedef struct{
-    ev_mutex_t mtx;             // 互斥锁
-    unsigned long count;        // 总数量
-    unsigned long size;         // 总大小，单位Byte
-
-    // 报文类型
-    unsigned long err;          // 错包数量
-
-    // 丢包统计
-    unsigned long loss_count;   // 丢包个数
-
-    //以下用于速率统计
-    unsigned long curr_count;   // 本次统计数量
-    unsigned long curr_size;    // 本次统计大小
-    unsigned long last_count;   // 上次统计数量
-    unsigned long last_size;    // 上次统计大小
-    double rate_pps;            // rx pps
-    double rate_Bps;            // rx Bps
-}zcap_stat_t;
-
 // 预定义spsc_aq，用于存放alz_t和rx_t交互报文
 pre_declare_spsc_atom_queue(zcap_packet)
 
@@ -150,12 +129,29 @@ typedef struct{
     char packet[];    // 报文内容
 }zcap_packet_t;
 
+// 线程解析数据定义
+typedef struct{
+    uint64_t counts;        // 收包数量
+    uint64_t bytes;         // 收包字节数
+} attr_aligned(64) zcap_alz_stats_t;        // 按照64B对齐，避免同一个cache line伪共享，多个线程会干扰
+
 // 解析报文结构
 typedef struct{
     pthread_t alz_t;    // 线程ID
     zcap_packet_spsc_atom_queue_head_t alz_aq_head; // 接收的队列
     ev_sem_t alz_sem;   // 用于唤醒
+    zcap_alz_stats_t stats;     // 统计数据
 }zcap_packet_alz_t;
+
+// 统计数据定义
+typedef struct{
+    uint64_t last_counts;
+    uint64_t last_bytes;
+    double pps;
+    double Bps;
+
+    ev_spinlock_t lock;
+}zcap_stats_t;
 
 // 抓包结构定义
 typedef struct{
@@ -170,9 +166,9 @@ typedef struct{
     pthread_t rx_t;         // 抓包线程
     ATOMIC_UINT8_T running; // 启动标志
 
-    zcap_packet_alz_t alz[ZCAP_HASH_Q_SIZE];    // 解析结构
+    zcap_packet_alz_t alz[ZCAP_HASH_Q_SIZE];    // 解析线程相关
 
-    zcap_stat_t stat;           // 统计数据
+    zcap_stats_t stats;         // 统计数据
 
     zcap_pkt_filter_hash_head_t filters;    // 管理注册的过滤条件的哈希表
 
@@ -196,7 +192,6 @@ static zcap_t _ifname ## _zcaptor = {   \
     .ready = 0, \
     .rx_t = 0,  \
     .running = 0,   \
-    .stat.mtx = EV_MUTEX_INITIALIZER,   \
     .alz = {},  \
 };  \
 /* _zcap_init end */

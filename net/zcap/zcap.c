@@ -68,7 +68,7 @@
 
 #define err_str         strerror(errno)
 
-#define ZCAP_CAL_RATE_INTERVAL  (1000)  // 计算速率间隔，1s一次
+#define ZCAP_CAL_RATE_INTERVAL  (1000)      // 计算速率间隔，1s一次
 
 #define ZCAP_ANALYZE_PKTS_ONCE  (1024)      // 每次最多处理1024个报文，避免reactor队头阻塞
 
@@ -80,6 +80,13 @@
 
 // alz线程等待时间
 #define ZCAP_ALZ_WAIT_TIME      (500)
+
+// K=1000
+#define ZCAP_STATS_K            (1000)
+// M=1000000
+#define ZCAP_STATS_M            (1000000)
+// G=1000000000
+#define ZCAP_STATS_G            (1000000000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -198,9 +205,7 @@ static attr_force_inline void _zcap_packet_flow_key_extract(zcap_packet_t *packe
 }
 
 /**
- * @brief       cal rate thread work func
- * 
- * @note        遍历zcaptor哈希表，更新速率
+ * @brief       cal zaptor rx rate
  */
 static void _zcap_rate_cal_wf(void *args);
 
@@ -210,11 +215,13 @@ static void _zcap_rate_cal_wf(void *args);
 
 // 全局哈希表，存放所有zcaptor
 static zcaptor_hash_head_t g_zcaptor_hash_head = {};
-// 全局事件线程，用于统计速率统计
-declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, ZCAP_CAL_RATE_INTERVAL)
+// lock
+static ev_rwlock_t g_zcaptor_hash_rwlock = EV_RWLOCK_INITIALIZER;
 
 // 控制是否打印报文简要信息
 static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
+
+declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, 0)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -280,31 +287,6 @@ static attr_pure_inline const char* _zcap_get_ethertype_name(uint16_t ether_type
     return NULL;
 }
 
-static void _zcap_rate_cal_wf(void *args)
-{
-    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-    while(captor)
-    {
-        if(ATOM_LOAD(&captor->running, MORDER_ACQUIRE))     // 仅统计运行中的
-        {
-            zcap_stat_t *stat = &captor->stat;
-            ev_with_mutex(&stat->mtx)
-            {
-                stat->last_count = stat->curr_count;
-                stat->last_size = stat->curr_size;
-                stat->curr_count = stat->count;
-                stat->curr_size = stat->size;
-
-                double sec = (double)ZCAP_CAL_RATE_INTERVAL / 1000;
-                
-                stat->rate_Bps = (double)(stat->curr_size - stat->last_size) / sec;
-                stat->rate_pps = (double)(stat->curr_count - stat->last_count) / sec;
-            }
-        }
-        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);       // 继续下一个
-    }
-}
-
 /**
  * @brief       cli hook for: show zcaptor
  * 
@@ -345,7 +327,8 @@ static attr_force_inline void* zcap_dump_pkt_cli_hook(unsigned char argc, char *
 static attr_force_inline void _zcap_clean_up(zcap_t *captor)
 {
     // 移除哈希表
-    zcaptor_hash_del(&g_zcaptor_hash_head, captor);
+    ev_with_wrlock(&g_zcaptor_hash_rwlock)
+        zcaptor_hash_del(&g_zcaptor_hash_head, captor);
 
     // 如果抓包正在运行，那么结束它
     unsigned char expected = 1;
@@ -568,7 +551,6 @@ static void* _zcap_routine(void *args)
                     snprintf(syslog_ctx, sizeof(syslog_ctx), "get mem node for size %zu fail, packet loss", 
                         sizeof(zcap_packet_t) + pkt_len);
                     syslog_warn(SYSLOG_MODULE_ZCAP, syslog_ctx);
-                    ATOM_FETCH_ADD(&captor->stat.loss_count, 1, MORDER_RELAXED);
                     continue;
                 }
                 memset(packet, 0, sizeof(zcap_packet_t)+pkt_len);
@@ -739,7 +721,6 @@ static int _zcap_pkt_filed_match(zcap_pkt_field_t *field, const zcap_pkt_info_t 
  */
 static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
 {
-    zcap_stat_t *stat = &captor->stat;
     const struct ethhdr *eth = (struct ethhdr*)packet->packet;
 
     // 如果打开了信息调试，那么输出报文信息到CLI
@@ -751,16 +732,6 @@ static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
             ntohs(eth->h_proto)
         );
         safe_printf(ZCAP_DUMM_PKT_INFO_FMT, captor->if_name, packet->len, info);
-    }
-
-    ev_with_mutex(&stat->mtx)
-    {
-        // 五元组信息统计
-        if(packet->flow_key.err_pkt)
-            ATOM_FETCH_ADD(&stat->err, 1, MORDER_ACQ_REL);
-
-        ATOM_FETCH_ADD(&stat->count, 1, MORDER_ACQ_REL);
-        ATOM_FETCH_ADD(&stat->size, packet->len, MORDER_ACQ_REL);
     }
 
     // 提取过滤器所需要的信息
@@ -821,6 +792,10 @@ static void* _zcap_alz_routine(void *args)
         int processed = 0;
         while((packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head)))
         {
+            // 更新本线程stat
+            captor->alz[i].stats.counts ++;
+            captor->alz[i].stats.bytes += packet->len;
+            // 具体解析
             _zcap_analyze_a_packet(captor, packet);
             mp_nonfixed_node_put(packet);
             processed++;
@@ -853,9 +828,10 @@ void zcap_module_init()
     };
     cli_register("zcaptor dump packet", "dump info of rx packet during a preiod", dump_pkt_param, zcap_dump_pkt_cli_hook);
 
-    // 启动zcap cal rate线程
-    ev_thd_register(zcap_rate_cal);
-    ev_thd_run(zcap_rate_cal);
+    // 注册速率计算线程
+    ev_thd_register(zcap_rate_cal)
+    ev_thd_run(zcap_rate_cal)
+    ev_thd_wake(zcap_rate_cal)
 
     dbg_major("zcap module init ok");
 }
@@ -863,16 +839,19 @@ void zcap_module_init()
 void zcap_module_deinit_th()
 {
     // 遍历哈希表，停止running中的抓包
-    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-    while(captor)
+    ev_with_wrlock(&g_zcaptor_hash_rwlock)
     {
-        if(ATOM_LOAD(&captor->running, MORDER_RELAXED))
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
         {
-            ATOM_STORE(&captor->running, 0, MORDER_RELAXED);
-            pthread_join(captor->rx_t, NULL);
-            dbg("stop captor %s rx_t ok", captor->if_name);
+            if(ATOM_LOAD(&captor->running, MORDER_RELAXED))
+            {
+                ATOM_STORE(&captor->running, 0, MORDER_RELAXED);
+                pthread_join(captor->rx_t, NULL);
+                dbg("stop captor %s rx_t ok", captor->if_name);
+            }
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
-        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
     }
 
     dbg_major("zcap module deinit top half ok");
@@ -882,41 +861,41 @@ void zcap_module_deinit_bh()
 {
     // TODO:
 
-    // 结束zcap_rate_cal线程
-    ev_thd_cancel(zcap_rate_cal);
-
-    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-    while(captor)
+    ev_with_wrlock(&g_zcaptor_hash_rwlock)
     {
-        // 结束alz线程，此时已经running设置为0，发送信号量唤醒
-        for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
         {
-            if(captor->alz[i].alz_t != 0)
+            // 结束alz线程，此时已经running设置为0，发送信号量唤醒
+            for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
             {
-                ev_sem_post(&captor->alz[i].alz_sem);
-                pthread_join(captor->alz[i].alz_t, NULL);
+                if(captor->alz[i].alz_t != 0)
+                {
+                    ev_sem_post(&captor->alz[i].alz_sem);
+                    pthread_join(captor->alz[i].alz_t, NULL);
+                }
             }
+
+            // 销毁过滤条件链表以及哈希表
+            zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
+            while(filter)
+            {
+                // 回收链表资源
+                zcap_pkt_field_t *field = NULL;
+                while(field = zcap_pkt_field_list_pop(&filter->fields))
+                    mp_free(field, sizeof(zcap_pkt_field_t));
+
+                // 从Hash中删除
+                zcap_pkt_filter_hash_del(&captor->filters, filter);
+                mp_free(filter, sizeof(zcap_pkt_filter_t));     // 清除内存
+                // 继续拿出Hash head
+                filter = zcap_pkt_filter_hash_first(&captor->filters);
+            }
+
+            // TODO: 释放zcap资源
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
-
-        // 销毁过滤条件链表以及哈希表
-        zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
-        while(filter)
-        {
-            // 回收链表资源
-            zcap_pkt_field_t *field = NULL;
-            while(field = zcap_pkt_field_list_pop(&filter->fields))
-                mp_free(field, sizeof(zcap_pkt_field_t));
-
-            // 从Hash中删除
-            zcap_pkt_filter_hash_del(&captor->filters, filter);
-            mp_free(filter, sizeof(zcap_pkt_filter_t));     // 清除内存
-            // 继续拿出Hash head
-            filter = zcap_pkt_filter_hash_first(&captor->filters);
-        }
-
-        // TODO: 释放zcap资源
-
-        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
     }
 
     dbg_major("zcap module de init bottom half ok");
@@ -934,7 +913,8 @@ void _zcap_init(zcap_t *captor)
     }
 
     // 加到哈希表
-    zcaptor_hash_add(&g_zcaptor_hash_head, captor);
+    ev_with_wrlock(&g_zcaptor_hash_rwlock)
+        zcaptor_hash_add(&g_zcaptor_hash_head, captor);
 
     // 初始化过滤哈希表
     zcap_pkt_filter_hash_init(&captor->filters);
@@ -945,7 +925,12 @@ void _zcap_init(zcap_t *captor)
     {
         zcap_packet_spsc_atom_queue_init(&(captor->alz[i].alz_aq_head));
         ev_sem_init(&captor->alz[i].alz_sem);
+        memset(&captor->alz[i].stats, 0, sizeof(zcap_alz_stats_t));
     }
+
+    // 统计数据初始化
+    memset(&captor->stats, 0, sizeof(zcap_stats_t));
+    ev_spinlock_init(&captor->stats.lock);
 
     captor->ring_buffer = MAP_FAILED;
 
@@ -1017,7 +1002,9 @@ int zcap_status_get(const char *if_name)
     pfm_ensure_ret(if_name, 0);
 
     zcap_t captor_key = {.if_name = if_name};
-    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    zcap_t *zcaptor = NULL;
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
     pfm_ensure_ret(zcaptor, 0);
 
     return ATOM_LOAD(&zcaptor->running, MORDER_RELAXED);
@@ -1029,7 +1016,9 @@ void _zcap_register_pkt_filter(const char *if_name, const char *filter_name, zca
 
     // 查找zcaptor
     zcap_t captor_key = {.if_name = if_name};
-    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    zcap_t *zcaptor = NULL;
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
     if(!zcaptor)        // 查找失败，返回
         return;
 
@@ -1055,7 +1044,9 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
 
     // 查找zcaptor
     zcap_t captor_key = {.if_name = if_name};
-    zcap_t *zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
+    zcap_t *zcaptor = NULL;
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        zcaptor = zcaptor_hash_find(&g_zcaptor_hash_head, &captor_key);
     if(!zcaptor)    // 查找失败则返回
         return;
 
@@ -1075,44 +1066,62 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
 
 static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
 {
-    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-
-    while(captor)
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
-        safe_printf("\n********************************\n");
-        safe_printf("if_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n", 
-            captor->if_name, captor->if_index,
-            captor->if_mac[0],captor->if_mac[1],captor->if_mac[2],
-            captor->if_mac[3],captor->if_mac[4],captor->if_mac[5]
-        );
-        safe_printf("runing flag: %d\n\n", ATOM_LOAD(&captor->running, MORDER_ACQUIRE));
-
-        ev_with_mutex(&captor->stat.mtx)
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
         {
-            safe_printf("rx_count: %u, %.3f pps\n", captor->stat.count, captor->stat.rate_pps);
-            safe_printf("rx_size: %.3f KB, %.3f KBps\n",
-                (double)captor->stat.size/1024,
-                captor->stat.rate_Bps/1024
+            safe_printf("\n********************************\n");
+            safe_printf("if_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n", 
+                captor->if_name, captor->if_index,
+                captor->if_mac[0],captor->if_mac[1],captor->if_mac[2],
+                captor->if_mac[3],captor->if_mac[4],captor->if_mac[5]
             );
-            unsigned long loss = ATOM_LOAD(&captor->stat.loss_count, MORDER_RELAXED);
-            safe_printf("loss_count: %lu, %.2f%%\n\n", loss, (double)loss/captor->stat.count*100);
+            safe_printf("runing flag: %d\n\n", ATOM_LOAD(&captor->running, MORDER_ACQUIRE));
 
+            // 打印统计数据，收集per-thread stats
+            uint64_t total_counts = 0;
+            uint64_t total_bytes = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                total_counts += captor->alz[q].stats.counts;
+                total_bytes += captor->alz[q].stats.bytes;
+            }
+            if(total_counts >= ZCAP_STATS_G)
+                safe_printf("Total counts: %.2f Gpkts\n", (double)total_counts/ZCAP_STATS_G);
+            else if(total_counts >= ZCAP_STATS_M)
+                safe_printf("Total counts: %.2f Mpkts\n", (double)total_counts/ZCAP_STATS_M);
+            else if(total_counts >= ZCAP_STATS_K)
+                safe_printf("Total counts: %.2f Kpkts\n", (double)total_counts/ZCAP_STATS_K);
+            else
+                safe_printf("Total counts: %llu pkts\n", total_counts);
+            if(total_bytes >= ZCAP_STATS_G)
+                safe_printf("Total Bytes: %.2f GB\n", (double)total_bytes/ZCAP_STATS_G);
+            else if(total_bytes >= ZCAP_STATS_M)
+                safe_printf("Total Bytes: %.2f MBs\n", (double)total_bytes/ZCAP_STATS_M);
+            else if(total_bytes >= ZCAP_STATS_K)
+                safe_printf("Total Bytes: %.2f KB\n", (double)total_bytes/ZCAP_STATS_K);
+            else
+                safe_printf("Total Bytes: %llu B\n", total_bytes);
+            safe_printf("Average Size: %.2f Bytes\n", (double)total_bytes/total_counts);
+            ev_with_spinlock(&captor->stats.lock)
+                safe_printf("Rate: %.1f pkts/s, %.1f Bytes/s\n", captor->stats.pps, captor->stats.Bps);
+
+            // 打印注册的过滤项
+            safe_printf("\n");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, "ERROR", captor->stat.err);
+            zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
+            while(filter)
+            {
+                safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, filter->name, ATOM_LOAD(&filter->match_cnt, MORDER_RELAXED));
+                filter = zcap_pkt_filter_hash_next(&captor->filters, filter);
+            }
+
+            safe_printf("********************************\n\n");
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
-
-        // 打印注册的过滤项
-        zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
-        while(filter)
-        {
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, filter->name, ATOM_LOAD(&filter->match_cnt, MORDER_RELAXED));
-            filter = zcap_pkt_filter_hash_next(&captor->filters, filter);
-        }
-
-        safe_printf("********************************\n\n");
-
-        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
     }
 
     return NULL;
@@ -1127,26 +1136,29 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
     unsigned long eth0_rx_size = 0;
     unsigned long wlan0_rx_size = 0;
 
-    zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-    while(captor)
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
-        if(0 == strcmp(captor->if_name, "eth0"))
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
         {
-            ev_with_mutex(&captor->stat.mtx)
+            if(0 == strcmp(captor->if_name, "eth0"))
             {
-                eth0_rx_rate = captor->stat.rate_Bps/1024;
-                eth0_rx_size = captor->stat.size;
+                // TODO: 
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                    eth0_rx_size += captor->alz[q].stats.bytes;
+                ev_with_spinlock(&captor->stats.lock)
+                    eth0_rx_rate = captor->stats.Bps / 1000.0;
             }
-        }
-        else if(0 == strcmp(captor->if_name, "wlan0"))
-        {
-            ev_with_mutex(&captor->stat.mtx)
+            else if(0 == strcmp(captor->if_name, "wlan0"))
             {
-                wlan0_rx_rate = captor->stat.rate_Bps/1024;
-                wlan0_rx_size = captor->stat.size;
+                // TODO: 
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                    wlan0_rx_size += captor->alz[q].stats.bytes;
+                ev_with_spinlock(&captor->stats.lock)
+                    wlan0_rx_rate = captor->stats.Bps / 1000.0;
             }
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
-        captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
     }
 
     snprintf(buf, buf_size,
@@ -1154,4 +1166,40 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
         eth0_rx_rate, eth0_rx_size, wlan0_rx_rate, wlan0_rx_size);
 
     return ERR_NO_ERROR;
+}
+
+static void _zcap_rate_cal_wf(void *args)
+{
+    while(1)
+    {
+        swdg_feed();
+        ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        {
+            zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+            while(captor)
+            {
+                // 统计当前总数
+                uint64_t curr_counts = 0;
+                uint64_t curr_bytes = 0;
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
+                    curr_counts += captor->alz[q].stats.counts;
+                    curr_bytes += captor->alz[q].stats.bytes;
+                }
+                // 计算上次差值，更新
+                ev_with_spinlock(&captor->stats.lock)
+                {
+                    uint64_t delta_counts = curr_counts - captor->stats.last_counts;
+                    uint64_t delta_bytes = curr_bytes - captor->stats.last_bytes;
+                    captor->stats.last_counts = curr_counts;
+                    captor->stats.last_bytes = curr_bytes;
+                    captor->stats.pps = (double)delta_counts / (ZCAP_CAL_RATE_INTERVAL / 1000.0);
+                    captor->stats.Bps = (double)delta_bytes / (ZCAP_CAL_RATE_INTERVAL / 1000.0);
+                }
+
+                captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+            }
+        }
+        usleep(ZCAP_CAL_RATE_INTERVAL * 1000);
+    }
 }

@@ -194,8 +194,8 @@ document.addEventListener('DOMContentLoaded', function(){
             return r.json();
         })
         .then(data => {
-            const eth0_rx_size = (Number(data.eth0.rx_size) / 1024 / 1024).toFixed(3);
-            const wlan0_rx_size = (Number(data.wlan0.rx_size) / 1024 / 1024).toFixed(3);
+            const eth0_rx_size = (Number(data.eth0.rx_size) / 1000 / 1000).toFixed(3);
+            const wlan0_rx_size = (Number(data.wlan0.rx_size) / 1000 / 1000).toFixed(3);
             eth0_rx.textContent = `eth0: 👇 ${data.eth0.rx_rate} kB/s, ${eth0_rx_size} MB`;
             wlan0_rx.textContent = `wlan0: 👇 ${data.wlan0.rx_rate} kB/s, ${wlan0_rx_size} MB`;
         })
