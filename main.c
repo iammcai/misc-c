@@ -45,6 +45,7 @@
 #include "ssd1306/ssd1306.h"
 #include "sysmon/sysmon.h"
 #include "swdg/swdg.h"
+#include "cmcp/cmcp.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -172,6 +173,9 @@ static attr_force_inline void _platfrom_init()
     arp_module_init();
     ping_module_init();
     tftp_module_init();
+
+    // 初始化mcp
+    mcp_module_init();
 
     // web初始化
     web_module_init();

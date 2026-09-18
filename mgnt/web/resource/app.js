@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function(){
     // 默认激活 Dashboard
     switchPage('dashboard');
 
-    // ----- 原有功能（保持不变） -----
+    // ----- 原有功能 -----
     let realtimeTimer = null;
     let syncTimer = null;
 

@@ -45,6 +45,7 @@ typedef enum{
     ERR_BAD_PARAM,                  // 参数错误
     ERR_NO_MEM,                     // 内存不足
     ERR_NOT_SUPPORT,                // 未支持
+    ERR_SYS_API_ERROR,              // 系统API报错
 
     // web模块，http模块
     ERR_WEB_START = 800,            // web错误码起始

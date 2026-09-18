@@ -5,6 +5,9 @@ add_library(Net STATIC
     nt/arp.c
     nt/ping.c
     nt/tftp.c
+    cmcp/cmcp_pkt.c
+    cmcp/cmcp_fsm.c
+    cmcp/cmcp.c
 )
 
 target_include_directories(Net PUBLIC

@@ -74,6 +74,11 @@
 
 #define ZCAP_HASH_Q_MASK        (ZCAP_HASH_Q_SIZE - 1)  // hash分片处理报文的队列掩码
 
+// 打印帧长分布的格式 range count rate
+#define ZCAP_DUMP_SIZE_DIST_FMT_HEAD        "%-20s%-16s%-8s\n"
+// 打印帧长分布的数据格式
+#define ZCAP_DUMP_SIZE_DIST_FMT_DATA        "%-20s%-16llu%-8.3f%\n"
+
 #define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-8s%-8s\n"
 #define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-8s%-8u\n"  // 打印各类型报文数量的格式，type num
 #define ZCAP_DUMM_PKT_INFO_FMT              "if-%s,len-%-4d: %s\n"      // 打印报文信息格式
@@ -795,6 +800,25 @@ static void* _zcap_alz_routine(void *args)
             // 更新本线程stat
             captor->alz[i].stats.counts ++;
             captor->alz[i].stats.bytes += packet->len;
+
+            int len = packet->len;
+            if(len >= 1518)         ++ captor->alz[i].stats.size_gt_1518;
+            else if(len >= 1024)    ++ captor->alz[i].stats.size_1024_1518;
+            else if(len >= 512)     ++ captor->alz[i].stats.size_512_1024;
+            else if(len >= 256)     ++ captor->alz[i].stats.size_256_512;
+            else if(len >= 128)     ++ captor->alz[i].stats.size_128_256;
+            else if(len >= 64)      ++ captor->alz[i].stats.size_64_128;
+            else                    ++ captor->alz[i].stats.size_lt_64;
+
+            pkthdr_l2_t *l2 = (pkthdr_l2_t*)(packet->packet);
+            uint8_t bc_mac_addr[MAC_ADDR_SIZE] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+            if(0 == memcmp(l2->mac_da, bc_mac_addr, MAC_ADDR_SIZE))
+                captor->alz[i].stats.bc_count ++;
+            else if(l2->mac_da[0] & 0x01)
+                captor->alz[i].stats.mc_count ++;
+            else
+                captor->alz[i].stats.uc_count ++;
+
             // 具体解析
             _zcap_analyze_a_packet(captor, packet);
             mp_nonfixed_node_put(packet);
@@ -1082,11 +1106,32 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             // 打印统计数据，收集per-thread stats
             uint64_t total_counts = 0;
             uint64_t total_bytes = 0;
+            uint64_t uc_counts = 0;
+            uint64_t mc_counts = 0;
+            uint64_t bc_counts = 0;
+            uint64_t size_lt_64 = 0;
+            uint64_t size_64_128 = 0;
+            uint64_t size_128_256 = 0;
+            uint64_t size_256_512 = 0;
+            uint64_t size_512_1024 = 0;
+            uint64_t size_1024_1518 = 0;
+            uint64_t size_gt_1518 = 0;
             for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
             {
                 total_counts += captor->alz[q].stats.counts;
                 total_bytes += captor->alz[q].stats.bytes;
+                uc_counts += captor->alz[q].stats.uc_count;
+                mc_counts += captor->alz[q].stats.mc_count;
+                bc_counts += captor->alz[q].stats.bc_count;
+                size_lt_64 += captor->alz[q].stats.size_lt_64;
+                size_64_128 += captor->alz[q].stats.size_64_128;
+                size_128_256 += captor->alz[q].stats.size_128_256;
+                size_256_512 += captor->alz[q].stats.size_256_512;
+                size_512_1024 += captor->alz[q].stats.size_512_1024;
+                size_1024_1518 += captor->alz[q].stats.size_1024_1518;
+                size_gt_1518 += captor->alz[q].stats.size_gt_1518;
             }
+            uint64_t total = size_lt_64 + size_64_128 + size_128_256 + size_256_512 + size_512_1024 + size_1024_1518 + size_gt_1518;
             if(total_counts >= ZCAP_STATS_G)
                 safe_printf("Total counts: %.2f Gpkts\n", (double)total_counts/ZCAP_STATS_G);
             else if(total_counts >= ZCAP_STATS_M)
@@ -1106,6 +1151,24 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             safe_printf("Average Size: %.2f Bytes\n", (double)total_bytes/total_counts);
             ev_with_spinlock(&captor->stats.lock)
                 safe_printf("Rate: %.1f pkts/s, %.1f Bytes/s\n", captor->stats.pps, captor->stats.Bps);
+
+            // 帧长分布
+            safe_printf("\n---------------------------------------------\n");
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "size", "counts", "rate");
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "------", "------", "----");
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "< 64", size_lt_64, (double)size_lt_64/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "64 ~ 127", size_64_128, (double)size_64_128/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "128 ~ 255", size_128_256, (double)size_128_256/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "256 ~ 511", size_256_512, (double)size_256_512/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "512 ~ 1023", size_512_1024, (double)size_512_1024/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "1024 ~ 1517", size_1024_1518, (double)size_1024_1518/total*100.0);
+            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "> 1518", size_gt_1518, (double)size_gt_1518/total*100.0);
+            safe_printf("---------------------------------------------\n");
+
+            // L2信息
+            safe_printf("\n");
+            safe_printf("L2 Info\nUnicast Counts: %llu\nMulticast Counts: %llu\nBroadcast Counts: %llu\n",
+                uc_counts, mc_counts, bc_counts);
 
             // 打印注册的过滤项
             safe_printf("\n");

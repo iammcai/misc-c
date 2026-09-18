@@ -133,6 +133,18 @@ typedef struct{
 typedef struct{
     uint64_t counts;        // 收包数量
     uint64_t bytes;         // 收包字节数
+
+    uint64_t uc_count;      // 单播报文个数
+    uint64_t mc_count;      // 组播报文个数
+    uint64_t bc_count;      // 广播报文个数
+
+    uint64_t size_lt_64;    // 小于64B的数量
+    uint64_t size_64_128;
+    uint64_t size_128_256;
+    uint64_t size_256_512;
+    uint64_t size_512_1024;
+    uint64_t size_1024_1518;
+    uint64_t size_gt_1518;
 } attr_aligned(64) zcap_alz_stats_t;        // 按照64B对齐，避免同一个cache line伪共享，多个线程会干扰
 
 // 解析报文结构
