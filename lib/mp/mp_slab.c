@@ -502,11 +502,6 @@ void mp_slab_module_init()
     // 初始化全局recycle_aq_hash
     slab_recycle_aq_hash_init(&g_recycle_aq_hash);
 
-#if MP_DBG_MODE
-    // 注册调试cli
-    
-#endif
-
     // 启动后台回收
     ev_thd_register(slab_mp_recycle);
     ev_thd_run(slab_mp_recycle);

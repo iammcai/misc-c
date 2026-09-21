@@ -228,7 +228,7 @@ static void* _el_main(void *args)
     return NULL;
 }
 
-void ev_loop_module_init()
+void ev_loop_module_init_th()
 {
     g_event_loop.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
 
@@ -247,8 +247,13 @@ void ev_loop_module_init()
     };
     pfm_ensure_ret_void(0 == epoll_ctl(g_event_loop.epoll_fd, EPOLL_CTL_ADD, g_event_loop.file_events_reg_event_fd, &ev));
 
+    dbg_major("event loop init th done");
+}
+
+void ev_loop_module_init_bh()
+{
     // 创建子线程，执行event loop
     pfm_ensure_ret_void(0 == pthread_create(&g_event_loop.ev_loop_th, NULL, _el_main, NULL));
 
-    dbg_major("event loop init done");
+    dbg_major("event loop bh init done");
 }

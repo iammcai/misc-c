@@ -143,6 +143,7 @@ extern ev_sem_t g_platform_init_ok;
 // cli history param
 static cli_param_t param0[] = {
     {.help = "history num", .required = 0, .short_name = 'n', .type = PARAM_VALUE},
+    {},
 };
 
 // TODO: 全局cli注册表
@@ -283,7 +284,7 @@ void cli_module_init()
     cli_gnurl_init();
 
     cli_param_t dummy = {};
-    // TODO: 导入cli注册表项
+    // 导入cli注册表项
     for(int i = 0; i < array_size(g_cli_register_table); ++ i)
     {
         int param_cnt = 0;

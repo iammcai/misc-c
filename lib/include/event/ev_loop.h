@@ -141,9 +141,14 @@ typedef struct el_s{
 /* ========================================================================== */
 
 /**
- * @brief       init ev loop module
+ * @brief       init ev loop module top half
  */
-extern void ev_loop_module_init();
+extern void ev_loop_module_init_th();
+
+/**
+ * @brief       init ev loop module bottom half
+ */
+extern void ev_loop_module_init_bh();
 
 /**
  * @brief       注册file事件到event loop

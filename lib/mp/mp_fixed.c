@@ -466,8 +466,6 @@ void mp_fixed_debug_show(unsigned char argc, char *argv[])
 
 void mp_fixed_module_init_th()
 {
-    dbg_major("mp fixed module init start");
-
     // 全局变量初始化
     mem_type_attr_fixed_hash_init(&g_mem_type_attr_fixed_hashtable);
     mp_fixed_recycle_hash_init(&g_fixed_mp_recycle_aq_hashtable);

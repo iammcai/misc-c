@@ -33,11 +33,6 @@ else()
     message(STATUS "[ASAN] AddressSanitizer disabled")
 endif()
 
-# 添加可执行文件
-add_executable(Main
-    main.c
-)
-
 # 子目录
 add_subdirectory(lib)
 add_subdirectory(mgnt)
@@ -45,20 +40,4 @@ add_subdirectory(net)
 add_subdirectory(app)
 add_subdirectory(test)
 add_subdirectory(driver)
-
-# 头文件目录
-target_link_libraries(Main PUBLIC
-    Mgnt
-    Lib
-    Net
-    App
-    Test
-)
-
-target_link_options(Main PRIVATE
-    "LINKER:--whole-archive"
-    $<TARGET_FILE:Mgnt>
-    $<TARGET_FILE:Lib>
-    $<TARGET_FILE:Net>
-    "LINKER:--no-whole-archive"
-)
+add_subdirectory(proc)
