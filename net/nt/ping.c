@@ -103,6 +103,14 @@ static icmp_session_t g_icmp_session = {};
 // 声明发包内存池
 declare_mem_type_slab_extern(ftx)
 
+// cli ping参数
+cli_param_t ping_param[] = {
+    {.required = 1, .type = PARAM_POS, .help = "target ip"},
+    {.required = 1, .short_name = 'i', .type = PARAM_VALUE, .help = "interface"},
+    {.required = 0, .short_name = 'c', .type = PARAM_VALUE, .help = "ping times"},
+    {},
+};
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -208,13 +216,6 @@ static error_code_e _ping_icmp_echo_request_build(
 }
 
 /**
- * @brief       cli hook for ping
- * 
- * @param[in]   interface   - ftx interface
- */
-static void* _ping_cli_hook(unsigned char argc, char *argv[]);
-
-/**
  * @brief       hook for icmp packet filter
  * 
  * @note        抓到icmp报文后的回调
@@ -225,7 +226,7 @@ static void _ping_icmp_filter_cb(char *packet, int len, void *args);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static void* _ping_cli_hook(unsigned char argc, char *argv[])
+void ping_cli_hook(unsigned char argc, char *argv[])
 {
     // 获取ip和接口
     struct in_addr dst = {};
@@ -244,7 +245,7 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
         if(request_cnt <= 0)
         {
             safe_printf("-ping: Bad param for -c: %s", argv[2]);
-            return NULL;
+            return;
         }
     }
 
@@ -252,7 +253,7 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     if(1 != inet_pton(AF_INET, dip_str, &dst))
     {
         safe_printf("-ping: Bad Target IP: %s\n", dip_str);
-        return NULL;
+        return;
     }
     dst_ip_host = ntohl(dst.s_addr);        // 主机序DIP
 
@@ -261,13 +262,13 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     if(ERR_NO_ERROR != ftx_mac_get(if_name, if_mac))
     {
         safe_printf("-ping: No mac for Interface Name: %s\n", if_name);
-        return NULL;
+        return;
     }
     uint32_t if_ip = 0;
     if(ERR_NO_ERROR != ftx_ip_get(if_name, &if_ip))
     {
         safe_printf("-ping: No ip for Interface Name: %s\n", if_name);
-        return NULL;
+        return;
     }
     uint32_t if_ip_host = ntohl(if_ip);
 
@@ -275,7 +276,7 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     if(ERR_NO_ERROR != _ping_get_dst_mac(if_name, dst_ip_host, dst_mac))
     {
         safe_printf("-ping: Unknown mac for ip %s\n", dip_str);
-        return NULL;
+        return;
     }
 
     int seq = 0;
@@ -359,8 +360,6 @@ static void* _ping_cli_hook(unsigned char argc, char *argv[])
     safe_printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
 
     mp_free(rtt_arr, sizeof(double)*request_cnt);
-
-    return NULL;
 }
 
 static void _ping_icmp_filter_cb(char *packet, int len, void *args)
@@ -396,14 +395,6 @@ void ping_module_init()
     memset(&g_icmp_session, 0, sizeof(icmp_session_t));
     g_icmp_session.id = ICMP_ID;
     ATOM_STORE(&g_icmp_session.state, ICMP_SESSION_IDLE, MORDER_RELAXED);   // 设置idle
-
-    // 注册cli支持ping
-    cli_param_t param0[] = {
-        {.required = 1, .type = PARAM_POS, .help = "target ip"},
-        {.required = 1, .short_name = 'i', .type = PARAM_VALUE, .help = "interface"},
-        {.required = 0, .short_name = 'c', .type = PARAM_VALUE, .help = "ping times"},
-    };
-    cli_register("ping", "ping", param0, _ping_cli_hook);
 
     // 注册报文过滤条件icmp
     zcap_register_pkt_filter("eth0", "icmp", _ping_icmp_filter_cb, NULL);

@@ -461,7 +461,7 @@ void _mp_slab_node_put(void *ptr)
 /**
  * @brief       cli hook for debug show mp slab
  */
-static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
+void mp_slab_show_cli_hook(unsigned char argc, char *argv[])
 {
     mem_type_attr_t *attr = mem_type_attr_first();
     int i = 0;
@@ -486,7 +486,13 @@ static void* _mp_slab_show_cli_hook(unsigned char argc, char *argv[])
         attr = mem_type_attr_next(attr);
     }
     safe_printf("\n");
-    return NULL;
+}
+
+#else
+
+void mp_slab_show_cli_hook(unsigned char argc, char *argv[])
+{
+    return;
 }
 
 #endif
@@ -498,7 +504,7 @@ void mp_slab_module_init()
 
 #if MP_DBG_MODE
     // 注册调试cli
-    cli_register("debug show mp slab", "debug dump slab type mempool", NULL, _mp_slab_show_cli_hook);
+    
 #endif
 
     // 启动后台回收

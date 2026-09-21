@@ -23,7 +23,6 @@
 #include <unistd.h>
 #include "nt/arp.h"
 #include "ftx/ftx.h"
-#include "cli/cli.h"
 #include "zcap/zcap.h"
 #include "type/type_hash.h"
 #include "event/ev_lock.h"
@@ -193,13 +192,6 @@ static error_code_e _arp_request_build(char *buf, const char *if_name, struct in
 }
 
 /**
- * @brief       cli hook for arp probe
- * 
- * @param[in]   target_ip
- */
-static void* _arp_probe_cli_hook(unsigned char argc, char *argv[]);
-
-/**
  * @brief       arp cb for zcap filter
  */
 static void _arp_zcap_filter_cb(char *packet, int size, void *args);
@@ -224,11 +216,25 @@ declare_mem_type_slab_extern(ftx)
 // arp cache半老化周期探测线程
 declare_ev_thd(arp_half_age_detect, _arp_half_age_detect_wf, NULL, ARP_HALF_AGE_DETECT_INTERVAL)
 
+// arp探测cli参数
+cli_param_t arp_probe_param[] = {
+    {.required = 1, .type = PARAM_VALUE, .short_name = 't', .help = "target ip"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+    {},
+};
+
+// arp扫描cli参数
+cli_param_t arp_scan_param[] = {
+    {.required = 1, .type = PARAM_POS, .help = "CIDR format: ip/mask, e.g. 192.168.0.1/24"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+    {},
+};
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
+void arp_probe_cli_hook(unsigned char argc, char *argv[])
 {
     uint8_t *buf = NULL;
 
@@ -240,14 +246,14 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
     if(1 != inet_pton(AF_INET, dip_str, &dst))
     {
         safe_printf("-arp: Bad Target IP: %s\n", dip_str);
-        return NULL;
+        return;
     }
 
     buf = mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!buf)
     {
         safe_printf("-arp: System no memory\n");
-        return NULL;
+        return;
     }
     memset(buf, 0, ARP_STANDER_SIZE);
 
@@ -260,7 +266,7 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
     {
         mp_slab_node_put(buf);      // 释放内存
         safe_printf("-arp: Interface error: %s\n", if_name);
-        return NULL;
+        return;
     }
 
     // 等待1s
@@ -278,11 +284,9 @@ static void* _arp_probe_cli_hook(unsigned char argc, char *argv[])
     else
         safe_printf("mac address: %02x:%02x:%02x:%02x:%02x:%02x\n",
             cache->mac[0],cache->mac[1],cache->mac[2],cache->mac[3],cache->mac[4],cache->mac[5]);
-
-    return NULL;
 }
 
-static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
+void arp_scan_cli_hook(unsigned char argc, char *argv[])
 {
     const char *cidr_addr = argv[0];
     const char *if_name = argv[1];
@@ -293,12 +297,12 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
     if(ERR_NO_ERROR != cidr_parse(cidr_addr, &dip_net, &prefix))
     {
         safe_printf("-arp: Bad CIDR address range: %s\n", argv[0]);
-        return NULL;
+        return;
     }
     if(prefix == 31 || prefix == 32)
     {
         safe_printf("-arp: Bad CIDR prefix for arp scan: %d\n", prefix);
-        return NULL;
+        return;
     }
     uint32_t dip = ntohl(dip_net);
 
@@ -308,7 +312,7 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
     if(ERR_NO_ERROR != ftx_mac_get(if_name, src_mac) || ERR_NO_ERROR != ftx_ip_get(if_name, &sip_net))
     {
         safe_printf("-arp: Bad Interface: %s\n", if_name);
-        return NULL;
+        return;
     }
     uint32_t sip = htonl(sip_net);
 
@@ -317,7 +321,7 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
     if(!packet)
     {
         safe_printf("-arp: No avilable memory.\n");
-        return NULL;
+        return;
     }
     memset(packet, 0, ARP_STANDER_SIZE);
     // l2
@@ -383,8 +387,6 @@ static void* _arp_scan_cli_hook(unsigned char argc, char *argv[])
         }
     }
     safe_printf("\n");
-
-    return NULL;
 }
 
 /**
@@ -482,12 +484,7 @@ static void _arp_zcap_filter_cb(char *packet, int size, void *args)
     }
 }
 
-/**
- * @brief       cli hook for show arp cache
- * 
- * @note        打印arp cache
- */
-static void* _arp_show_cache_cli_hook(unsigned char argc, char *argv[])
+void arp_show_cache_cli_hook(unsigned char argc, char *argv[])
 {
     safe_printf("\n");
     safe_printf(ARP_REPLY_CACHE_FMT_HEAD, "", "Arp Cache Table");
@@ -514,8 +511,6 @@ static void* _arp_show_cache_cli_hook(unsigned char argc, char *argv[])
         }
     }
     safe_printf("%s", "--------------------------------------------------\n\n");
-
-    return NULL;
 }
 
 error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)
@@ -603,20 +598,6 @@ void arp_module_init(void)
     // 初始化arp reply cache
     arp_reply_cache_hash_init(&g_arp_reply_cache);
     ev_rwlock_init(&g_arp_reply_cache_rwlock);
-
-    // 注册cli，进行arp探测
-    cli_param_t param0[] = {
-        {.required = 1, .type = PARAM_VALUE, .short_name = 't', .help = "target ip"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"}
-    };
-    cli_register("arp probe", "send arp probe", param0, _arp_probe_cli_hook);
-    // 注册cli，进行arp扫描
-    cli_param_t param1[] = {
-        {.required = 1, .type = PARAM_POS, .help = "CIDR format: ip/mask, e.g. 192.168.0.1/24"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
-    };
-    cli_register("arp scan", "arp scan", param1, _arp_scan_cli_hook);
-    cli_register("show arp cache", "dump arp cache", NULL, _arp_show_cache_cli_hook);
 
     // 注册arp抓取
     zcap_register_pkt_filter("eth0", "arp", _arp_zcap_filter_cb, NULL);

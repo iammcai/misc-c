@@ -22,6 +22,7 @@
 /* ========================================================================== */
 
 #include "net_comm.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -35,12 +36,12 @@
 /*                             Global Variables                               */
 /* ========================================================================== */
 
-/* ========================================================================== */
-/*                           Function Prototypes                              */
-/* ========================================================================== */
+extern cli_param_t arp_probe_param[];
+
+extern cli_param_t arp_scan_param[];
 
 /* ========================================================================== */
-/*                           Function Definition                              */
+/*                           Function Prototypes                              */
 /* ========================================================================== */
 
 /**
@@ -75,6 +76,25 @@ extern error_code_e arp_request_send(const char *if_name, uint32_t dst_ip);
  * @retval      error code
  */
 extern error_code_e arp_cache_query(uint32_t ip, uint8_t *mac);
+
+/**
+ * @brief       cli hook for arp probe
+ * 
+ * @param[in]   target_ip
+ */
+extern void arp_probe_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for arp scan
+ */
+extern void arp_scan_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for show arp cache
+ * 
+ * @note        打印arp cache
+ */
+extern void arp_show_cache_cli_hook(unsigned char argc, char *argv[]);
 
 #endif
 /* #ifndef __ARP_H_ end */

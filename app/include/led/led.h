@@ -54,6 +54,20 @@ typedef enum{
 /* ========================================================================== */
 
 /**
+ * @brief       cli hook for led on
+ * 
+ * @note        turn led on
+ */
+extern void led_on_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for led off
+ * 
+ * @note        turn led off
+ */
+extern void led_off_cli_hook(unsigned char argc, char *argv[]);
+
+/**
  * @brief       cb for http cgi: /api/led/turn
  * 
  * @retval      led status json

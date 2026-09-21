@@ -180,5 +180,10 @@ extern void* _mp_slab_node_get(mem_type_attr_t *attr, int size);
  */
 extern void _mp_slab_node_put(void *ptr);
 
+/**
+ * @brief       cli hook for debug show mp slab
+ */
+extern void mp_slab_show_cli_hook(unsigned char argc, char *argv[]);
+
 #endif
 /* __MP_SLAB_H__ end */

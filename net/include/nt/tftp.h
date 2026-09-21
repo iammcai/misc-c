@@ -27,8 +27,34 @@
 #include "cli/cli.h"
 
 /* ========================================================================== */
+/*                             Extern Symbols                                 */
+/* ========================================================================== */
+
+extern cli_param_t tftp_dl_param[];
+
+extern cli_param_t tftp_ul_param[];
+
+/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       cli hook for tftp download
+ * 
+ * @param[in]   if_name     - if name
+ * @param[in]   server_ip   - host order
+ * @param[in]   filename    - file name
+ */
+extern void tftp_download_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for tftp upload
+ * 
+ * @param[in]   if_name     - if name
+ * @param[in]   server_ip   - host order
+ * @param[in]   filename    - file name
+ */
+extern void tftp_upload_cli_hook(unsigned char argc, char *argv[]);
 
 /**
  * @brief       tftp module init

@@ -61,6 +61,11 @@ extern void _swdg_register(const char *name, uint64_t threshold);
 extern void _swdg_feed();
 
 /**
+ * @brief       cli cb for: show swdg
+ */
+extern void swdg_show_swdg_cli_cb(unsigned char argc, char *argv[]);
+
+/**
  * @brief       init swdg module top half
  * 
  * @note        软件看门狗模块初始化

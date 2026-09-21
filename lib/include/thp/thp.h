@@ -197,8 +197,11 @@ extern void _thp_shutdown(thp_t *thp);
  */
 extern unsigned char _thp_is_run(thp_t *thp);
 
-/* ========================================================================== */
-/*                           Function Definition                              */
-/* ========================================================================== */
+/**
+ * @brief       show all thp, for cli: show thread pool
+ * 
+ * @note        打印所有thp的cli回调
+ */
+extern void thp_dump_cli_hook(unsigned char argc, char *argv[]);
 
 #endif

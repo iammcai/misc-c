@@ -219,13 +219,6 @@ static void* _mp_fixed_node_get_slow(mem_type_attr_fixed_t *attr);
  */
 static void _mp_fixed_recycle_thd_work(void *args);
 
-#if MP_FIXED_DBG
-/**
- * @brief       cli cb for: debug show mp fixed
- */
-static void* _mp_fixed_debug_show(unsigned char argc, char *argv[]);
-#endif
-
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -420,7 +413,7 @@ static void _mp_fixed_recycle_thd_work(void *args)
 
 #if MP_FIXED_DBG
 
-static void* _mp_fixed_debug_show(unsigned char argc, char *argv[])
+void mp_fixed_debug_show(unsigned char argc, char *argv[])
 {
     // 查看attr信息
     ev_with_rdlock(&g_mem_type_attr_fixed_hash_rwlock)
@@ -460,8 +453,13 @@ static void* _mp_fixed_debug_show(unsigned char argc, char *argv[])
         }
         safe_printf("------------------------------------------\n");
     }
+}
 
-    return NULL;
+#else
+
+void mp_fixed_debug_show(unsigned char argc, char *argv[])
+{
+    return;
 }
 
 #endif
@@ -473,10 +471,6 @@ void mp_fixed_module_init_th()
     // 全局变量初始化
     mem_type_attr_fixed_hash_init(&g_mem_type_attr_fixed_hashtable);
     mp_fixed_recycle_hash_init(&g_fixed_mp_recycle_aq_hashtable);
-
-#if MP_FIXED_DBG
-    cli_register("debug show mp fixed", "debug dump all fixed mp info", NULL, _mp_fixed_debug_show);
-#endif
 
     dbg_major("mp fixed module init th ok");
 }

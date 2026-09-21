@@ -27,25 +27,19 @@
 #include <string.h>
 
 /* ========================================================================== */
-/*                             Type Definitions                               */
+/*                             Global Variables                               */
 /* ========================================================================== */
 
-/* ========================================================================== */
-/*                           Function Prototypes                              */
-/* ========================================================================== */
-
-/**
- * @brief       cli hook for: debug level set <level>
- * 
- * @param[in]   argc    - 1
- * @param[in]   argv[0] - debug level
- */
-static attr_force_inline void* cli_set_debug_level_hook(unsigned char argc, char* argv[]);
-
-/**
- * @brief       cli hook for: debug level get
- */
-static attr_pure_inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[]);
+// debug level set param
+cli_param_t debug_level_set_param[] = {
+    {
+        .short_name = '\0',
+        .type = PARAM_POS,
+        .required = 1,
+        .help = "support: none / normal / major / error / all",
+    },
+    {},
+};
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -177,17 +171,5 @@ static inline void* cli_get_debug_level_hook(unsigned char argc, char* argv[])
 
 void debug_init()
 {
-    cli_param_t set_param[] = {
-        {
-            .short_name = '\0',
-            .type = PARAM_POS,
-            .required = 1,
-            .help = "support: none / normal / major / error / all",
-        },
-    };
-
-    cli_register("debug level set", "set debug level", set_param, cli_set_debug_level_hook);
-    cli_register("debug level get", "get debug level", NULL, cli_get_debug_level_hook);
-
     dbg_major("debug module init ok");
 }

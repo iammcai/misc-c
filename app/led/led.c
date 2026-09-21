@@ -65,22 +65,20 @@ static int g_led_fd = -1;
  * 
  * @note        turn led on
  */
-static attr_force_inline void* _led_on_cli_hook(unsigned char argc, char *argv[])
+void led_on_cli_hook(unsigned char argc, char *argv[])
 {
     if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_ON)
-        return NULL;
+        return;
     
     int on = 1;
     if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &on) < 0)
     {
         safe_printf("-led: ioctl() fail.\n");
-        return NULL;
+        return;
     }
 
     ATOM_STORE(&g_led_status, LED_STATUS_ON, MORDER_RELAXED);
     syslog_notice(SYSLOG_MODULE_LED, "led turn on");
-
-    return NULL;
 }
 
 /**
@@ -88,22 +86,20 @@ static attr_force_inline void* _led_on_cli_hook(unsigned char argc, char *argv[]
  * 
  * @note        turn led off
  */
-static attr_force_inline void* _led_off_cli_hook(unsigned char argc, char *argv[])
+void led_off_cli_hook(unsigned char argc, char *argv[])
 {
     if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_OFF)
-        return NULL;
+        return;
 
     int off = 0;
     if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &off) < 0)
     {
         safe_printf("-led: ioctl() fail.\n");
-        return NULL;
+        return;
     }
     ATOM_STORE(&g_led_status, LED_STATUS_OFF, MORDER_RELAXED);
 
     syslog_notice(SYSLOG_MODULE_LED, "led turn off");
-
-    return NULL;
 }
 
 error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size)
@@ -112,11 +108,11 @@ error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size)
     switch(status)
     {
         case LED_STATUS_OFF:
-            _led_on_cli_hook(0, NULL);
+            led_on_cli_hook(0, NULL);
             snprintf(buf, buf_size, "%s", "{\"status\":\"on\"}");
             break;
         case LED_STATUS_ON:
-            _led_off_cli_hook(0, NULL);
+            led_off_cli_hook(0, NULL);
             snprintf(buf, buf_size, "%s", "{\"status\":\"off\"}");
             break;
         case LED_STATUS_UNKNOWN:
@@ -174,17 +170,13 @@ void led_module_init()
     }
     g_led_status = status == 0 ? LED_STATUS_OFF : LED_STATUS_ON;
 
-    // 注册cli用来控制开关
-    cli_register("led on", "turn on led", NULL, _led_on_cli_hook);
-    cli_register("led off", "turn off led", NULL, _led_off_cli_hook);
-
     dbg_major("led module init ok");
 }
 
 void led_module_deinit()
 {
     // 退出时熄灭led
-    _led_off_cli_hook(0, NULL);
+    led_off_cli_hook(0, NULL);
 
     // 关闭led文件
     if(g_led_fd >= 0)

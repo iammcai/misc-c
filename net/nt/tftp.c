@@ -204,6 +204,22 @@ const char* tftp_event_str[TFTP_EVENT_CNT] = {
     "FSM_EXIT",
 };
 
+// tftp download cli param
+cli_param_t tftp_dl_param[] = {
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 's', .help = "tftp server ip addr"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"},
+    {},
+};
+
+// tftp upload cli param
+cli_param_t tftp_ul_param[] = {
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 's', .help = "tftp server ip addr"},
+    {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"},
+    {}
+};
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -874,24 +890,6 @@ static attr_force_inline void _tftp_fsm_init()
 static void* _tftp_fsm(void *args);
 
 /**
- * @brief       cli hook for tftp download
- * 
- * @param[in]   if_name     - if name
- * @param[in]   server_ip   - host order
- * @param[in]   filename    - file name
- */
-static void* _tftp_download_cli_hook(unsigned char argc, char *argv[]);
-
-/**
- * @brief       cli hook for tftp upload
- * 
- * @param[in]   if_name     - if name
- * @param[in]   server_ip   - host order
- * @param[in]   filename    - file name
- */
-static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[]);
-
-/**
  * @brief       cb for zcap filter tftp packet
  * 
  * @param[in]   packet
@@ -906,26 +904,26 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static void* _tftp_download_cli_hook(unsigned char argc, char *argv[])
+void tftp_download_cli_hook(unsigned char argc, char *argv[])
 {
     // 检查接口长度
     if(strlen(argv[0]) >= IF_NAME_SIZE)
     {
         safe_printf("-tftp: Length of ifname too long\n");
-        return NULL;
+        return;
     }
     // 检查接口状态
     if(!(zcap_status_get(argv[0]) && ftx_status_get(argv[0])))
     {
         safe_printf("-tftp: Interface invalid: %s\n", argv[0]);
-        return NULL;
+        return;
     }
 
     // 检查文件长度
     if(strlen(argv[2]) >= FILE_NAME_SIZE)
     {
         safe_printf("-tftp: Length of filename too long\n");
-        return NULL;
+        return;
     }
 
     // 获取server ip
@@ -934,7 +932,7 @@ static void* _tftp_download_cli_hook(unsigned char argc, char *argv[])
     if(1 != inet_pton(AF_INET, server_ip_str, &addr))
     {
         safe_printf("-tftp: Error Server IP: %s\n", server_ip_str);
-        return NULL;
+        return;
     }
     uint32_t server_ip_host = ntohl(addr.s_addr);
 
@@ -948,30 +946,28 @@ static void* _tftp_download_cli_hook(unsigned char argc, char *argv[])
 
     // 等待完成
     ev_sem_wait(&g_tftp_fsm.sem_done);
-
-    return NULL;
 }
 
-static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[])
+void tftp_upload_cli_hook(unsigned char argc, char *argv[])
 {
     // 检查接口长度
     if(strlen(argv[0]) >= IF_NAME_SIZE)
     {
         safe_printf("-tftp: Length of ifname too long\n");
-        return NULL;
+        return;
     }
     // 检查接口状态
     if(!(zcap_status_get(argv[0]) && ftx_status_get(argv[0])))
     {
         safe_printf("-tftp: Interface invalid: %s\n", argv[0]);
-        return NULL;
+        return;
     }
 
     // 检查文件长度
     if(strlen(argv[2]) >= FILE_NAME_SIZE)
     {
         safe_printf("-tftp: Length of filename too long\n");
-        return NULL;
+        return;
     }
 
     // 获取server ip
@@ -980,7 +976,7 @@ static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[])
     if(1 != inet_pton(AF_INET, server_ip_str, &addr))
     {
         safe_printf("-tftp: Error Server IP: %s\n", server_ip_str);
-        return NULL;
+        return;
     }
     uint32_t server_ip_host = ntohl(addr.s_addr);
 
@@ -994,8 +990,6 @@ static void* _tftp_upload_cli_hook(unsigned char argc, char *argv[])
 
     // 等待完成
     ev_sem_wait(&g_tftp_fsm.sem_done);
-
-    return NULL;
 }
 
 static void _tftp_packet_filter_cb(char *packet, int len, void *args)
@@ -1116,21 +1110,6 @@ static void* _tftp_fsm(void *args)
 
 void tftp_module_init()
 {
-    // 注册cli，从tftp服务器下载文件
-    cli_param_t param0[] = {
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 's', .help = "tftp server ip addr"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"}
-    };
-    cli_register("tftp download", "download file from server", param0, _tftp_download_cli_hook);
-    // 注册cli，上传文件到tftp服务器
-    cli_param_t param1[] = {
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'i', .help = "interface name"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 's', .help = "tftp server ip addr"},
-        {.required = 1, .type = PARAM_VALUE, .short_name = 'f', .help = "filename"}
-    };
-    cli_register("tftp upload", "upload file to server", param1, _tftp_upload_cli_hook);
-
     // 注册UDP报文过滤，TFTP传输数据会指定随机的端口号，这里只能粗匹配
     zcap_register_pkt_filter("eth0", "udp", _tftp_packet_filter_cb, NULL);
     zcap_register_field_len_type("eth0", "udp", IPV4, 0xffff);

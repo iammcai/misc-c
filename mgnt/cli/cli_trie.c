@@ -115,7 +115,7 @@ static cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
  * 
  * @note        解析参数，并执行回调
  */
-static void* _cli_trie_parse_execute(cli_match_info_t *match);
+static void _cli_trie_parse_execute(cli_match_info_t *match);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -429,14 +429,15 @@ done:
     return cur_item;
 }
 
-void* _cli_trie_parse_execute(cli_match_info_t *match)
+void _cli_trie_parse_execute(cli_match_info_t *match)
 {
     if(!match || !match->hook)
-        return NULL;
+        return;
 
     if(!match->remain_argc && !match->params)   // 没有参数，立即执行
     {
-        return match->hook(0, NULL);
+        match->hook(0, NULL);
+        return;
     }
 
     dbg("params_count %d, remain_argc %d", match->params_count, match->remain_argc);
@@ -519,26 +520,24 @@ void* _cli_trie_parse_execute(cli_match_info_t *match)
 
     dbg("pass param cnt %d", real_param_cnt);
 
-    ret =  match->hook(real_param_cnt, usr_argv);
+    match->hook(real_param_cnt, usr_argv);
 
 cleanup:
     // 释放内存
     mp_free(usr_argv, usr_param_cnt*sizeof(char*));
     mp_free(is_fill, usr_param_cnt*sizeof(unsigned char));
-    return ret;
 }
 
-void* _cli_trie_excute(const char *cmd)
+void _cli_trie_excute(const char *cmd)
 {
     if(!cmd)
-        return NULL;
+        return;
 
     // 将cmd转换为标准的格式
     char** items = _cmd_split(cmd);
     if(!items)
-        return NULL;
+        return;
 
-    void *ret = NULL;
     unsigned char items_cnt = 0;
     while(items[items_cnt])
         ++ items_cnt;           // 获取items个数
@@ -548,10 +547,9 @@ void* _cli_trie_excute(const char *cmd)
     if(!match.hook)
         safe_printf("-cli: %s: Unknown command\n", cmd);
     else    // 继续解析参数，并执行
-        ret = _cli_trie_parse_execute(&match);
+        _cli_trie_parse_execute(&match);
 
     _cmd_split_cleanup(items);
-    return ret;
 }
 
 char** cli_trie_completion(const char *prefix, int start, int end, const char *text)

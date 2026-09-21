@@ -138,5 +138,10 @@ extern error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr);
  */
 extern error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr);
 
+/**
+ * @brief       cli hook for show ftxor
+ */
+extern void ftxor_dump_cli_hook(unsigned char argc, char* agrv[]);
+
 #endif
 /* __FTX_H__ end */

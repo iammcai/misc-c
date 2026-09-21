@@ -134,5 +134,10 @@ extern void* _mp_nonfixed_node_get(mem_type_attr_nonfixed_t *attr, uint32_t size
  */
 extern void _mp_nonfixed_node_put(void *ptr);
 
+/**
+ * @brief       cli hook for: debug show mp nonfixed
+ */
+extern void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[]);
+
 #endif
 /* __MP_NONFIXED_H__ end */

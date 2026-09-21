@@ -31,7 +31,7 @@
 /* ========================================================================== */
 
 // cli回调钩子函数签名定义
-typedef void* (*cli_hook_func)(unsigned char argc, char *argv[]);
+typedef void (*cli_hook_func)(unsigned char argc, char *argv[]);
 
 // 节点类型定义
 typedef enum{
@@ -97,7 +97,7 @@ extern void _cli_trie_insert(const char *cmd, const char *help,
  * 
  * @note        内部使用，根据cmd，在trie中查找，解析，执行
  */
-extern void* _cli_trie_excute(const char *cmd);
+extern void _cli_trie_excute(const char *cmd);
 
 /**
  * @brief       dump cli trie

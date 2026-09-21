@@ -49,6 +49,11 @@ extern error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size);
 extern void sysmon_cpu_usage_get(double *usage);
 
 /**
+ * @brief       cli hook for show cpu usage
+ */
+extern void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[]);
+
+/**
  * @brief       init sysmon module
  */
 extern void sysmon_module_init();
@@ -57,13 +62,5 @@ extern void sysmon_module_init();
  * @brief       deinit sysmon module
  */
 extern void sysmon_module_deinit();
-
-/* ========================================================================== */
-/*                             Global Variables                               */
-/* ========================================================================== */
-
-/* ========================================================================== */
-/*                           Function Definition                              */
-/* ========================================================================== */
 
 #endif

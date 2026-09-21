@@ -604,10 +604,7 @@ void _mp_nonfixed_register(mem_type_attr_nonfixed_t *attr)
 
 #if MP_NONFIXED_DBG
 
-/**
- * @brief       cli hook for: debug show mp nonfixed
- */
-static void* _mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
+void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
 {
     // 查看attr信息
     ev_with_rdlock(&g_mem_type_attr_nonfixed_hashtable_rwlock)
@@ -652,8 +649,13 @@ static void* _mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
         }
         safe_printf("---------------------------------------------------------\n");
     }
+}
 
-    return NULL;
+#else
+
+void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
+{
+    return;
 }
 
 #endif
@@ -671,11 +673,6 @@ void mp_nonfixed_module_init_bh()
     // 启动后台回收
     ev_thd_register(_mp_nonfixed_recycle_thd);
     ev_thd_run(_mp_nonfixed_recycle_thd);
-
-    // 注册调试cli
-#if MP_NONFIXED_DBG
-    cli_register("debug show mp nonfixed", "dump nonfixed mp debug info", NULL, _mp_nonfixed_debug_cli_hook);
-#endif
 
     dbg_major("mp nonfixed module init bottom half ok");
 }

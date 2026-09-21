@@ -30,6 +30,7 @@
 #include "type/type_hash.h"
 #include "event/ev_lock.h"
 #include "net_comm.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -296,6 +297,12 @@ static zcap_t _ifname ## _zcaptor = {   \
 /* zcap_register_field_l4_dport end */
 
 /* ========================================================================== */
+/*                              Extern Symbols                                */
+/* ========================================================================== */
+
+extern cli_param_t zcap_dump_pkt_param[];
+
+/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
@@ -381,6 +388,20 @@ extern void _zcap_register_pkt_filter(const char *if_name, const char *filter_na
  * @param[in]   mask        - field mask
  */
 extern void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt_field_e field, uint8_t *data, uint8_t *mask);
+
+/**
+ * @brief       cli hook for: show zcaptor
+ * 
+ * @note        打印zcaptor信息
+ */
+extern void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: zcap dump
+ * 
+ * @note        开启逐包报文打印一段时间
+ */
+extern void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[]);
 
 #endif
 /* __ZCAP_H__ end */

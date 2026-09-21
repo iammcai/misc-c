@@ -94,6 +94,8 @@ struct ftx_s{
 
 // 全局哈希表，管理所有ftxor
 static ftx_hash_head_t g_ftx_hash = {};
+// hash lock
+static ev_rwlock_t g_ftx_hash_rwlock = EV_RWLOCK_INITIALIZER;
 
 // 声明发包使用的slab attr
 declare_mem_type_slab(ftx, 8, 8, 8, 2048, 2048, 2048, 512, 16, 16, 8, 8)
@@ -186,36 +188,6 @@ static attr_force_inline void _ftx_cleanup(ftx_t *ftxor)
  * @note        监听消息队列，批量发包
  */
 static void* _ftx_tx_routine(void *args);
-
-/**
- * @brief       cli hook for show ftxor
- */
-static void* _ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
-{
-    ftx_t *ftxor = ftx_hash_first(&g_ftx_hash);
-
-    while(ftxor)
-    {
-        safe_printf(
-            "\n********************************\nif_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n"
-            "if_ipv4: %s\n"
-            "status: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n", 
-            ftxor->if_name, ftxor->if_index,
-            ftxor->if_mac[0],ftxor->if_mac[1],ftxor->if_mac[2],
-            ftxor->if_mac[3],ftxor->if_mac[4],ftxor->if_mac[5],
-            ftxor->ipv4_str,
-            ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE) ? "ready" : "invalid",
-            ATOM_LOAD(&ftxor->stat.tx_count, MORDER_ACQUIRE),
-            ATOM_LOAD(&ftxor->stat.tx_size, MORDER_ACQUIRE)
-        );
-
-        safe_printf("********************************\n\n");
-        
-        ftxor = ftx_hash_next(&g_ftx_hash, ftxor);
-    }
-
-    return NULL;
-}
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -322,7 +294,9 @@ void _ftx_init(const char *if_name)
 
     // 检查是否已存在
     ftx_t key = {.if_name = if_name};
-    const ftx_t *result = ftx_hash_find(&g_ftx_hash, &key);
+    const ftx_t *result = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        result = ftx_hash_find(&g_ftx_hash, &key);
     if(result)
         return;
 
@@ -344,7 +318,8 @@ void _ftx_init(const char *if_name)
     ATOM_STORE(&ftxor->status, 1, MORDER_RELEASE);
 
     // 加入全局哈希表
-    ftx_hash_add(&g_ftx_hash, ftxor);
+    ev_with_wrlock(&g_ftx_hash_rwlock)
+        ftx_hash_add(&g_ftx_hash, ftxor);
     // 创建消息队列
     ftxor->tx_q = msg_q_create(ftxor->if_name, FTX_TX_MSGQ_SIZE, sizeof(ftx_packet_t));
     // 创建发包线程
@@ -453,7 +428,9 @@ void _ftx_send(const char *if_name, void *ctx, unsigned int len)
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
-    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        ftxor = ftx_hash_find(&g_ftx_hash, &key);
     if(!ftxor)
     {
         mp_slab_node_put(ctx);  // 释放内存
@@ -479,7 +456,9 @@ void _ftx_send_udp(const char *if_name, uint32_t dip, uint16_t dport, void *ctx,
 
     // 获取ftxor
     ftx_t key = {.if_name = if_name};
-    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        ftxor = ftx_hash_find(&g_ftx_hash, &key);
     if(!ftxor)
     {
         dbg_error("Find ftxor fail");
@@ -527,7 +506,9 @@ int ftx_status_get(const char *if_name)
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
-    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        ftxor = ftx_hash_find(&g_ftx_hash, &key);
     pfm_ensure_ret(ftxor, 0);
 
     return ATOM_LOAD(&ftxor->status, MORDER_RELAXED);
@@ -539,7 +520,9 @@ error_code_e ftx_mac_get(const char *if_name, uint8_t *mac_addr)
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
-    const ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        ftxor = ftx_hash_find(&g_ftx_hash, &key);
     pfm_ensure_ret(ftxor, ERR_NT_IF_ERROR);
 
     memcpy(mac_addr, ftxor->if_mac, MAC_ADDR_SIZE);
@@ -553,12 +536,39 @@ error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr)
 
     // 获取接口
     ftx_t key = {.if_name = if_name};
-    ftx_t *ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+        ftxor = ftx_hash_find(&g_ftx_hash, &key);
     pfm_ensure_ret(ftxor, ERR_NT_IF_ERROR);
 
     *ip_addr = ftxor->ipv4_addr.s_addr;
 
     return ERR_NO_ERROR;
+}
+
+void ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
+{
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+    {
+        ftx_t *ftxor = ftx_hash_first(&g_ftx_hash);
+        while(ftxor)
+        {
+            safe_printf(
+                "\n********************************\nif_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n"
+                "if_ipv4: %s\n"
+                "status: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n", 
+                ftxor->if_name, ftxor->if_index,
+                ftxor->if_mac[0],ftxor->if_mac[1],ftxor->if_mac[2],
+                ftxor->if_mac[3],ftxor->if_mac[4],ftxor->if_mac[5],
+                ftxor->ipv4_str,
+                ATOM_LOAD(&ftxor->status, MORDER_ACQUIRE) ? "ready" : "invalid",
+                ATOM_LOAD(&ftxor->stat.tx_count, MORDER_ACQUIRE),
+                ATOM_LOAD(&ftxor->stat.tx_size, MORDER_ACQUIRE)
+            );
+            safe_printf("********************************\n\n");
+            ftxor = ftx_hash_next(&g_ftx_hash, ftxor);
+        }
+    }
 }
 
 void ftx_module_init(void)
@@ -567,9 +577,6 @@ void ftx_module_init(void)
     ftx_hash_init(&g_ftx_hash);
 
     mem_type_attr_register(ftx);
-
-    // 注册cli查看ftxor
-    cli_register("show ftxor", "dump all ftxor", NULL, _ftxor_dump_cli_hook);
 
     dbg_major("ftx module init ok");
 }

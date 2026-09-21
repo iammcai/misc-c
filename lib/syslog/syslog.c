@@ -29,7 +29,6 @@
 #include "plat/debug.h"
 #include "msg_q/msg_q.h"
 #include "plat/atom.h"
-#include "cli/cli.h"
 #include "event/ev_thread.h"
 #include "swdg/swdg.h"
 
@@ -119,56 +118,22 @@ static pthread_t syslog_consumer_tid;
 // 日志输出，默认到终端和flash
 static ATOMIC_UINT8_T g_syslog_direction = SYSLOG_DIRECTION_TERMINAL | SYSLOG_DIRECTION_FLASH;
 
+// cli param for show syslog buffer
+cli_param_t syslog_get_param[] = {
+    {.required = 0, .type = PARAM_VALUE, .short_name = 'n', .help = "dump no more than [n] logs"},
+    {},
+};
+
+// cli param for syslog direction
+cli_param_t syslog_dir_param[] = {
+    {.required = 0, .type = PARAM_VALUE, .short_name = 't', .help = "terminal, 0/1"},
+    {.required = 0, .type = PARAM_VALUE, .short_name = 'f', .help = "flash, 0/1"},
+    {}
+};
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
-
-/**
- * @brief       cli hook for get syslog direction
- */
-static void* _syslog_direction_get_cli_hook(unsigned char argc, char* argv[])
-{
-    uint8_t flag = ATOM_LOAD(&g_syslog_direction, MORDER_ACQUIRE);
-    safe_printf(
-        "terminal %d, flash %d\n", 
-        0 != (flag & SYSLOG_DIRECTION_TERMINAL),
-        0 != (flag & SYSLOG_DIRECTION_FLASH)
-    );
-}
-
-/**
- * @brief       cli hook for set syslog direction
- */
-static void* _syslog_direction_cli_hook(unsigned char argc, char* argv[])
-{
-    int dirs[2] = {
-        0 != (g_syslog_direction & SYSLOG_DIRECTION_TERMINAL),
-        0 != (g_syslog_direction & SYSLOG_DIRECTION_FLASH)
-    };       // 当前设置
-
-    if(argv[0])
-    {
-        dirs[0] = cli_param_parse_str_2_u32(argv[0]);
-        if(!(0 == dirs[0] || 1 == dirs[0]))
-        {
-            safe_printf("-syslog: error param %s for -t\n", argv[0]);
-            return NULL;
-        }
-    }
-
-    if(argv[1])
-    {
-        dirs[1] = cli_param_parse_str_2_u32(argv[1]);
-        if(!(0 == dirs[1] || 1 == dirs[1]))
-        {
-            safe_printf("-syslog: error param %s for -f\n", argv[1]);
-            return NULL;
-        }
-    }
-
-    uint8_t flag = (dirs[0] ? SYSLOG_DIRECTION_TERMINAL : 0) | (dirs[1] ? SYSLOG_DIRECTION_FLASH : 0);
-    ATOM_STORE(&g_syslog_direction, flag, MORDER_RELEASE);
-}
 
 /**
  * @brief       check if syslog ring buffer full
@@ -257,6 +222,47 @@ static void _syslog_flush_thd_wf(void *args)    // cppcheck-suppress constParame
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+void syslog_direction_get_cli_hook(unsigned char argc, char* argv[])
+{
+    uint8_t flag = ATOM_LOAD(&g_syslog_direction, MORDER_ACQUIRE);
+    safe_printf(
+        "terminal %d, flash %d\n", 
+        0 != (flag & SYSLOG_DIRECTION_TERMINAL),
+        0 != (flag & SYSLOG_DIRECTION_FLASH)
+    );
+}
+
+void syslog_direction_cli_hook(unsigned char argc, char* argv[])
+{
+    int dirs[2] = {
+        0 != (g_syslog_direction & SYSLOG_DIRECTION_TERMINAL),
+        0 != (g_syslog_direction & SYSLOG_DIRECTION_FLASH)
+    };       // 当前设置
+
+    if(argv[0])
+    {
+        dirs[0] = cli_param_parse_str_2_u32(argv[0]);
+        if(!(0 == dirs[0] || 1 == dirs[0]))
+        {
+            safe_printf("-syslog: error param %s for -t\n", argv[0]);
+            return;
+        }
+    }
+
+    if(argv[1])
+    {
+        dirs[1] = cli_param_parse_str_2_u32(argv[1]);
+        if(!(0 == dirs[1] || 1 == dirs[1]))
+        {
+            safe_printf("-syslog: error param %s for -f\n", argv[1]);
+            return;
+        }
+    }
+
+    uint8_t flag = (dirs[0] ? SYSLOG_DIRECTION_TERMINAL : 0) | (dirs[1] ? SYSLOG_DIRECTION_FLASH : 0);
+    ATOM_STORE(&g_syslog_direction, flag, MORDER_RELEASE);
+}
+
 // 刷盘线程，10s工作一次
 declare_ev_thd(syslog_flush, _syslog_flush_thd_wf, NULL, SYSLOG_FLUSH_INTERVAL_MS);
 
@@ -324,7 +330,7 @@ void _syslog_entry_push(syslog_module_e module, syslog_facility_e facility, cons
         dbg_error("syslog push msg q fail, ret %d", ret);
 }
 
-static void* _syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
+void syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
 {
     // 处理指定数量的参数
     int num = INT32_MAX;
@@ -334,7 +340,7 @@ static void* _syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
         if(num <= 0)
         {
             safe_printf("-syslog: error param %s\n", argv[0]);
-            return NULL;
+            return;
         }
     }
 
@@ -359,8 +365,6 @@ static void* _syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
             safe_printf("----------------------\n");
         }
     }
-
-    return NULL;
 }
 
 void syslog_module_init(void)
@@ -370,20 +374,6 @@ void syslog_module_init(void)
 
     // 创建日志消费线程
     pfm_ensure_ret_void(-1 != pthread_create(&syslog_consumer_tid, NULL, _syslog_consumer, NULL));
-
-    // 注册cli读取日志缓存
-    cli_param_t param0[1] = {
-        {.required = 0, .type = PARAM_VALUE, .short_name = 'n', .help = "dump no more than [n] logs"}
-    };
-    cli_register("show syslog buffer", "dump syslog ring buffer", param0, _syslog_show_buffer_cli_hook);
-    // 注册cli设置日志输出方向
-    cli_param_t param1[2] = {
-        {.required = 0, .type = PARAM_VALUE, .short_name = 't', .help = "terminal, 0/1"},
-        {.required = 0, .type = PARAM_VALUE, .short_name = 'f', .help = "flash, 0/1"}
-    };
-    cli_register("syslog direction", "set syslog direction", param1, _syslog_direction_cli_hook);
-    // 注册cli获取日志输出方向
-    cli_register("show syslog direction", "show syslog direction", NULL, _syslog_direction_get_cli_hook);
 
     // 打开文件
     g_syslog_ring.fd = open(SYSLOG_FLUSH_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);

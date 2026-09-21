@@ -37,7 +37,6 @@
 
 #include "zcap/zcap.h"
 #include "plat/debug.h"
-#include "cli/cli.h"
 #include "event/ev_thread.h"
 #include "mp/mp_nonfixed.h"
 #include "syslog/syslog.h"
@@ -228,6 +227,12 @@ static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
 
 declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, 0)
 
+// 用于zcap dump的参数
+cli_param_t zcap_dump_pkt_param[] = {
+    {.required = 1, .short_name = 't', .type = PARAM_VALUE, .help = "means dump period(s)"},
+    {},
+};
+
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
@@ -289,38 +294,6 @@ static attr_pure_inline const char* _zcap_get_ethertype_name(uint16_t ether_type
         default:
             return "unknown";
     }
-    return NULL;
-}
-
-/**
- * @brief       cli hook for: show zcaptor
- * 
- * @note        打印zcaptor信息
- */
-static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[]);
-
-static attr_force_inline void* zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
-{
-    if(argc != 1)
-    {
-        safe_printf("-zcap: Error param cnt\n");
-        return NULL;
-    }
-
-    int period = cli_param_parse_str_2_u32(argv[0]);
-    if(-1 == period)
-    {
-        safe_printf("-zcap: Error param: %s\n", argv[0]);
-        return NULL;
-    }
-
-    unsigned char expected = 0;
-    if(ATOM_CMP_XCHG_WEAK(&g_zcap_dump_pkt_info, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
-    {
-        sleep(period);
-        ATOM_STORE(&g_zcap_dump_pkt_info, 0, MORDER_RELAXED);
-    }
-
     return NULL;
 }
 
@@ -845,13 +818,6 @@ void zcap_module_init()
     // 内存池注册
     mp_nonfixed_register(zcap);
 
-    // 注册cli
-    cli_register("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook);
-    cli_param_t dump_pkt_param[] = {
-        {.required = 1, .short_name = 't', .type = PARAM_VALUE, .help = "means dump period(s)"},
-    };
-    cli_register("zcaptor dump packet", "dump info of rx packet during a preiod", dump_pkt_param, zcap_dump_pkt_cli_hook);
-
     // 注册速率计算线程
     ev_thd_register(zcap_rate_cal)
     ev_thd_run(zcap_rate_cal)
@@ -1088,7 +1054,7 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
     zcap_pkt_field_list_add_tail(&filter->fields, new_field);
 }
 
-static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
+void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
 {
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
@@ -1186,8 +1152,29 @@ static void* zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
     }
+}
 
-    return NULL;
+void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
+{
+    if(argc != 1)
+    {
+        safe_printf("-zcap: Error param cnt\n");
+        return;
+    }
+
+    int period = cli_param_parse_str_2_u32(argv[0]);
+    if(-1 == period)
+    {
+        safe_printf("-zcap: Error param: %s\n", argv[0]);
+        return;
+    }
+
+    unsigned char expected = 0;
+    if(ATOM_CMP_XCHG_WEAK(&g_zcap_dump_pkt_info, &expected, 1, MORDER_SEQ_SCT, MORDER_RELAXED))
+    {
+        sleep(period);
+        ATOM_STORE(&g_zcap_dump_pkt_info, 0, MORDER_RELAXED);
+    }
 }
 
 error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)

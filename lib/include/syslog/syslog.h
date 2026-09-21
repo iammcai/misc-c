@@ -22,6 +22,7 @@
 /* ========================================================================== */
 
 #include "plat/compiler.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -86,6 +87,10 @@ static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
     "sht30",
     "sysmon",
 };
+
+extern cli_param_t syslog_get_param[];
+
+extern cli_param_t syslog_dir_param[];
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -160,6 +165,21 @@ static const char* syslog_module_str[SYSLOG_MODULE_MAX] = {
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       cli hook for show syslog
+ */
+extern void syslog_show_buffer_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for get syslog direction
+ */
+extern void syslog_direction_get_cli_hook(unsigned char argc, char* argv[]);
+
+/**
+ * @brief       cli hook for set syslog direction
+ */
+extern void syslog_direction_cli_hook(unsigned char argc, char* argv[]);
 
 /**
  * @brief       init syslog module

@@ -14,6 +14,7 @@
  *   1.0 | 2026-06-09 | cai | Initial creation.
  *   1.1 | 2026-06-15 | cai | Support args pass.
  *   2.0 | 2026-07-15 | cai | Use GUN readline.
+ *   3.0 | 2026-09-18 | cai | Optimize cli register method.
  */
 
 /* ========================================================================== */
@@ -31,12 +32,36 @@
 #include "mp/mp.h"
 #include "event/ev_sem.h"
 
+// include for cli register
+#include "led/led.h"
+#include "sht30/sht30.h"
+#include "sysmon/sysmon.h"
+#include "zcap/zcap.h"
+#include "ftx/ftx.h"
+#include "nt/arp.h"
+#include "nt/ping.h"
+#include "nt/tftp.h"
+#include "cmcp/cmcp.h"
+#include "mp/mp_fixed.h"
+#include "mp/mp_nonfixed.h"
+#include "mp/mp_slab.h"
+#include "thp/thp.h"
+#include "syslog/syslog.h"
+#include "swdg/swdg.h"
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
 // 初始预设CLI条目数量
 #define CLI_COUNTS_INIT     (128)
+
+// 生成注册表项
+#define CLI_REG_ENTRY(c, he, p, ho)     {c, he, p, ho}
+
+// 带参数生成CLI注册表项
+#define CLI_REG_ENTRY_WITH_PARAM(c, he, param_name, ho) \
+    {c, he, cli_param_reg_ ## param_name.param, cli_param_reg_ ## param_name.cnt, ho}
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -47,6 +72,14 @@ typedef enum{
     CLI_MODE_CONFIG = 0,
     CLI_MODE_SHELL,
 }cli_mode_e;
+
+// cli注册表项定义
+typedef struct{
+    const char* cmd;        // cli命令
+    const char* help;       // helper string
+    cli_param_t *param;     // 参数
+    cli_hook_func hook;     // 回调函数
+}cli_register_entry_t;
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -76,11 +109,22 @@ static void* _cli_routine(void *args);
  * 
  * @note        ? 的回调函数
  */
-static attr_force_inline void* _cli_cmd_dump(unsigned char argc, char *argv[])  // cppcheck-suppress constParameterCallback
+static attr_force_inline void _cli_cmd_dump(unsigned char argc, char *argv[])  // cppcheck-suppress constParameterCallback
 {
     _cli_trie_dump();
-    return NULL;
 }
+
+/**
+ * @brief       enter cli shell mode
+ * 
+ * @note        输入直接传给linux shell，输入config退出
+ */
+static attr_force_inline void _cli_shell_cli_hook(unsigned char argc, char *argv[]);   // cppcheck-suppress constParameterCallback
+
+/**
+ * @brief       cli hook for history
+ */
+static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[]);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -96,15 +140,66 @@ cli_mode_e g_cli_mode = CLI_MODE_CONFIG;
 
 extern ev_sem_t g_platform_init_ok;
 
+// cli history param
+static cli_param_t param0[] = {
+    {.help = "history num", .required = 0, .short_name = 'n', .type = PARAM_VALUE},
+};
+
+// TODO: 全局cli注册表
+const static cli_register_entry_t g_cli_register_table[] = {
+    // cli module
+    CLI_REG_ENTRY("?", "dump all cli cmd", NULL, _cli_cmd_dump),
+    CLI_REG_ENTRY("help", "dump all cli cmd", NULL, _cli_cmd_dump),
+    CLI_REG_ENTRY("shell", "enter cli shell mode", NULL, _cli_shell_cli_hook),
+    CLI_REG_ENTRY("history", "dump cli history", param0, _cli_dump_history_cli_hook),
+    // led
+    CLI_REG_ENTRY("led on", "turn on led", NULL, led_on_cli_hook),
+    CLI_REG_ENTRY("led off", "turn off led", NULL, led_off_cli_hook),
+    // sht30
+    CLI_REG_ENTRY("show temperature", "dump temperature measured by sht30", NULL, sht30_show_temp),
+    CLI_REG_ENTRY("show humidity", "dump humidity measured by sht30", NULL, sht30_show_humi),
+    // sysmon
+    CLI_REG_ENTRY("show cpu usage", "dump cpu usage", NULL, sysmon_show_cpu_usage_cli_hook),
+    // zcap
+    CLI_REG_ENTRY("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook),
+    CLI_REG_ENTRY("zcaptor dump packet", "dump info of rx packet during a preiod", zcap_dump_pkt_param, zcap_dump_pkt_cli_hook),
+    // ftx
+    CLI_REG_ENTRY("show ftxor", "dump all ftxor", NULL, ftxor_dump_cli_hook),
+    // arp
+    CLI_REG_ENTRY("arp probe", "send arp probe", arp_probe_param, arp_probe_cli_hook),
+    CLI_REG_ENTRY("arp scan", "arp scan", arp_scan_param, arp_scan_cli_hook),
+    CLI_REG_ENTRY("show arp cache", "dump arp cache", NULL, arp_show_cache_cli_hook),
+    // ping
+    CLI_REG_ENTRY("ping", "ping", ping_param, ping_cli_hook),
+    // tftp
+    CLI_REG_ENTRY("tftp download", "download file from server", tftp_dl_param, tftp_download_cli_hook),
+    CLI_REG_ENTRY("tftp upload", "upload file to server", tftp_ul_param, tftp_upload_cli_hook),
+    // cmcp
+    CLI_REG_ENTRY("cmcp on", "enable cmcp", NULL, cmcp_on_cli_hook),
+    CLI_REG_ENTRY("cmcp off", "disable cmcp", NULL, cmcp_off_cli_hook),
+    // mp
+    CLI_REG_ENTRY("debug show mp fixed", "debug dump all fixed mp info", NULL, mp_fixed_debug_show),
+    CLI_REG_ENTRY("debug show mp nonfixed", "dump nonfixed mp debug info", NULL, mp_nonfixed_debug_cli_hook),
+    CLI_REG_ENTRY("debug show mp slab", "debug dump slab type mempool", NULL, mp_slab_show_cli_hook),
+    // TODO: debug
+    // thp
+    CLI_REG_ENTRY("show thread pool", "show all thread pools info", NULL, thp_dump_cli_hook),
+    // syslog
+    CLI_REG_ENTRY("show syslog buffer", "dump syslog ring buffer", syslog_get_param, syslog_show_buffer_cli_hook),
+    CLI_REG_ENTRY("show syslog direction", "show syslog direction", NULL, syslog_direction_get_cli_hook),
+    CLI_REG_ENTRY("syslog direction", "set syslog direction", syslog_dir_param, syslog_direction_cli_hook),
+    // swdg
+    CLI_REG_ENTRY("show swdg", "show software watch dog status", NULL, swdg_show_swdg_cli_cb),
+};
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static attr_force_inline void* _cli_shell_cli_hook(unsigned char argc, char *argv[])    // cppcheck-suppress constParameterCallback
+static inline void _cli_shell_cli_hook(unsigned char argc, char *argv[])    // cppcheck-suppress constParameterCallback
 {
     safe_printf("-cli: Shell mode, Enter <config> for coming back.\n");
     g_cli_mode = CLI_MODE_SHELL;
-    return NULL;
 }
 
 static void* _cli_routine(void *args)
@@ -156,7 +251,7 @@ static void* _cli_routine(void *args)
     return NULL;
 }
 
-static void* _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
+static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
 {
     int length = cli_gnurl_history_length_get();    // histroy数量
     int base = cli_gnurl_history_base_get();        // base index
@@ -168,20 +263,18 @@ static void* _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
         if(n < 0)
         {
             safe_printf("-cli: Error param: %s\n", argv[0]);
-            return NULL;
+            return;
         }
         num = length < n ? length : n;
     }
 
     if(num == 0)
-        return NULL;
+        return;
 
     int start = base + length - num;
     int end = base + length;
     for(; start < end; ++ start)
         safe_printf("%-3d : %s\n", start, cli_gnurl_history_get(start));
-
-    return NULL;
 }
 
 void cli_module_init()
@@ -189,14 +282,25 @@ void cli_module_init()
     // 初始化gnureadline
     cli_gnurl_init();
 
-    // cli注册
-    cli_register("?", "dump all cli cmd", NULL, _cli_cmd_dump);
-    cli_register("help", "dump all cli cmd", NULL, _cli_cmd_dump);
-    cli_param_t param0[] = {
-        {.help = "history num", .required = 0, .short_name = 'n', .type = PARAM_VALUE},
-    };
-    cli_register("history", "dump cli history", param0, _cli_dump_history_cli_hook);
-    cli_register("shell", "enter cli shell mode", NULL, _cli_shell_cli_hook);
+    cli_param_t dummy = {};
+    // TODO: 导入cli注册表项
+    for(int i = 0; i < array_size(g_cli_register_table); ++ i)
+    {
+        int param_cnt = 0;
+        if(g_cli_register_table[i].param)   // 参数列表以{}哨兵表示结尾
+        {
+            cli_param_t *p_param = NULL;
+            while((p_param = &g_cli_register_table[i].param[param_cnt]) && memcmp(p_param, &dummy, sizeof(cli_param_t)))
+                ++ param_cnt;
+        }
+        _cli_register(
+            g_cli_register_table[i].cmd,
+            g_cli_register_table[i].help,
+            g_cli_register_table[i].param,
+            param_cnt,
+            g_cli_register_table[i].hook
+        );
+    }
 
     // 创建线程执行监听cli输入
     pthread_create(&cli_task_tid, NULL, _cli_routine, NULL);

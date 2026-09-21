@@ -148,13 +148,6 @@ declare_list(thp_work, thp_work, thp_work_t, item)
  */
 static void* _thp_thread_routine(void *args);
 
-/**
- * @brief       show all thp, for cli: show thread pool
- * 
- * @note        打印所有thp的cli回调
- */
-static void* _thp_dump_cli_hook(unsigned char argc, char *argv[]);
-
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
@@ -322,7 +315,7 @@ unsigned char _thp_is_run(thp_t *thp)
     return ATOM_LOAD(&thp->shutdown, MORDER_ACQUIRE) ? 0 : 1;
 }
 
-static void* _thp_dump_cli_hook(unsigned char argc, char *argv[])
+void thp_dump_cli_hook(unsigned char argc, char *argv[])
 {
     safe_printf("\n");
 
@@ -354,8 +347,6 @@ void thp_module_init(void)
 {
     thp_hash_init(&g_thp_hash);
     thp_worker_stats_hash_init(&g_thp_worker_stats_hashtable);
-
-    cli_register("show thread pool", "show all thread pools info", NULL, _thp_dump_cli_hook);
 
     mem_type_attr_fixed_register(thp_work_node);
 

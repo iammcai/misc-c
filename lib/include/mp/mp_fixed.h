@@ -147,4 +147,9 @@ extern void mp_fixed_module_init_th();
  */
 extern void mp_fixed_module_init_bh();
 
+/**
+ * @brief       cli cb for: debug show mp fixed
+ */
+extern void mp_fixed_debug_show(unsigned char argc, char *argv[]);
+
 #endif

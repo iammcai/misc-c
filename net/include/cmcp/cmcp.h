@@ -25,6 +25,7 @@
 
 #include "plat/compiler.h"
 #include "msg_q/msg_q.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -51,6 +52,16 @@ typedef struct{
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+/**
+ * @brief       cli hook for: cmcp on
+ */
+void cmcp_on_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: cmcp off
+ */
+void cmcp_off_cli_hook(unsigned char argc, char *argv[]);
 
 /**
  * @brief       init mcp module

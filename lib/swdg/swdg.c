@@ -90,11 +90,6 @@ declare_hash(swdg_thd_stats, swdg_thd_stats, swdg_thd_stats_t, item, 1, 31, _swd
  */
 static void _swdg_monitor_wf(void *args);
 
-/**
- * @brief       cli cb for: show swdg
- */
-static void* _swdg_show_swdg_cli_cb(unsigned char argc, char *argv[]);
-
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -168,7 +163,7 @@ void _swdg_feed()
     }
 }
 
-static void* _swdg_show_swdg_cli_cb(unsigned char argc, char *argv[])
+void swdg_show_swdg_cli_cb(unsigned char argc, char *argv[])
 {
     uint64_t curr = low_res_cur_time_get();
 
@@ -187,8 +182,6 @@ static void* _swdg_show_swdg_cli_cb(unsigned char argc, char *argv[])
         }
     }
     safe_printf("---------------------------------------------------------------------------------\n\n");
-
-    return NULL;
 }
 
 void swdg_module_init_th()
@@ -202,8 +195,6 @@ void swdg_module_init_bh()
 {
     ev_thd_register(swdg_monitor);
     ev_thd_run(swdg_monitor);
-
-    cli_register("show swdg", "show software watch dog status", NULL, _swdg_show_swdg_cli_cb);
 
     dbg_major("swdg module init bh ok");
 }

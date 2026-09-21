@@ -72,42 +72,6 @@ static error_code_e _sht30_find_device_path_by_name(const char *name);
  */
 static error_code_e _sht30_read_attr(const char *attr_name, double *value);
 
-/**
- * @brief       cli hook for: show temperature
- */
-static attr_force_inline void* _sht30_show_temp(unsigned char argc, char *argv[])
-{
-    double temp_raw = 0.0;
-
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
-    {
-        safe_printf("-sht30: Measure temperature fail.\n");
-        return NULL;
-    }
-
-    safe_printf("-sht30: Temperature: %.3f ℃.\n", temp_raw / 1000.0);
-
-    return NULL;
-}
-
-/**
- * @brief       cli hook for: show humidity
- */
-static attr_force_inline void* _sht30_show_humi(unsigned char argc, char *argv[])
-{
-    double humi_raw = 0.0;
-
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
-    {
-        safe_printf("-sht30: Measure temperature fail.\n");
-        return NULL;
-    }
-
-    safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
-
-    return NULL;
-}
-
 static attr_force_inline void _sht30_ev_thd_measure(void *args)
 {
     double temp_raw = 0.0, humi_raw = 0.0;
@@ -218,6 +182,32 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
     return ERR_NO_ERROR;
 }
 
+void sht30_show_temp(unsigned char argc, char *argv[])
+{
+    double temp_raw = 0.0;
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+    {
+        safe_printf("-sht30: Measure temperature fail.\n");
+        return;
+    }
+
+    safe_printf("-sht30: Temperature: %.3f ℃.\n", temp_raw / 1000.0);
+}
+
+void sht30_show_humi(unsigned char argc, char *argv[])
+{
+    double humi_raw = 0.0;
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
+    {
+        safe_printf("-sht30: Measure temperature fail.\n");
+        return;
+    }
+
+    safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
+}
+
 error_code_e sht30_read_temperature(double *temp)
 {
     double temp_raw = 0.0;
@@ -276,10 +266,6 @@ void sht30_module_init()
         dbg_error("sht30 device not exist, init fail");
         return;
     }
-
-    // 注册cli打印温湿度
-    cli_register("show temperature", "dump temperature measured by sht30", NULL, _sht30_show_temp);
-    cli_register("show humidity", "dump humidity measured by sht30", NULL, _sht30_show_humi);
 
     // 注册定时任务检测温度湿度
     ev_thd_register(sht30_measure);

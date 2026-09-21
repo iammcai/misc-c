@@ -213,7 +213,7 @@ static void _sysmon_cpu_usage_cal(void *args)
     }
 }
 
-static void* _sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
+void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
 {
     double temp[SYSMON_CPU_COUNTS] = {};
     ev_with_spinlock(&g_sysmon_cpu_usage_lock)
@@ -234,8 +234,6 @@ static void* _sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
     }
 
     safe_printf("\r\n");
-
-    return NULL;
 }
 
 error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size)
@@ -270,9 +268,6 @@ void sysmon_module_init()
     ev_thd_run(cpu_usage_cal);
     // 立即计算一次
     ev_thd_wake(cpu_usage_cal);
-
-    // 注册cli展示利用率
-    cli_register("show cpu usage", "dump cpu usage", NULL, _sysmon_show_cpu_usage_cli_hook);
 
     dbg_major("sysmon module init ok");
 }
