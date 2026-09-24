@@ -3,8 +3,16 @@ add_executable(Core
     core/core.c
 )
 
+add_library(Proc STATIC
+    proc/proc.c
+)
+
 # 头文件目录
-target_link_libraries(Core PUBLIC
+target_include_directories(Proc PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(Proc PUBLIC
     Mgnt
     Lib
     Net
@@ -12,7 +20,11 @@ target_link_libraries(Core PUBLIC
     Test
 )
 
-target_link_options(Core PRIVATE
+target_link_libraries(Core PUBLIC
+    Proc
+)
+
+target_link_options(Proc PRIVATE
     "LINKER:--whole-archive"
     $<TARGET_FILE:Mgnt>
     $<TARGET_FILE:Lib>

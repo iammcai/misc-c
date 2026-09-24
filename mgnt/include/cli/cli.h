@@ -64,9 +64,16 @@ extern void cli_module_init();
 /**
  * @brief       cli module de init top half
  * 
- * @note        deinit上半部，结束cli监听线程
+ * @note        exit上半部，结束cli监听线程
  */
-void cli_module_deinit_th();
+extern void cli_module_exit_th();
+
+/**
+ * @brief       cli module de init top half
+ * 
+ * @note        exit下半部，清理前缀树等内存申请
+ */
+extern void cli_module_exit_bh();
 
 #endif
 /* __CLI_H__ end */

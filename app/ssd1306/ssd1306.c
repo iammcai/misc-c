@@ -228,7 +228,7 @@ void ssd1306_module_init()
     dbg_major("ssd1306 module init ok");
 }
 
-void ssd1306_module_deinit()
+void ssd1306_module_exit()
 {
     // 销毁定时器
     if(g_ssd1306_flush_timer)
@@ -246,5 +246,5 @@ void ssd1306_module_deinit()
     // 卸载驱动
     system("rmmod miscc_ssd1306");
 
-    dbg_major("ssd1306 module deinit ok");
+    dbg_major("ssd1306 module exit ok");
 }

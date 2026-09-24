@@ -47,8 +47,8 @@
 extern void ssd1306_module_init();
 
 /**
- * @brief       deinit ssd1306 module
+ * @brief       exit ssd1306 module
  */
-extern void ssd1306_module_deinit();
+extern void ssd1306_module_exit();
 
 #endif

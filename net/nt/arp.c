@@ -617,7 +617,7 @@ void arp_module_init(void)
     dbg_major("arp module init ok");
 }
 
-void arp_module_deinit()
+void arp_module_exit()
 {
     // 关闭定时探测线程
     ev_thd_cancel(arp_half_age_detect);
@@ -640,5 +640,5 @@ void arp_module_deinit()
         arp_reply_cache_hash_fini(&g_arp_reply_cache);
     }
 
-    dbg_major("arp module deinit ok");
+    dbg_major("arp module exit ok");
 }

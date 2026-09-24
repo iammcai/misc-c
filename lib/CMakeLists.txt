@@ -28,6 +28,7 @@ set_source_files_properties(thp/thp.c PROPERTIES COMPILE_FLAGS "-save-temps")
 target_link_libraries(Lib
     atomic
     Mgnt
+    Proc
 )
 
 # 添加头文件路径

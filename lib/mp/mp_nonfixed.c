@@ -52,10 +52,10 @@
 
 #if MP_NONFIXED_DBG
 
-// attr打印格式：name, size, piece_cnt, free_size, left
-#define MP_NONFIXED_ATTR_FMT_HEAD       "%-20s%-16s%-16s%-16s%-10s\n"
+// attr打印格式：name, size, piece_cnt, free_size, left, get_cnt, put_cnt
+#define MP_NONFIXED_ATTR_FMT_HEAD       "%-20s%-16s%-16s%-16s%-10s%-16s%-16s\n"
 // attr data打印格式
-#define MP_NONFIXED_ATTR_FMT_DATA       "%-20s%-16u%-16u%-16u%-10.3f\n"
+#define MP_NONFIXED_ATTR_FMT_DATA       "%-20s%-16u%-16u%-16u%-10.3f%-16d%-16d\n"
 
 // aq打印格式，name, tid, local, remote, max_node_size
 #define MP_NONFIXED_RECYCLE_AQ_FMT_HEAD    "%-20s%-8s%-8s%-8s%-16s\n"
@@ -308,6 +308,7 @@ static attr_force_inline void* _mp_nonfixed_node_get_fast(mem_type_attr_nonfixed
 #if MP_NONFIXED_DBG
         ATOM_FETCH_SUB(&attr->piece_cnt, 1, MORDER_RELAXED);
         ATOM_FETCH_SUB(&attr->free_size, node->size, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->get_cnt, 1, MORDER_RELAXED);
 #endif
         // 节点分割
         _mp_nonfixed_node_split(g_mp_cache, node, size);
@@ -513,6 +514,7 @@ static void* _mp_nofixed_node_get_slow(mem_type_attr_nonfixed_t *attr, uint32_t 
 #if MP_NONFIXED_DBG
         ATOM_FETCH_SUB(&attr->piece_cnt, 1, MORDER_RELAXED);
         ATOM_FETCH_SUB(&attr->free_size, node->size, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->get_cnt, 1, MORDER_RELAXED);
 #endif
         _mp_nonfixed_node_split(g_mp_cache, node, size);
         node->used = 1;
@@ -529,6 +531,7 @@ static void* _mp_nofixed_node_get_slow(mem_type_attr_nonfixed_t *attr, uint32_t 
 #if MP_NONFIXED_DBG
         ATOM_FETCH_SUB(&attr->piece_cnt, 1, MORDER_RELAXED);
         ATOM_FETCH_SUB(&attr->free_size, node->size, MORDER_RELAXED);
+        ATOM_FETCH_ADD(&attr->get_cnt, 1, MORDER_RELAXED);
 #endif
         _mp_nonfixed_node_split(g_mp_cache, node, size);
         node->used = 1;
@@ -557,6 +560,10 @@ void _mp_nonfixed_node_put(void *ptr)
     mp_nonfixed_node_t *node = mp_nonfixed_data_node(ptr);
     // 获取对应mp
     nonfixed_mp_t *mp = node->attr == g_attr_cache ? g_mp_cache : _nonfixed_mp_find_or_create(node->attr, 0);
+
+#if MP_NONFIXED_DBG
+    ATOM_FETCH_ADD(&mp->attr->put_cnt, 1, MORDER_RELAXED);
+#endif
 
     if(mp->recycle.tid == node->tid)
     {
@@ -610,10 +617,10 @@ void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
     ev_with_rdlock(&g_mem_type_attr_nonfixed_hashtable_rwlock)
     {
         safe_printf("\nNONFIXED MP ATTR"
-            "\n---------------------------------------------------------------------------\n"
+            "\n-----------------------------------------------------------------------------------------------------\n"
             MP_NONFIXED_ATTR_FMT_HEAD MP_NONFIXED_ATTR_FMT_HEAD, 
-            "name", "total_size", "node_cnt", "free_size", "left(%)",
-            "----", "----------", "--------", "---------", "-------"
+            "name", "total_size", "node_cnt", "free_size", "left(%)", "get_cnt", "put_cnt",
+            "----", "----------", "--------", "---------", "-------", "-------", "-------"
         );
         mem_type_attr_nonfixed_t *attr = mem_type_attr_nonfixed_hash_first(&g_mem_type_attr_nonfixed_hashtable);
         while(attr)
@@ -621,10 +628,11 @@ void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[])
             uint32_t node_cnt = ATOM_LOAD(&attr->piece_cnt, MORDER_RELAXED);
             uint32_t free_size = ATOM_LOAD(&attr->free_size, MORDER_RELAXED);
 
-            safe_printf(MP_NONFIXED_ATTR_FMT_DATA, attr->name, attr->size, node_cnt, free_size, (double)free_size / attr->size * 100.0);
+            safe_printf(MP_NONFIXED_ATTR_FMT_DATA, attr->name, attr->size, node_cnt, free_size, (double)free_size / attr->size * 100.0,
+                ATOM_LOAD(&attr->get_cnt, MORDER_RELAXED), ATOM_LOAD(&attr->put_cnt, MORDER_RELAXED));
             attr = mem_type_attr_nonfixed_hash_next(&g_mem_type_attr_nonfixed_hashtable, attr);
         }
-        safe_printf("---------------------------------------------------------------------------\n");
+        safe_printf("-----------------------------------------------------------------------------------------------------\n");
     }
 
     // 根据aq查看信息

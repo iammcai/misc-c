@@ -49,6 +49,13 @@ typedef struct ftx_s ftx_t;
 /* declare_ftx end */
 
 /**
+ * 外部使用，注销一个发包接口
+ */
+#define undeclare_ftx(_if_name) \
+    _ftx_deinit(#_if_name); \
+/* undeclare_ftx end */
+
+/**
  * 外部使用，发送自定义报文
  */
 #define ftx_send(_if_name, ctx, len)    \
@@ -75,6 +82,11 @@ typedef struct ftx_s ftx_t;
 extern void ftx_module_init(void);
 
 /**
+ * @brief       exit ftx module
+ */
+extern void ftx_module_exit(void);
+
+/**
  * @brief       init a ftxor
  * 
  * @param[in]   if_name     - if name
@@ -82,6 +94,15 @@ extern void ftx_module_init(void);
  * @note        内部使用，初始化发包管理结构
  */
 extern void _ftx_init(const char *if_name);
+
+/**
+ * @brief       deinit a ftxor
+ * 
+ * @param[in]   if_name     - if name
+ * 
+ * @note        内部使用，注销发包管理结构
+ */
+extern void _ftx_deinit(const char *if_name);
 
 /**
  * @brief       send packet

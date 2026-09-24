@@ -83,6 +83,7 @@ typedef enum{
 #define fmt_color_red           "\033[31m"
 #define fmt_color_green         "\033[32m"
 #define fmt_color_yellow        "\033[33m"
+#define fmt_color_cyan          "\033[1;36m"
 #define fmt_color_clear         "\033[0m"
 
 /**

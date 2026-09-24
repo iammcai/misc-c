@@ -121,5 +121,12 @@ extern void _cli_trie_dump();
  */
 extern char** cli_trie_completion(const char *prefix, int start, int end, const char *text);
 
+/**
+ * @brief       destory cli trie tree
+ * 
+ * @note        思路：后序遍历，逐个销毁
+ */
+extern void cli_trie_destory();
+
 #endif
 /* __CLI_TRIE_H__ end */

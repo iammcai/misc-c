@@ -50,9 +50,9 @@ extern cli_param_t arp_scan_param[];
 extern void arp_module_init(void);
 
 /**
- * @brief       arp module deinit
+ * @brief       arp module exit
  */
-extern void arp_module_deinit();
+extern void arp_module_exit();
 
 /**
  * @brief       send one arp request

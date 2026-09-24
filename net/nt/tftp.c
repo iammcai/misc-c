@@ -1127,7 +1127,7 @@ void tftp_module_init()
     dbg_major("tftp module init ok");
 }
 
-void tftp_module_deinit()
+void tftp_module_exit()
 {
     // 设置退出标志，发送fsm退出事件，等待状态机线程结束
     ATOM_STORE(&g_tftp_fsm.running, 0, MORDER_RELAXED);
@@ -1138,5 +1138,5 @@ void tftp_module_deinit()
     // 销毁消息队列
     msg_q_destroy(&msg_q_tftp_fsm_mq);
 
-    dbg_major("tftp module deinit ok");
+    dbg_major("tftp module exit ok");
 }

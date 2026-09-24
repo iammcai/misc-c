@@ -69,9 +69,9 @@ extern error_code_e sht30_read_humidity(double *humi);
 extern void sht30_module_init();
 
 /**
- * @brief       deinit sht30 module
+ * @brief       exit sht30 module
  */
-extern void sht30_module_deinit();
+extern void sht30_module_exit();
 
 /* ========================================================================== */
 /*                           Function Definition                              */

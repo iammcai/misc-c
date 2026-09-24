@@ -272,9 +272,9 @@ void sysmon_module_init()
     dbg_major("sysmon module init ok");
 }
 
-void sysmon_module_deinit()
+void sysmon_module_exit()
 {
     ev_thd_cancel(cpu_usage_cal);
 
-    dbg_major("sysmon module deinit ok");
+    dbg_major("sysmon module exit ok");
 }

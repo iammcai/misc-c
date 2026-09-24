@@ -61,7 +61,7 @@ _Static_assert((SYSLOG_RING_SIZE & (SYSLOG_RING_SIZE-1)) == 0, "Ring size must b
 #define SYSLOG_FLUSH_INTERVAL_MS    (10000)
 
 // syslog等待日志时间
-#define SYSLOG_CONSUMER_WAIT_TIME   (30000)
+#define SYSLOG_CONSUMER_WAIT_TIME   (1000)
 
 
 /* ========================================================================== */
@@ -115,6 +115,9 @@ static syslog_ring_t g_syslog_ring = {};
 // 日志消费线程
 static pthread_t syslog_consumer_tid;
 
+// 日志消费线程运行标志
+static ATOMIC_UINT8_T g_syslog_consumer_running;
+
 // 日志输出，默认到终端和flash
 static ATOMIC_UINT8_T g_syslog_direction = SYSLOG_DIRECTION_TERMINAL | SYSLOG_DIRECTION_FLASH;
 
@@ -161,6 +164,13 @@ static attr_force_inline int _syslog_ring_size(void)
 static void _syslog_analyze(syslog_entry_t *entry);
 
 /**
+ * @brief       flush syslog flush buffer into file
+ * 
+ * @param[in]   need_lock   - if need lock inside
+ */
+static void _syslog_flush_file(int need_lock);
+
+/**
  * @brief       syslog consumer routine
  */
 static void* _syslog_consumer(void *args)
@@ -171,7 +181,9 @@ static void* _syslog_consumer(void *args)
     dbg_major("syslog consumer start working");
 
     syslog_entry_t entry = {};
-    while(1)
+
+    ATOM_STORE(&g_syslog_consumer_running, 1, MORDER_RELAXED);
+    while(ATOM_LOAD(&g_syslog_consumer_running, MORDER_RELAXED))
     {
         swdg_feed();
 
@@ -181,14 +193,15 @@ static void* _syslog_consumer(void *args)
 
         _syslog_analyze(&entry);
     }
+
+    swdg_deregister("syslog_consumer");
+
+    // 推出前立即刷盘一次
+    _syslog_flush_file(1);
+
     return NULL;
 }
 
-/**
- * @brief       flush syslog flush buffer into file
- * 
- * @param[in]   need_lock   - if need lock inside
- */
 static void _syslog_flush_file(int need_lock)
 {
     static char s_flush_ctx[SYSLOG_RING_SIZE * SYSLOG_STR_SIZE] = {};
@@ -384,4 +397,18 @@ void syslog_module_init(void)
     ev_thd_run(syslog_flush);
 
     dbg_major("syslog module init ok");
+}
+
+void syslog_module_exit(void)
+{
+    // 结束日志消费线程
+    ATOM_STORE(&g_syslog_consumer_running, 0, MORDER_RELAXED);
+    pthread_join(syslog_consumer_tid, NULL);
+
+    // 取消定期刷盘线程
+    ev_thd_cancel(syslog_flush);
+
+    // 关闭文件
+    if(g_syslog_ring.fd >= 0)
+        close(g_syslog_ring.fd);
 }

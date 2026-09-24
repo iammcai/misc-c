@@ -144,6 +144,23 @@ void _swdg_register(const char *name, uint64_t threshold)
         swdg_thd_stats_hash_add(&g_swdg_thd_stats_hashtable, stat);
 }
 
+void _swdg_deregister(const char *name)
+{
+    ev_with_wrlock(&g_swdg_thd_stats_hash_rwlock)
+    {
+        swdg_thd_stats_t key = {};
+        key.name = mp_strdup(name);
+        swdg_thd_stats_t *stat = swdg_thd_stats_hash_find(&g_swdg_thd_stats_hashtable, &key);
+        if(likely(stat))
+        {
+            mp_free(stat->name, sizeof(char) * strlen(stat->name));
+            swdg_thd_stats_hash_del(&g_swdg_thd_stats_hashtable, stat);     // 删除出hash
+            mp_free(stat, sizeof(swdg_thd_stats_t));
+        }
+        mp_free(key.name, sizeof(char) * strlen(key.name));
+    }
+}
+
 void _swdg_feed()
 {
     // 找到对应的状态变量
@@ -197,4 +214,14 @@ void swdg_module_init_bh()
     ev_thd_run(swdg_monitor);
 
     dbg_major("swdg module init bh ok");
+}
+
+void swdg_module_exit_th()
+{
+    ev_thd_cancel(swdg_monitor)
+}
+
+void swdg_module_exit_bh()
+{
+
 }

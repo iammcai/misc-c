@@ -408,7 +408,7 @@ void ping_module_init()
     dbg_major("ping module init ok");
 }
 
-void ping_module_deinit()
+void ping_module_exit()
 {
-    dbg_major("ping module deinit ok");
+    dbg_major("ping module exit ok");
 }

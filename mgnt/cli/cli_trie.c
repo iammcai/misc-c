@@ -117,6 +117,13 @@ static cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
  */
 static void _cli_trie_parse_execute(cli_match_info_t *match);
 
+/**
+ * @brief       recursive func for destory trie
+ * 
+ * @param[in]   item    - current item
+ */
+static void _cli_trie_destory_recursive(cli_trie_item_t *item);
+
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
@@ -648,4 +655,39 @@ char** cli_trie_completion(const char *prefix, int start, int end, const char *t
     }
 
     return result;
+}
+
+static void _cli_trie_destory_recursive(cli_trie_item_t *item)
+{
+    if(!item)
+        return;
+
+    // 递归遍历所有子节点
+    for(int i = 0; i < item->size; ++ i)
+        _cli_trie_destory_recursive(item->next[i]);
+
+    // dbg_always("destroy token name: %s", item->name);
+
+    // 处理自身，回收资源
+    if(item->is_end)        // is_end节点需要清理help string和参数信息
+    {
+        mp_strfree(item->help);
+        for(int j = 0; j < item->params_cnt; ++ j)
+            mp_strfree(item->params[j].help);
+        mp_free(item->params, item->params_cnt * sizeof(cli_param_t));
+    }
+    // 清除next array和name
+    mp_strfree(item->name);
+    mp_free(item->next, sizeof(cli_trie_item_t*) * item->size);
+    // 清除节点本身内存，root不是动态分配的除外
+    if(item != &g_cli_trie.root)
+    {
+        mp_free(item, sizeof(cli_trie_item_t));
+    }
+}
+
+void cli_trie_destory()
+{
+    ev_with_mutex(&g_cli_trie_mtx)
+        _cli_trie_destory_recursive(&g_cli_trie.root);
 }

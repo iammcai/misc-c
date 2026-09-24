@@ -332,6 +332,29 @@ cleanup:
     _ftx_cleanup(ftxor);
 }
 
+void _ftx_deinit(const char *if_name)
+{
+    pfm_ensure_ret_void(if_name);
+
+    // 查找对应的ftxor是否存在
+    ftx_t key = {.if_name = if_name};
+    ftx_t *ftxor = NULL;
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+       ftxor = ftx_hash_find(&g_ftx_hash, &key);
+    if(!ftxor)
+        return;
+
+    // 结束发包监听线程
+    ATOM_STORE(&ftxor->status, 0, MORDER_RELEASE);
+    pthread_join(ftxor->tx_tid, NULL);
+
+    // 清除资源，从哈希表中移除
+    msg_q_destroy(&ftxor->tx_q);
+    ev_with_wrlock(&g_ftx_hash_rwlock)
+        ftx_hash_del(&g_ftx_hash, ftxor);
+    _ftx_cleanup(ftxor);
+}
+
 static void* _ftx_tx_routine(void *args)
 {
     ftx_t *ftxor = (ftx_t*)args;
@@ -417,7 +440,8 @@ static void* _ftx_tx_routine(void *args)
         }
     }
 
-    // TODO: 退出，需要回收资源
+    // 退出，需要回收资源
+    swdg_deregister(buf);
 
     return NULL;
 }
@@ -579,4 +603,20 @@ void ftx_module_init(void)
     mem_type_attr_register(ftx);
 
     dbg_major("ftx module init ok");
+}
+
+void ftx_module_exit(void)
+{
+    // 清除hashtabe中的ftxor
+    ev_with_rdlock(&g_ftx_hash_rwlock)
+    {
+        while(ftx_hash_count(&g_ftx_hash))
+        {
+            ftx_t *ftxor = ftx_hash_first(&g_ftx_hash);
+            ftx_hash_del(&g_ftx_hash, ftxor);
+            dbg_always("ftxor for if: %s lack deinit, please check", ftxor->if_name);
+        }
+    }
+
+    ftx_hash_fini(&g_ftx_hash);
 }

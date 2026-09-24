@@ -36,6 +36,13 @@
 
 #define RECYCLE_WAKE_THRESHOLD  (64)   // 唤醒阈值
 
+// type cnt size
+#define MP_MEMINFO_FMT_HEAD     "%-12s%-12s%-16s\n"
+// data fmt
+#define MP_MEMINFO_FMT_DATA     "%-12s%-12d%-14.2fKB\n"
+// data fmt for used
+#define MP_MEMINFO_FMT_DATA_USED    "%-12s%-12s%-14.2fKB\n"
+
 /* ========================================================================== */
 /*                           Static Function Prototypes                       */
 /* ========================================================================== */
@@ -173,6 +180,21 @@ void mp_module_init()
     dbg_major("mp module init ok");
 }
 
-/* ========================================================================== */
-/*                              Debug Function                                */
-/* ========================================================================== */
+void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[])
+{
+    uint32_t calloc_cnt = ATOM_LOAD(&g_mp_calloc_cnt, MORDER_RELAXED);
+    uint32_t calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_RELAXED);
+    uint32_t free_cnt = ATOM_LOAD(&g_mp_free_cnt, MORDER_RELAXED);
+    uint32_t free_size = ATOM_LOAD(&g_mp_free_size, MORDER_RELAXED);
+
+    safe_printf("\n");
+    safe_printf(MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD,
+        "TYPE", "COUNT", "SIZE",
+        "----", "-----", "----"
+    );
+    safe_printf(MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
+    safe_printf(MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
+    safe_printf(MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
+
+    safe_printf("\n");
+}

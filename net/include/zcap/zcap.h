@@ -312,16 +312,16 @@ extern cli_param_t zcap_dump_pkt_param[];
 extern void zcap_module_init();
 
 /**
- * @brief       zcap module deinit top half
+ * @brief       zcap module exit top half
  * 
  * @note        系统退出时，zcap需要立即停止抓包，避免产生消息到模块
  */
-extern void zcap_module_deinit_th();
+extern void zcap_module_exit_th();
 
 /**
- * @brief       zcap module deinit bottom half
+ * @brief       zcap module exit bottom half
  */
-extern void zcap_module_deinit_bh();
+extern void zcap_module_exit_bh();
 
 /**
  * @brief       内部使用，初始化抓包组件，未启动

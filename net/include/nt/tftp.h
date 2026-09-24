@@ -62,8 +62,8 @@ extern void tftp_upload_cli_hook(unsigned char argc, char *argv[]);
 extern void tftp_module_init();
 
 /**
- * @brief       tftp module deinit
+ * @brief       tftp module exit
  */
-extern void tftp_module_deinit();
+extern void tftp_module_exit();
 
 #endif

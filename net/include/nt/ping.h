@@ -47,8 +47,8 @@ extern void ping_cli_hook(unsigned char argc, char *argv[]);
 extern void ping_module_init();
 
 /**
- * @brief       deinit ping module
+ * @brief       exit ping module
  */
-extern void ping_module_deinit();
+extern void ping_module_exit();
 
 #endif

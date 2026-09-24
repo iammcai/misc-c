@@ -35,6 +35,13 @@
 /* swdg_register end */
 
 /**
+ * @brief       外部使用，注销看门狗监控
+ */
+#define swdg_deregister(_name)  \
+    _swdg_deregister(_name);    \
+/* swdg_deregister end */
+
+/**
  * @brief       外部使用，喂狗
  */
 #define swdg_feed() \
@@ -54,6 +61,13 @@
  * @note        提供业务线程注册看门狗
  */
 extern void _swdg_register(const char *name, uint64_t threshold);
+
+/**
+ * @brief       deregister thread from swdg
+ * 
+ * @param[in]   name    - thd name
+ */
+extern void _swdg_deregister(const char *name);
 
 /**
  * @brief       feed swdg
@@ -78,6 +92,20 @@ extern void swdg_module_init_th();
  * @note        软件看门狗模块初始化下半部，启动事件线程
  */
 extern void swdg_module_init_bh();
+
+/**
+ * @brief       swdg exit top half
+ * 
+ * @note        立即停止监听，防止误报
+ */
+extern void swdg_module_exit_th();
+
+/**
+ * @brief       swdg exit bottom half
+ * 
+ * @note        资源回收
+ */
+extern void swdg_module_exit_bh();
 
 #endif
 /* __SWDG_H__ end */

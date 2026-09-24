@@ -36,8 +36,12 @@
 /* ========================================================================== */
 
 extern void* _cmcp_fsm(void *args);
+extern void cmcp_fsm_exit();
+
 extern void cmcp_fsm_msg_push(cmcp_fsm_msg_t *msg);
+
 extern void cmcp_pkt_init();
+extern void cmcp_pkt_exit();
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -62,7 +66,7 @@ void cmcp_off_cli_hook(unsigned char argc, char *argv[])
     cmcp_fsm_msg_push(&msg);
 }
 
-void mcp_module_init()
+void cmcp_module_init()
 {
     // 初始化报文相关
     cmcp_pkt_init();
@@ -71,4 +75,14 @@ void mcp_module_init()
     pthread_create(&g_mcp_fsm_tid, NULL, _cmcp_fsm, NULL);
 
     dbg_major("mcp module init ok");
+}
+
+void cmcp_module_exit()
+{
+    // 结束状态机线程
+    cmcp_fsm_exit();
+    pthread_join(g_mcp_fsm_tid, NULL);
+
+    // 注销发包相关
+    cmcp_pkt_exit();
 }

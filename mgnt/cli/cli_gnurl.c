@@ -18,6 +18,7 @@
 /*                               Include Files                                */
 /* ========================================================================== */
 
+#include "plat/atom.h"
 #include "cli/cli_gnurl.h"
 #include "cli/cli_trie.h"
 #include "plat/debug.h"
@@ -34,6 +35,8 @@
 /* ========================================================================== */
 /*                              Static Variables                              */
 /* ========================================================================== */
+
+extern ATOMIC_UINT8_T core_running;
 
 // 上一次写入文件的位置
 static int s_last_synced_len = 0;
@@ -55,6 +58,18 @@ static int s_last_synced_len = 0;
  *              返回值必须是malloc等动态分配的，rl会负责free
  */
 static attr_force_inline char **_cli_gnurl_completion(const char *text, int start, int end);
+
+/**
+ * @brief       readline事件钩子
+ * 
+ * @note        readline周期调用
+ */
+static attr_force_inline int cli_rl_event_hook(void)
+{
+    if (!ATOM_LOAD(&core_running, MORDER_RELAXED)) 
+        rl_done = 1; // 强制readline立即结束并返回 NULL
+    return 0;
+}
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -107,4 +122,9 @@ void cli_gnurl_init()
 
     rl_completion_append_character = ' ';       // 补全自动加空格
     rl_attempted_completion_function = _cli_gnurl_completion;   // 指定高级补全函数
+
+    rl_catch_signals = 0;   // 禁止拦截信号
+    rl_catch_sigwinch = 0;
+
+    rl_event_hook = cli_rl_event_hook;  // 设置hook
 }

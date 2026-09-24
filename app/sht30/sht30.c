@@ -270,13 +270,11 @@ void sht30_module_init()
     // 注册定时任务检测温度湿度
     ev_thd_register(sht30_measure);
     ev_thd_run(sht30_measure);
-    // 初始化时立即测量一次
-    ev_thd_wake(sht30_measure);
 
     dbg_major("sht30 module init ok");
 }
 
-void sht30_module_deinit()
+void sht30_module_exit()
 {
     // 停止定时检测事件线程
     ev_thd_cancel(sht30_measure);
@@ -284,5 +282,5 @@ void sht30_module_deinit()
     // 注销驱动
     system("rmmod miscc_sht30");
 
-    dbg_major("sht30 module deinit ok");
+    dbg_major("sht30 module exit ok");
 }

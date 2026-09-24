@@ -39,7 +39,7 @@
 // CMCP发包队列容量
 #define CMCP_TX_MSGQ_CAP    (32)
 // CMCP等待发包消息时间
-#define CMCP_TX_MSGQ_WAIT   (5000)
+#define CMCP_TX_MSGQ_WAIT   (1000)
 
 // CMCP payload临时缓冲长度
 #define CMCP_PKT_PAYLOAD_SIZE   (256)
@@ -188,6 +188,10 @@ static void* _cmcp_tx(void *args)
         ftx_send("wlan0", msg.buffer, msg.size);
     }
 
+    // exit
+    msg_q_destroy(&g_cmcp_tx_msg_q);
+    swdg_deregister("cmcp_tx");
+
     return NULL;
 }
 
@@ -209,4 +213,14 @@ void cmcp_pkt_init()
     zcap_register_field_len_type("eth0", "cmcp", CMCP_ETHER_TYPE, 0xffff);
     zcap_register_pkt_filter("wlan0", "cmcp", _cmcp_zcap_cb, NULL);
     zcap_register_field_len_type("wlan0", "cmcp", CMCP_ETHER_TYPE, 0xffff);
+}
+
+/**
+ * @brief       cmcp packets exit
+ */
+void cmcp_pkt_exit()
+{
+    // 发包线程退出
+    ATOM_STORE(&g_cmcp_tx_running, 0, MORDER_RELAXED);
+    pthread_join(g_cmcp_tx_tid, NULL);
 }

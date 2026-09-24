@@ -173,7 +173,7 @@ void led_module_init()
     dbg_major("led module init ok");
 }
 
-void led_module_deinit()
+void led_module_exit()
 {
     // 退出时熄灭led
     led_off_cli_hook(0, NULL);
@@ -185,5 +185,5 @@ void led_module_deinit()
     // 卸载led驱动
     system("rmmod miscc_led");
 
-    dbg_major("led module deinit ok");
+    dbg_major("led module exit ok");
 }

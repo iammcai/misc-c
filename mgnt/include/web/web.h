@@ -37,6 +37,6 @@ extern void web_module_init();
 /**
  * @brief       de init web module
  */
-extern void web_module_deinit();
+extern void web_module_exit();
 
 #endif

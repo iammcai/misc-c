@@ -187,6 +187,11 @@ extern void syslog_direction_cli_hook(unsigned char argc, char* argv[]);
 extern void syslog_module_init(void);
 
 /**
+ * @brief       exit syslog module
+ */
+extern void syslog_module_exit(void);
+
+/**
  * @brief       push syslog entry into msg_q
  * 
  * @param[in]   module  - mod id

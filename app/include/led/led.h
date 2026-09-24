@@ -87,8 +87,8 @@ extern error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size);
 extern void led_module_init();
 
 /**
- * @brief       led模块销毁
+ * @brief       led模块退出
  */
-extern void led_module_deinit();
+extern void led_module_exit();
 
 #endif

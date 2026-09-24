@@ -124,11 +124,11 @@ static attr_force_inline void* _web_epoll_routine(void *args);
 static error_code_e _web_mgnt_init(void);
 
 /**
- * @brief       deinit web mgnter
+ * @brief       exit web mgnter
  * 
  * @note        归还资源，系统退出时调用
  */
-static attr_force_inline void _web_mgnt_deinit(void);
+static attr_force_inline void _web_mgnt_exit(void);
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -161,7 +161,7 @@ static attr_force_inline web_connection_t* _web_connection_find(int fd)
 }
 
 /**
- * @brief       释放所有web_connection资源，web deinit时调用
+ * @brief       释放所有web_connection资源，web exit时调用
  * 
  * @note        移出链表，释放fd，归还内存
  */
@@ -388,7 +388,7 @@ done:
     return ERR_WEB_INIT_FAIL;
 }
 
-static inline void _web_mgnt_deinit(void)
+static inline void _web_mgnt_exit(void)
 {
     // web监听线程退出
     ATOM_STORE(&g_web_mgnter.running, 0, MORDER_RELAXED);
@@ -432,10 +432,10 @@ void web_module_init()
     dbg_major("web module init ok");
 }
 
-void web_module_deinit()
+void web_module_exit()
 {
     // 释放资源，包括socket epoll web_conn
-    _web_mgnt_deinit();
+    _web_mgnt_exit();
 
-    dbg_major("web module deinit ok");
+    dbg_major("web module exit ok");
 }

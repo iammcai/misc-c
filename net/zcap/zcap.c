@@ -826,7 +826,7 @@ void zcap_module_init()
     dbg_major("zcap module init ok");
 }
 
-void zcap_module_deinit_th()
+void zcap_module_exit_th()
 {
     // 遍历哈希表，停止running中的抓包
     ev_with_wrlock(&g_zcaptor_hash_rwlock)
@@ -844,18 +844,18 @@ void zcap_module_deinit_th()
         }
     }
 
-    dbg_major("zcap module deinit top half ok");
+    dbg_major("zcap module exit top half ok");
 }
 
-void zcap_module_deinit_bh()
+void zcap_module_exit_bh()
 {
-    // TODO:
-
     ev_with_wrlock(&g_zcaptor_hash_rwlock)
     {
-        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-        while(captor)
+        while(zcaptor_hash_count(&g_zcaptor_hash_head))
         {
+            zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+            zcaptor_hash_del(&g_zcaptor_hash_head, captor);
+
             // 结束alz线程，此时已经running设置为0，发送信号量唤醒
             for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
             {
@@ -874,6 +874,7 @@ void zcap_module_deinit_bh()
                 zcap_pkt_field_t *field = NULL;
                 while(field = zcap_pkt_field_list_pop(&filter->fields))
                     mp_free(field, sizeof(zcap_pkt_field_t));
+                zcap_pkt_field_list_fini(&filter->fields);
 
                 // 从Hash中删除
                 zcap_pkt_filter_hash_del(&captor->filters, filter);
@@ -881,10 +882,20 @@ void zcap_module_deinit_bh()
                 // 继续拿出Hash head
                 filter = zcap_pkt_filter_hash_first(&captor->filters);
             }
+            zcap_pkt_filter_hash_fini(&captor->filters);
 
-            // TODO: 释放zcap资源
-
-            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+            // 释放其它zcap资源
+            if(MAP_FAILED != captor->ring_buffer)
+                munmap(captor->ring_buffer, BLOCK_SIZE * BLOCK_NR);
+            if(captor->sock_fd >= 0)
+                close(captor->sock_fd);
+            for(int i = 0; i < ZCAP_HASH_Q_SIZE; ++ i)
+            {
+                zcap_packet_t *packet;
+                while(packet = zcap_packet_spsc_atom_queue_pop(&captor->alz[i].alz_aq_head))
+                    mp_nonfixed_node_put(packet);
+                zcap_packet_spsc_atom_queue_fini(&captor->alz[i].alz_aq_head);
+            }
         }
     }
 

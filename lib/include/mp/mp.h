@@ -33,7 +33,6 @@
 #include "type/type_hash.h"
 #include "type/type_atom_queue.h"
 #include "type/type_skiplist.h"
-#include "mp/mp_base.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -58,6 +57,23 @@ typedef enum{
     MEM_TYPE_ATTR_SLAB = 1 << 1,            // 分级内存
     MEM_TYPE_ATTR_DYNAMIC_SUPPLY = 1 << 2,  // 动态补充
 }mem_type_attr_flag_e;
+
+// slab的枚举定义
+typedef enum{
+    SLAB_SIZE_8 = 0,
+    SLAB_SIZE_16,
+    SLAB_SIZE_32,
+    SLAB_SIZE_64,
+    SLAB_SIZE_128,
+    SLAB_SIZE_256,
+    SLAB_SIZE_512,
+    SLAB_SIZE_1024,
+    SLAB_SIZE_2048,
+    SLAB_SIZE_4096,
+    SLAB_SIZE_9216,     // 实际使用出现了jumbo帧，预留
+
+    SLAB_SIZE_CNT,      // 计数
+}slab_size_e;
 
 // 内存类型属性
 typedef struct{
@@ -224,6 +240,17 @@ static attr_force_inline void mp_free(void *ptr, unsigned int size)
 }
 
 /**
+ * @brief       free for string (alloc by strdup)
+ * 
+ * @param[in]   str     - string
+ */
+static attr_force_inline void mp_strfree(char *str)
+{
+    if(str)
+        mp_free(str, strlen(str)+1);
+}
+
+/**
  * @brief       register mem type attr
  * 
  * @param[in]   attr
@@ -232,6 +259,13 @@ static void _mem_type_attr_register(mem_type_attr_t *attr)
 {
     mem_type_attr_init(attr);
 }
+
+/**
+ * @brief       cli hook for: show mem-usage
+ * 
+ * @note        打印从系统申请/归还内存情况
+ */
+extern void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[]);
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */

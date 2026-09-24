@@ -221,6 +221,12 @@ static inline void _cmcp_fsm_init()
     g_cmcp_fsm_mgnt.msg_q = msg_q_create("cmcp_fsm", CMCP_FSM_MSGQ_CAP, sizeof(cmcp_fsm_msg_t));
 }
 
+void cmcp_fsm_exit()
+{
+    ATOM_STORE(&g_cmcp_fsm_mgnt.running, 0, MORDER_RELAXED);
+    msg_q_destroy(&g_cmcp_fsm_mgnt.msg_q);
+}
+
 /**
  * @brief       cmcp fsm routine
  * 
@@ -257,6 +263,9 @@ void* _cmcp_fsm(void *args)
                 g_cmcp_cb_table[new_state].enter(&msg);         // enter
         }
     }
+
+    // exit走到这里
+    swdg_deregister("cmcp_fsm");
 
     return NULL;
 }

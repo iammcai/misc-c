@@ -95,6 +95,8 @@ typedef struct{
 #if MP_NONFIXED_DBG
     ATOMIC_UINT32_T piece_cnt;          // 节点数量
     ATOMIC_UINT32_T free_size;          // 可用空闲内存
+    ATOMIC_UINT32_T get_cnt;            // 申请次数
+    ATOMIC_UINT32_T put_cnt;            // 释放次数
 #endif
 }mem_type_attr_nonfixed_t;
 

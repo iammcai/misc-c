@@ -66,7 +66,12 @@ void cmcp_off_cli_hook(unsigned char argc, char *argv[]);
 /**
  * @brief       init mcp module
  */
-extern void mcp_module_init();
+extern void cmcp_module_init();
+
+/**
+ * @brief       exit cmcp module
+ */
+extern void cmcp_module_exit();
 
 #endif
 /* __CMCP_H__ end */

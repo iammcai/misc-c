@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/prctl.h>
+#include <signal.h>
 
 #include "cli/cli.h"
 #include "cli/cli_gnurl.h"
@@ -126,9 +127,31 @@ static attr_force_inline void _cli_shell_cli_hook(unsigned char argc, char *argv
  */
 static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[]);
 
+/**
+ * @brief       进入CLI后打印提示语
+ */
+static attr_force_inline void _cli_hello_printf()
+{
+    safe_printf("\n");
+    safe_printf(fmt_color_cyan);
+    safe_printf("  __  __ _      ____       ___ \n");
+    safe_printf(" |  \\/  (_)___ / ___|     / __|\n");
+    safe_printf(" | |\\/| | / __| |    _____| |  \n");
+    safe_printf(" | |  | | \\__ \\ |___|_____| |__\n");
+    safe_printf(" |_|  |_|_|___/\\____|     \\___|\n");
+    safe_printf(fmt_color_clear);
+    safe_printf("\n");
+    safe_printf(" System initialized successfully.\n");
+    safe_printf(" Version: %s | Author: Cai\n", "1.0");
+    safe_printf(" Enter '?' or 'help' to list all commands.\n");
+    safe_printf("\n");
+}
+
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
 /* ========================================================================== */
+
+extern ATOMIC_UINT8_T core_running;
 
 // 执行监听输入、任务处理的线程
 static pthread_t cli_task_tid;
@@ -179,6 +202,7 @@ const static cli_register_entry_t g_cli_register_table[] = {
     CLI_REG_ENTRY("cmcp on", "enable cmcp", NULL, cmcp_on_cli_hook),
     CLI_REG_ENTRY("cmcp off", "disable cmcp", NULL, cmcp_off_cli_hook),
     // mp
+    CLI_REG_ENTRY("debug show meminfo", "show calloc/free from/to system", NULL, mp_show_mem_usage_cli_hook),
     CLI_REG_ENTRY("debug show mp fixed", "debug dump all fixed mp info", NULL, mp_fixed_debug_show),
     CLI_REG_ENTRY("debug show mp nonfixed", "dump nonfixed mp debug info", NULL, mp_nonfixed_debug_cli_hook),
     CLI_REG_ENTRY("debug show mp slab", "debug dump slab type mempool", NULL, mp_slab_show_cli_hook),
@@ -211,7 +235,8 @@ static void* _cli_routine(void *args)
 
     ATOM_STORE(&cli_task_running, 1, MORDER_RELAXED);
 
-    dbg_major("CLI start...");
+    _cli_hello_printf();        // 打印提示语
+
     while(ATOM_LOAD(&cli_task_running, MORDER_RELAXED))
     {
         char *input = NULL;
@@ -220,9 +245,15 @@ static void* _cli_routine(void *args)
         {
             case CLI_MODE_CONFIG:
                 input = cli_gnurl_readline(fmt_color_green "misc-c (config) > " fmt_color_clear);
-                if(!input)      // ctrl + D 退出cli，ctrl + C 结束程序
+                if(!ATOM_LOAD(&core_running, MORDER_ACQUIRE))
                 {
-                    if(errno != EINTR)
+                    ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED);
+                    break;
+                }
+                if(!input)      // ctrl + D 退出cli
+                {
+                    dbg_always("input is NULL");
+                    if(ATOM_LOAD(&core_running, MORDER_ACQUIRE))    // 检查core_running标志
                         g_cli_mode = CLI_MODE_SHELL;
                     break;
                 }
@@ -236,6 +267,11 @@ static void* _cli_routine(void *args)
                 break;
             case CLI_MODE_SHELL:
                 input = cli_gnurl_readline(fmt_color_green "misc-c (shell) > " fmt_color_clear);
+                if(!ATOM_LOAD(&core_running, MORDER_ACQUIRE))
+                {
+                    ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED);
+                    break;
+                }
                 if(0 == strcmp(input, "config"))
                     g_cli_mode = CLI_MODE_CONFIG;
                 else
@@ -246,8 +282,6 @@ static void* _cli_routine(void *args)
                 break;
         }
     }
-
-    dbg("cli thread exit");
 
     return NULL;
 }
@@ -309,11 +343,17 @@ void cli_module_init()
     dbg_major("cli module init ok");
 }
 
-void cli_module_deinit_th()
+void cli_module_exit_th()
 {
-    ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED);
-    // 向cli线程发送SIGINT，退出gnu_readline的阻塞等待
-    pthread_kill(cli_task_tid, SIGINT);
+    pthread_join(cli_task_tid, NULL);
 
-    dbg_major("cli module deinit top half ok");
+    dbg_major("cli module exit top half ok");
+}
+
+void cli_module_exit_bh()
+{
+    // TODO: 回收资源
+    cli_trie_destory();     // 销毁前缀树
+
+    dbg_major("cli module exit bottom half ok");
 }

@@ -59,8 +59,8 @@ extern void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[]);
 extern void sysmon_module_init();
 
 /**
- * @brief       deinit sysmon module
+ * @brief       exit sysmon module
  */
-extern void sysmon_module_deinit();
+extern void sysmon_module_exit();
 
 #endif

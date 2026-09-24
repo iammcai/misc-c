@@ -27,6 +27,7 @@
 #include "plat/atom.h"
 #include "event/ev_lock.h"
 #include "cli/cli.h"
+#include "proc/proc.h"
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -94,16 +95,16 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
     switch(level)
     {
         case debug_level_normal:
-            fmt = "[%.3f] [%s] [%s:%d %s] [%s] %s\n";    // [time] [level] [file:line func] usr_fmt
+            fmt = "[%.3f] [%s] [%s:%d %s] [%s/%d] %s\n";    // [time] [level] [file:line func] [P_NAME/PID] usr_fmt
             break;
         case debug_level_error:
-            fmt = "[%.3f] [%s] [%s:%d %s] [%s] " fmt_color_yellow "%s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] [%s/%d] " fmt_color_yellow "%s\n" fmt_color_clear;
             break;
         case debug_level_major:
-            fmt = "[%.3f] [%s] [%s:%d %s] [%s] " fmt_color_red "%s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] [%s/%d] " fmt_color_red "%s\n" fmt_color_clear;
             break;
         case debug_level_always:
-            fmt = "[%.3f] [%s] [%s:%d %s] [%s] " fmt_color_green "%s\n" fmt_color_clear;
+            fmt = "[%.3f] [%s] [%s:%d %s] [%s/%d] " fmt_color_green "%s\n" fmt_color_clear;
             break;
         default:
             return;
@@ -116,7 +117,7 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
     va_start(list, usr_fmt);
     snprintf(dbg_fmt, DBG_LEN_MAX, fmt, 
         (double)ts.tv_sec + (double)ts.tv_nsec/1000000000, 
-        level_name_table[level], file, line, func, name, usr_fmt
+        level_name_table[level], file, line, func, name, proc_id_get(), usr_fmt
     );
     ev_with_mutex(&g_debug_mtx)
         vprintf(dbg_fmt, list);     // 输出
