@@ -132,6 +132,11 @@ static thp_t _thp_ ## _name = { \
 extern void thp_module_init(void);
 
 /**
+ * @brief       exit thp module
+ */
+extern void thp_module_exit(void);
+
+/**
  * @brief       init thp var
  * 
  * @param[in]   thp - thread pool

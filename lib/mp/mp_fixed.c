@@ -479,3 +479,8 @@ void mp_fixed_module_init_bh()
     ev_thd_register(mp_fixed_recycle_thd);
     ev_thd_run(mp_fixed_recycle_thd);
 }
+
+void mp_fixed_module_exit_th()
+{
+    ev_thd_cancel(mp_fixed_recycle_thd);
+}

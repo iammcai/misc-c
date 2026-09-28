@@ -126,6 +126,9 @@ static void* _ev_timer_high_res_epoll_main(void *args);
 
 // 低精度时钟更新线程
 declare_ev_thd(low_res_clock, _low_res_clock_work, NULL, 0)
+// 运行标志
+static ATOMIC_UINT8_T g_low_res_clock_running = 0;
+
 // 当前时间，ms表示
 static ATOMIC_UINT64_T g_curr_ms = 0;
 // 最小堆，管理定时器
@@ -157,7 +160,8 @@ declare_heap(ev_timer, ev_timer, ev_timer_t, item, 1, 1024, _ev_timer_cmp)
 
 static void _low_res_clock_work(void *args)
 {
-    while(1)
+    ATOM_STORE(&g_low_res_clock_running, 1, MORDER_RELAXED);
+    while(ATOM_LOAD(&g_low_res_clock_running, MORDER_RELAXED))
     {
         // 不走ev_thd定时唤醒，需要手动喂狗
         swdg_feed();
@@ -220,8 +224,11 @@ ev_timer_t* ev_timer_create(const char *name, uint32_t timeout, ev_timer_cb_func
 
 void ev_timer_destroy(ev_timer_t **timer)
 {
+    if(!ATOM_LOAD(&g_low_res_clock_running, MORDER_RELAXED))
+        return;
+
     assert(timer && *timer);
-    
+
     // 如果定时器还在堆中，从堆中移除timer
     if(ATOM_LOAD(&(*timer)->actived, MORDER_ACQUIRE))
     {
@@ -230,7 +237,7 @@ void ev_timer_destroy(ev_timer_t **timer)
     }
 
     // 释放内存
-    mp_free((*timer)->name, strlen((*timer)->name));
+    mp_strfree((*timer)->name);
     mp_free(*timer, sizeof(ev_timer_t));
     *timer = NULL;
 }
@@ -409,6 +416,8 @@ static void* _ev_timer_high_res_epoll_main(void *args)
         }
     }
 
+    swdg_deregister("hrt_epoll_main");
+
     return NULL;
 }
 
@@ -438,7 +447,6 @@ void ev_timer_module_init(void)
     // 低精度定时器执行回调的线程池
     thp_register(ev_timer);
     thp_run(ev_timer);
-
     // 高精度定时器专用线程池
     thp_register(ev_high_res_timer);
     thp_run(ev_high_res_timer);
@@ -453,4 +461,35 @@ void ev_timer_module_init(void)
     pthread_create(&g_high_res_timer_epoll_tid, NULL, _ev_timer_high_res_epoll_main, NULL);
 
     dbg_major("ev timer module init ok");
+}
+
+void ev_timer_module_exit()
+{
+    // 结束高精度定时管理线程
+    ATOM_STORE(&g_high_res_timer_run, 0, MORDER_RELEASE);
+    pthread_join(g_high_res_timer_epoll_tid, NULL);
+    // 结束低精度时钟维护事件线程
+    ATOM_STORE(&g_low_res_clock_running, 0, MORDER_RELAXED);
+    ev_thd_cancel(low_res_clock);
+
+    // 销毁低精度定时器堆
+    ev_with_spinlock(&g_heap_spinlock)
+    {
+        ev_timer_t *top;
+        while(top = ev_timer_heap_pop(&g_ev_timer_heap))
+        {
+            mp_strfree(top->name);
+            mp_free(top, sizeof(ev_timer_t));
+        }
+    }
+    ev_timer_heap_fini(&g_ev_timer_heap);
+
+    // TODO: 销毁hr_timer
+
+    // 线程池销毁
+    thp_shutdown(ev_high_res_timer);
+    thp_shutdown(ev_timer);
+
+    // 关闭epoll
+    close(g_high_res_timer_epoll_fd);
 }

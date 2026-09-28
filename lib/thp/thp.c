@@ -304,7 +304,7 @@ void _thp_shutdown(thp_t *thp)
         for(; i < thp->thread_count; ++ i)
             pthread_join(thp->thread_array[i], NULL);
         // 释放内存
-        free(thp->thread_array);
+        mp_free(thp->thread_array, thp->thread_count * sizeof(pthread_t));
     }
 
     dbg("thp %s shutdown", thp->name);
@@ -351,4 +351,21 @@ void thp_module_init(void)
     mem_type_attr_fixed_register(thp_work_node);
 
     dbg_major("thp module init ok");
+}
+
+void thp_module_exit(void)
+{
+    // stats动态分配，需要移除
+    ev_with_rdlock(&g_thp_worker_stats_hashtable_rwlock)
+    {
+        thp_worker_stats_t *stats;
+        while(stats = thp_worker_stats_hash_first(&g_thp_worker_stats_hashtable))
+        {
+            thp_worker_stats_hash_del(&g_thp_worker_stats_hashtable, stats);
+            mp_free(stats, sizeof(thp_worker_stats_t));
+        }
+    }
+    thp_worker_stats_hash_fini(&g_thp_worker_stats_hashtable);
+
+    thp_hash_fini(&g_thp_hash);
 }

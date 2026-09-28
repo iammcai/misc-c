@@ -992,6 +992,14 @@ void tftp_upload_cli_hook(unsigned char argc, char *argv[])
     ev_sem_wait(&g_tftp_fsm.sem_done);
 }
 
+/**
+ * @brief       tcp 抓包回调，仅触发统计
+ */
+static attr_force_inline void _tcp_packet_filter_cb(char *packet, int len, void *args)
+{
+    // nothing
+}
+
 static void _tftp_packet_filter_cb(char *packet, int len, void *args)
 {
     // 检查报文长度是否小于tftp的
@@ -1118,6 +1126,14 @@ void tftp_module_init()
     zcap_register_pkt_filter("wlan0", "udp", _tftp_packet_filter_cb, NULL);
     zcap_register_field_len_type("wlan0", "udp", IPV4, 0xffff);
     zcap_register_field_pro_type("wlan0", "udp", UDP, 0xff);
+
+    // 注册TCP过滤，仅用于统计数据，先临时放在这
+    zcap_register_pkt_filter("eth0", "tcp", _tcp_packet_filter_cb, NULL);
+    zcap_register_field_len_type("eth0", "tcp", IPV4, 0xffff);
+    zcap_register_field_pro_type("eth0", "tcp", TCP, 0xff);
+    zcap_register_pkt_filter("wlan0", "tcp", _tcp_packet_filter_cb, NULL);
+    zcap_register_field_len_type("wlan0", "tcp", IPV4, 0xffff);
+    zcap_register_field_pro_type("wlan0", "tcp", TCP, 0xff);
 
     // 启用fsm线程
     int ret = pthread_create(&g_tftp_fsm_tid, NULL, _tftp_fsm, NULL);

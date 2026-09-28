@@ -151,6 +151,11 @@ extern void ev_loop_module_init_th();
 extern void ev_loop_module_init_bh();
 
 /**
+ * @brief       exit ev loop module top half
+ */
+extern void ev_loop_module_exit_th();
+
+/**
  * @brief       注册file事件到event loop
  * 
  * @param[in]   fd      - file desc

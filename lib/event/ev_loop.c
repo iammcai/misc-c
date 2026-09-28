@@ -225,6 +225,8 @@ static void* _el_main(void *args)
         }
     }
 
+    swdg_deregister("el_main");
+
     return NULL;
 }
 
@@ -256,4 +258,11 @@ void ev_loop_module_init_bh()
     pfm_ensure_ret_void(0 == pthread_create(&g_event_loop.ev_loop_th, NULL, _el_main, NULL));
 
     dbg_major("event loop bh init done");
+}
+
+void ev_loop_module_exit_th()
+{
+    // 结束事件监听线程
+    ATOM_STORE(&g_event_loop.run, 0, MORDER_RELEASE);
+    pthread_join(g_event_loop.ev_loop_th, NULL);
 }

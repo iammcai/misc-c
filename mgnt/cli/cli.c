@@ -49,6 +49,7 @@
 #include "thp/thp.h"
 #include "syslog/syslog.h"
 #include "swdg/swdg.h"
+#include "proc/heart_beat.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -215,6 +216,8 @@ const static cli_register_entry_t g_cli_register_table[] = {
     CLI_REG_ENTRY("syslog direction", "set syslog direction", syslog_dir_param, syslog_direction_cli_hook),
     // swdg
     CLI_REG_ENTRY("show swdg", "show software watch dog status", NULL, swdg_show_swdg_cli_cb),
+    // heartbeat
+    CLI_REG_ENTRY("show process heartbeat", "show info of process heartbeat", NULL, proc_heart_beat_show_cli_cb),
 };
 
 /* ========================================================================== */

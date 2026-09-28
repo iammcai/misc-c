@@ -684,3 +684,16 @@ void mp_nonfixed_module_init_bh()
 
     dbg_major("mp nonfixed module init bottom half ok");
 }
+
+void mp_nonfixed_module_exit_th()
+{
+    ev_thd_cancel(_mp_nonfixed_recycle_thd);    // 结束后台回收内存线程
+    // 后续内存回收依赖操作系统
+}
+
+void mp_nonfixed_module_exit_bh()
+{
+    // TODO: 
+    // 回收free list中所有内存节点
+    // 回收recycle aq中所有内存节点
+}

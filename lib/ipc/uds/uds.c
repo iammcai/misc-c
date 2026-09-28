@@ -183,6 +183,8 @@ ssize_t uds_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
             return -1;
         }
     }
+
+    return 0;
 }
 
 ssize_t uds_try_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
@@ -206,4 +208,6 @@ ssize_t uds_try_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
             return -1;
         }
     }
+
+    return 0;
 }

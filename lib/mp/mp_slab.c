@@ -508,3 +508,9 @@ void mp_slab_module_init()
 
     dbg_major("mp slab module init ok");
 }
+
+void mp_slab_module_exit()
+{
+    ev_thd_cancel(slab_mp_recycle);
+    slab_recycle_aq_hash_fini(&g_recycle_aq_hash);
+}

@@ -26,6 +26,7 @@
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "proc/proc.h"
+#include "proc/heart_beat.h"
 
 // include for init
 #include "swdg/swdg.h"
@@ -150,7 +151,7 @@ static const module_init_entry_t module_init_th_common_table[] = {
     MODULE_INIT_ENTRY(el_init_th,           ev_loop_module_init_th),
     MODULE_INIT_ENTRY(mta_init,             mem_type_attr_module_init),
     MODULE_INIT_ENTRY(mp_fixed_init_th,     mp_fixed_module_init_th),
-    MODULE_INIT_ENTRY(mp_nonfixed_th,       mp_nonfixed_module_init_th),
+    MODULE_INIT_ENTRY(mp_nonfixed_init_th,  mp_nonfixed_module_init_th),
     MODULE_INIT_ENTRY(thread_pool_init,     thp_module_init),
 };
 
@@ -162,18 +163,25 @@ static const module_init_entry_t module_init_bh_common_table[] = {
     MODULE_INIT_ENTRY(slab_mp_init,         mp_slab_module_init),
     MODULE_INIT_ENTRY(mp_nonfixed_init_bh,  mp_nonfixed_module_init_bh),
     MODULE_INIT_ENTRY(swdg_init_bh,         swdg_module_init_bh),
+    MODULE_INIT_ENTRY(proc_hb_init,         proc_heart_beat_module_init),
 };
 
 // 公共模块退出top half函数集合，在进程自身退出函数前调用
 static const module_exit_entry_t module_exit_th_common_table[] = {
-    // TODO: 
-    MODULE_EXIT_ENTRY(swdg_exit_th,         swdg_module_exit_th),       // 停止监听线程
-
+    MODULE_EXIT_ENTRY(proc_hb_exit,         proc_heart_beat_module_exit),
+    MODULE_EXIT_ENTRY(swdg_exit_th,         swdg_module_exit_th),
+    MODULE_EXIT_ENTRY(mp_nonfxied_exit_th,  mp_nonfixed_module_exit_th),
+    MODULE_EXIT_ENTRY(mp_slab_exit,         mp_slab_module_exit),
+    MODULE_EXIT_ENTRY(mp_fixed_exit_th,     mp_fixed_module_exit_th),
+    MODULE_EXIT_ENTRY(el_exit_th,           ev_loop_module_exit_th),
+    MODULE_EXIT_ENTRY(timer_exit,           ev_timer_module_exit),
 };
 
 // 公共模块退出函数集合，bottom half，进程自身退出函数后调用
 static const module_exit_entry_t module_exit_common_table[] = {
     // TODO: 
+    MODULE_EXIT_ENTRY(thread_pool_exit,     thp_module_exit),
+    MODULE_EXIT_ENTRY(mp_nonfxied_exit_bh,  mp_nonfixed_module_exit_bh),
 };
 
 // core进程模块初始化函数集合。fork后执行，仅core进程模块调用
@@ -216,6 +224,7 @@ static const module_exit_entry_t module_exit_core_table[] = {
 
 // 进程入口函数集合
 static const process_entry_t process_entry_table[] = {
+    
 };
 
 /* ========================================================================== */

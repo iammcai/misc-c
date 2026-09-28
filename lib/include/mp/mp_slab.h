@@ -126,17 +126,18 @@ static void _name ## _slab_cnt_set()    \
 /* mp_slab_node_put end */
 
 /* ========================================================================== */
-/*                             Global Variables                               */
-/* ========================================================================== */
-
-/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
 /**
- * @brief       int mp slab module
+ * @brief       init mp slab module
  */
 extern void mp_slab_module_init();
+
+/**
+ * @brief       exit mp slab module
+ */
+extern void mp_slab_module_exit();
 
 /* ========================================================================== */
 /*                           Function Definition                              */

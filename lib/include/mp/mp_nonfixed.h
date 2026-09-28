@@ -120,6 +120,16 @@ extern void mp_nonfixed_module_init_th();
 extern void mp_nonfixed_module_init_bh();
 
 /**
+ * @brief       mp nonfixed module exit top half
+ */
+extern void mp_nonfixed_module_exit_th();
+
+/**
+ * @brief       mp nonfixed module exit bottom half
+ */
+extern void mp_nonfixed_module_exit_bh();
+
+/**
  * @brief       get nonfixed node
  * 
  * @param[in]   attr
