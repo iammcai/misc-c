@@ -19,6 +19,7 @@ add_library(Lib STATIC
     syslog/syslog.c
     swdg/swdg.c
     ipc/uds/uds.c
+    ipc/uss/uss.c
 )
 
 # 保存临时文件

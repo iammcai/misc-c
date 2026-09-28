@@ -123,7 +123,10 @@ uds_mgnt_t* uds_mgnt_create(const char *sock_path, int is_recv)
             uds_mgnt->dest_addr.sun_family = AF_UNIX;
             strncpy(uds_mgnt->dest_addr.sun_path, uds_mgnt->sock_path, sizeof(uds_mgnt->dest_addr.sun_path) - 1);
             if(connect(uds_mgnt->fd, (struct sockaddr*)&uds_mgnt->dest_addr, sizeof(uds_mgnt->dest_addr)) < 0)          // 先于receiver创建，会失败，重试
+            {  
+                usleep(UDS_SOCK_SENDER_RETRY_INTERVAL * 1000);
                 continue;
+            }
             else
             {
                 //dbg_always("uds sender create ok, path %s", uds_mgnt->sock_path);
