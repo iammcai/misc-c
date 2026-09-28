@@ -6,6 +6,7 @@ add_executable(Core
 add_library(Proc STATIC
     proc/proc.c
     proc/heart_beat.c
+    test_proc/test.c
 )
 
 # 头文件目录

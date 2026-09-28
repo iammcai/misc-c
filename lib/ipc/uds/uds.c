@@ -31,7 +31,13 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
+// socket path长度
 #define UDS_SOCK_PATH_SIZE      (108)
+
+// socket sender retry次数
+#define UDS_SOCK_SENDER_RETRY_TIMES         (10)
+// retry间隔，ms
+#define UDS_SOCK_SENDER_RETRY_INTERVAL      (100)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -107,22 +113,25 @@ uds_mgnt_t* uds_mgnt_create(const char *sock_path, int is_recv)
         }
         // 保持默认block，需要时再设置nonblock
 
-        dbg_always("uds receiver create ok, path %s", uds_mgnt->sock_path);
+        //dbg_always("uds receiver create ok, path %s", uds_mgnt->sock_path);
     }
     else        // 发送端connect
     {
-        memset(&uds_mgnt->dest_addr, 0, sizeof(uds_mgnt->dest_addr));
-        uds_mgnt->dest_addr.sun_family = AF_UNIX;
-        strncpy(uds_mgnt->dest_addr.sun_path, uds_mgnt->sock_path, sizeof(uds_mgnt->dest_addr.sun_path) - 1);
-        if(connect(uds_mgnt->fd, (struct sockaddr*)&uds_mgnt->dest_addr, sizeof(uds_mgnt->dest_addr)) < 0)
+        for(int i = 0; i < UDS_SOCK_SENDER_RETRY_TIMES; ++ i)
         {
-            dbg_error("sender connect() fail, err: %s", strerror(errno));
-            goto error;
+            memset(&uds_mgnt->dest_addr, 0, sizeof(uds_mgnt->dest_addr));
+            uds_mgnt->dest_addr.sun_family = AF_UNIX;
+            strncpy(uds_mgnt->dest_addr.sun_path, uds_mgnt->sock_path, sizeof(uds_mgnt->dest_addr.sun_path) - 1);
+            if(connect(uds_mgnt->fd, (struct sockaddr*)&uds_mgnt->dest_addr, sizeof(uds_mgnt->dest_addr)) < 0)          // 先于receiver创建，会失败，重试
+                continue;
+            else
+            {
+                //dbg_always("uds sender create ok, path %s", uds_mgnt->sock_path);
+                break;
+            }
+            // 设置nonblock，防止发送端卡死
+            _fd_blocking(uds_mgnt->fd, 0);
         }
-        // 设置nonblock，防止发送端卡死
-        _fd_blocking(uds_mgnt->fd, 0);
-
-        dbg_always("uds sender create ok, path %s", uds_mgnt->sock_path);
     }
 
     return uds_mgnt;
@@ -164,7 +173,7 @@ error_code_e uds_send(uds_mgnt_t *uds_mgnt, const void *data, size_t len)
 
 ssize_t uds_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
 {
-    pfm_ensure_ret(uds_mgnt && buf && buf_size > 0, ERR_BAD_PARAM);
+    pfm_ensure_ret(uds_mgnt && buf && buf_size > 0, 0);
 
     ssize_t recv_bytes = recv(uds_mgnt->fd, buf, buf_size, 0);
 
@@ -189,7 +198,7 @@ ssize_t uds_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
 
 ssize_t uds_try_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
 {
-    pfm_ensure_ret(uds_mgnt && buf && buf_size > 0, ERR_BAD_PARAM);
+    pfm_ensure_ret(uds_mgnt && buf && buf_size > 0, 0);
 
     ssize_t recv_bytes = recv(uds_mgnt->fd, buf, buf_size, MSG_DONTWAIT);       // 传入MSG_DONTWAIT表明此处按照非阻塞，不改变fd属性
 
@@ -197,7 +206,9 @@ ssize_t uds_try_recv(uds_mgnt_t *uds_mgnt, void *buf, size_t buf_size)
         return recv_bytes;
     else
     {
-        if(errno == EINTR)
+        if(errno == EAGAIN || errno == EWOULDBLOCK)
+            return 0; // 暂无数据，正常返回
+        else if(errno == EINTR)
         {
             dbg("interrupted by signal, please retry");
             return 0;

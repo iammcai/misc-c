@@ -33,6 +33,7 @@
 typedef enum{
     PID_CORE = 0,           // core进程
 
+    PID_TEST,               // 测试进程
     PID_CNT,                // 统计数量用
 }proc_id_e;
 

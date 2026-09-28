@@ -166,7 +166,7 @@ static void* _proc_heart_beat_chk_routine(void *args)
         for(int i = PID_CORE + 1; i < PID_CNT; ++ i)
         {
             uint64_t last_hb_ts = ATOM_LOAD(&g_heart_beat_note_array[i], MORDER_RELAXED);
-            if(curr_time - last_hb_ts > PROC_HEART_BEAT_INTERVAL)
+            if((curr_time > last_hb_ts) && (curr_time - last_hb_ts > (PROC_HEART_BEAT_INTERVAL * 3)))   // 超出3个周期，认为失联
             {
                 dbg_always("heart beat loss, pid %d", i);
                 // TODO: 其它进阶处理
@@ -188,6 +188,7 @@ static inline void _proc_heart_beat_send()
         .ts = mono_time_get(),
     };
     uds_send(g_uds_mgnt, &msg, sizeof(msg));
+    //dbg_always("@@@ send msg by uds");
 }
 
 static void _proc_heart_beat_recv()
@@ -199,7 +200,10 @@ static void _proc_heart_beat_recv()
     for(int pid = PID_CORE+1; pid < PID_CNT; ++ pid)
     {
         if(uds_try_recv(g_usd_mgnter_array[pid], &msg, sizeof(msg)))
+        {
+            //dbg_always("### recv msg by uds, pid %d", pid);
             _proc_heart_beat_update(msg.pid, msg.ts);
+        }
     }
 }
 

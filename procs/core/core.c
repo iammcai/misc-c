@@ -50,6 +50,7 @@
 #include "sht30/sht30.h"
 #include "ssd1306/ssd1306.h"
 #include "sysmon/sysmon.h"
+#include "test_proc/test.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -224,7 +225,7 @@ static const module_exit_entry_t module_exit_core_table[] = {
 
 // 进程入口函数集合
 static const process_entry_t process_entry_table[] = {
-    
+    PROCESS_ENTRY(PID_TEST,         test,               test_proc_entry),
 };
 
 /* ========================================================================== */
