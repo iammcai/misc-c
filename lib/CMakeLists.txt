@@ -20,6 +20,7 @@ add_library(Lib STATIC
     swdg/swdg.c
     ipc/uds/uds.c
     ipc/uss/uss.c
+    ipc/shm/shm.c
 )
 
 # 保存临时文件
