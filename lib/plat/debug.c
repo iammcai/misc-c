@@ -82,7 +82,7 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
 
     prctl(PR_GET_NAME, name);
 
-    if(cur_level == debug_level_none && level != debug_level_always)
+    if(cur_level == debug_level_none && level != debug_level_always && level != debug_level_error)
         return;
     else if(cur_level == debug_level_normal && level != debug_level_normal)
         return;

@@ -155,6 +155,10 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
     if(!attr_name || !value)
         return ERR_BAD_PARAM;
 
+    // ssd1306 spi盲发，会调用sht30获取数据，此处添加sht30路径判断，静默返回设备未存在错误
+    if(g_sht30_file_path[0] == '\0')
+        return ERR_NO_DEV;
+
     // 生成文件路径
     char filepath[FILE_PATH_MAX_LEN] = {};
     snprintf(filepath, FILE_PATH_MAX_LEN, "%s/%s", g_sht30_file_path, attr_name);
