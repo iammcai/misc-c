@@ -21,6 +21,7 @@ add_library(Lib STATIC
     ipc/uds/uds.c
     ipc/uss/uss.c
     ipc/shm/shm.c
+    fifo/fifo.c
 )
 
 # 保存临时文件
