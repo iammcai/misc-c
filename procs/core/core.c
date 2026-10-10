@@ -51,6 +51,8 @@
 #include "ssd1306/ssd1306.h"
 #include "sysmon/sysmon.h"
 #include "test_proc/test.h"
+#include "rpc/rpc.h"
+#include "ipc/shm/shm.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -128,6 +130,19 @@ static void signal_init();
  */
 static attr_force_inline void signal_handler(int signo);
 
+/**
+ * @brief       exit other process
+ */
+static void _proc_exit();
+
+/**
+ * @brief       rpc printf hello
+ */
+static void _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param)
+{
+    dbg_always("hello");
+}
+
 /* ========================================================================== */
 /*                             Extern Symbols                                 */
 /* ========================================================================== */
@@ -140,6 +155,9 @@ ev_sem_t g_platform_init_ok;
 
 declare_zcap(eth0)
 declare_zcap(wlan0)
+
+// 非core运行标志
+static shm_mgnt_t *rpc_process_running;
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -165,10 +183,12 @@ static const module_init_entry_t module_init_bh_common_table[] = {
     MODULE_INIT_ENTRY(mp_nonfixed_init_bh,  mp_nonfixed_module_init_bh),
     MODULE_INIT_ENTRY(swdg_init_bh,         swdg_module_init_bh),
     MODULE_INIT_ENTRY(proc_hb_init,         proc_heart_beat_module_init),
+    MODULE_INIT_ENTRY(proc_rpc_init,        rpc_module_init),
 };
 
 // 公共模块退出top half函数集合，在进程自身退出函数前调用
 static const module_exit_entry_t module_exit_th_common_table[] = {
+    MODULE_EXIT_ENTRY(proc_rpc_exit,        rpc_module_exit),
     MODULE_EXIT_ENTRY(proc_hb_exit,         proc_heart_beat_module_exit),
     MODULE_EXIT_ENTRY(swdg_exit_th,         swdg_module_exit_th),
     MODULE_EXIT_ENTRY(mp_nonfxied_exit_th,  mp_nonfixed_module_exit_th),
@@ -225,7 +245,14 @@ static const module_exit_entry_t module_exit_core_table[] = {
 
 // 进程入口函数集合
 static const process_entry_t process_entry_table[] = {
+    PROCESS_ENTRY(PID_RPC,          rpc_broker,         rpc_proc_entry),
     PROCESS_ENTRY(PID_TEST,         test,               test_proc_entry),
+};
+
+// 进程退出标志shm_name集合，共享内存，core写入0来结束进程
+static const char* process_running_table[] = {
+    RPC_PROCESS_RUNNING_SHM_NAME,                   // rpc进程
+    TEST_PROCESS_RUNNING_SHM_NAME,                  // test
 };
 
 /* ========================================================================== */
@@ -309,12 +336,31 @@ static void platform_init()
     dbg_major("core process init done");
 }
 
+static void _proc_exit()
+{
+    shm_mgnt_t *shm;
+    int run = 0;
+    for(int i = 0; i < array_size(process_running_table); ++ i)
+    {
+        shm = shm_mgnt_open(process_running_table[i], sizeof(run), 0);
+        if(likely(shm))
+        {
+            shm_mgnt_write(shm, 0, &run, sizeof(run));
+            shm_mgnt_close(shm);
+            shm = NULL;
+        }
+    }
+}
+
 static void platform_exit()
 {
     //debug_level_set(debug_level_all);
 
+    // exit other procs
+    _proc_exit();
+
     // common exit th
-    for(int i = 0; i <  array_size(module_exit_th_common_table); ++ i)
+    for(int i = 0; i < array_size(module_exit_th_common_table); ++ i)
     {
         module_exit_th_common_table[i].func();
         dbg_always("exit func <%s> called", module_exit_th_common_table[i].name);
@@ -368,6 +414,9 @@ static void core_iso_init()
     // 启动发包
     declare_ftx(eth0);
     declare_ftx(wlan0);
+
+    // 注册rpc函数
+    rpc_server_func_register("printf_hello", _rpc_printf_hello);
 }
 
 static void core_iso_exit()

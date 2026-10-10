@@ -22,6 +22,8 @@
 
 #include "test_proc/test.h"
 #include "plat/debug.h"
+#include "ipc/shm/shm.h"
+#include "rpc/rpc.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -45,8 +47,19 @@
 
 void test_proc_entry()
 {
+    shm_mgnt_t *test_running = shm_mgnt_open(TEST_PROCESS_RUNNING_SHM_NAME, sizeof(int), 1);
+    pfm_ensure_ret_void(test_running);
+    int run = 1;
+    shm_mgnt_write(test_running, 0, &run, sizeof(run));
+
     do{
-        dbg_always("test process work");
-        usleep(5000000);
+        shm_mgnt_read(test_running, 0, &run, sizeof(run));
+        if(unlikely(!run))
+            break;
+        
+        // rpc_call_func_async(PID_CORE, "printf_hello", NULL);
+        usleep(1000 * 1000);
     }while(1);
+
+    dbg_always("@@@ test process exit");
 }

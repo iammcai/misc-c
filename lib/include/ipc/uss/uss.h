@@ -40,23 +40,34 @@ typedef struct uss_mgnt_s uss_mgnt_t;
 /* ========================================================================== */
 
 /**
+ * @brief       get fd of uss mgnter
+ * 
+ * @param[in]   uss_mgnter
+ * 
+ * @retval      fd, -1 while fail
+ */
+extern int uss_mgnter_fd_get(const uss_mgnt_t *uss_mgnter);
+
+/**
  * @brief       创建unix stream socket
  * 
  * @param[in]   sock_path       - socket path
  * @param[in]   is_receiver     - 是否接收端
+ * @param[in]   nonblock        - if non blocking
  * 
  * @retval      uss mgnter
  */
-extern uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver);
+extern uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver, int nonblock);
 
 /**
  * @brief       接受一个新的客户端连接，server用
  * 
  * @param[in]   uss_receiver    - uss receiver mgnter
+ * @param[in]   nonblock        - if non blocking
  * 
  * @retval      new uss mgnter
  */
-extern uss_mgnt_t* uss_mgnter_accept(uss_mgnt_t *uss_receiver);
+extern uss_mgnt_t* uss_mgnter_accept(uss_mgnt_t *uss_receiver, int nonblock);
 
 /**
  * @brief       销毁uss mgnter

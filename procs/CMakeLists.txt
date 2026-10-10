@@ -5,6 +5,7 @@ add_executable(Core
 
 add_library(Proc STATIC
     proc/proc.c
+    rpc/rpc.c
     proc/heart_beat.c
     test_proc/test.c
 )

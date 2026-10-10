@@ -533,7 +533,9 @@ int ftx_status_get(const char *if_name)
     ftx_t *ftxor = NULL;
     ev_with_rdlock(&g_ftx_hash_rwlock)
         ftxor = ftx_hash_find(&g_ftx_hash, &key);
-    pfm_ensure_ret(ftxor, 0);
+
+    if(!ftxor)
+        return 0;
 
     return ATOM_LOAD(&ftxor->status, MORDER_RELAXED);
 }

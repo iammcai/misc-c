@@ -25,6 +25,12 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
+// 判断proc id是否合法
+#define PROC_ID_IS_VALID(p)     ((p) >= PID_CORE && (p) < PID_CNT)
+
+// 遍历所有proc id
+#define PROC_ID_ITER_ALL(pid)   for(pid = PID_CORE; pid < PID_CNT; ++ pid)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -32,8 +38,9 @@
 // 进程ID枚举
 typedef enum{
     PID_CORE = 0,           // core进程
-
+    PID_RPC,                // rpc进程
     PID_TEST,               // 测试进程
+
     PID_CNT,                // 统计数量用
 }proc_id_e;
 

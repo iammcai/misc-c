@@ -24,6 +24,7 @@
 #include <sys/errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include "ipc/uss/uss.h"
 #include "mp/mp.h"
@@ -59,6 +60,32 @@ struct uss_mgnt_s{
 /* ========================================================================== */
 
 /**
+ * @brief       set fd nonblocking
+ * 
+ * @param[in]   fd
+ * 
+ * @retval      error code
+ */
+static attr_force_inline int set_nonblocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+/**
+ * @brief       set fd blocking
+ * 
+ * @param[in]   fd
+ * 
+ * @retval      error code
+ */
+static attr_force_inline int set_blocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    return fcntl(fd, F_SETFL, flags & (~O_NONBLOCK));
+}
+
+/**
  * @brief       write exactly
  * 
  * @param[in]   fd      - fd
@@ -88,7 +115,12 @@ static attr_force_inline ssize_t _uss_read_exact(int fd, void *buf, size_t len);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver)
+int uss_mgnter_fd_get(const uss_mgnt_t *uss_mgnter)
+{
+    return uss_mgnter ? uss_mgnter->fd : -1;
+}
+
+uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver, int nonblock)
 {
     pfm_ensure_ret(sock_path, NULL);
 
@@ -103,6 +135,9 @@ uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver)
         dbg_error("socket() fail, error: %s", strerror(errno));
         goto done;
     }
+    // 设置non blocking
+    if(nonblock)
+        set_nonblocking(uss_mgnter->fd);
 
     struct sockaddr_un addr = {
         .sun_family = AF_UNIX,
@@ -111,26 +146,31 @@ uss_mgnt_t* uss_mgnter_create(const char *sock_path, int is_receiver)
     if(is_receiver)
     {
         unlink(uss_mgnter->sock_path);
+
         if(bind(uss_mgnter->fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
         {
-            dbg_always("bind() fail: %s", strerror(errno));
+            dbg_error("bind() fail: %s", strerror(errno));
             goto done;
         }
         if(listen(uss_mgnter->fd, USS_SOCKET_LISTEN_CNT) < 0)
         {
-            dbg_always("listen() fail: %s", strerror(errno));
+            dbg_error("listen() fail: %s", strerror(errno));
             goto done;
         }
     }
     else
     {
         int retry = 0;
-        do{
-            if(connect(uss_mgnter->fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
-                usleep(USS_SENDER_RETRY_INTERVAL * 1000);
-            else
-                break;
-        }while((retry++) < USS_SENDER_RETRY_TIMES);
+        while(connect(uss_mgnter->fd, (struct sockaddr*)&addr, sizeof(addr)) < 0 && retry < USS_SENDER_RETRY_TIMES)
+        {
+            ++ retry;
+            usleep(USS_SENDER_RETRY_INTERVAL * 1000 * retry);
+        }
+        if(retry == USS_SENDER_RETRY_TIMES)
+        {
+            dbg_error("connect() fail: %s, socket path: %s", strerror(errno), sock_path);
+            goto done;
+        }
     }
 
     return uss_mgnter;
@@ -144,21 +184,24 @@ done:
     return NULL;
 }
 
-uss_mgnt_t* uss_mgnter_accept(uss_mgnt_t *uss_receiver)
+uss_mgnt_t* uss_mgnter_accept(uss_mgnt_t *uss_receiver, int nonblock)
 {
     pfm_ensure_ret(uss_receiver, NULL);
 
     int client_fd = accept(uss_receiver->fd, NULL, NULL);
     if(client_fd < 0)
     {
-        dbg_always("accept() fail: %s", strerror(errno));
+        dbg_error("accept() fail: %s", strerror(errno));
         return NULL;
     }
+    // 设置non blocking
+    if(nonblock)
+        set_nonblocking(client_fd);
 
     uss_mgnt_t *uss_client = mp_calloc(1, sizeof(uss_mgnt_t));
     if(unlikely(!uss_client))
     {
-        dbg_always("no memory");
+        dbg_error("no memory");
         close(client_fd);
         return NULL;
     }
@@ -189,10 +232,10 @@ error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t len)
 
     // 先发送长度
     uint32_t net_len = len;
-    if(ERR_NO_ERROR != (ret = _uss_write_exact(uss_mgnter->fd, &net_len, sizeof(net_len))))
+    if(sizeof(net_len) != (ret = _uss_write_exact(uss_mgnter->fd, &net_len, sizeof(net_len))))
         return ret;
     // 再发送内容
-    if(ERR_NO_ERROR != (ret = _uss_write_exact(uss_mgnter->fd, data, len)))
+    if(len != (ret = _uss_write_exact(uss_mgnter->fd, data, len)))
         return ret;
 
     return ERR_NO_ERROR;
@@ -205,7 +248,9 @@ ssize_t uss_recv(uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size)
     // 先读取长度
     uint32_t msg_len = 0;
     ssize_t ret = _uss_read_exact(uss_mgnter->fd, &msg_len, sizeof(msg_len));
-    if(ret <= 0)
+    if(ret == 0)
+        return 0;
+    else if(ret < 0)
         return -1;
     // 检查缓冲区是否足够
     if(msg_len > buf_size)
