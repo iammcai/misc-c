@@ -228,17 +228,17 @@ error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t len)
 {
     pfm_ensure_ret(uss_mgnter && data && len, ERR_BAD_PARAM);
 
-    error_code_e ret;
+    error_code_e ret = ERR_NO_ERROR;
+    ssize_t sc = 0;
 
-    // 先发送长度
-    uint32_t net_len = len;
-    if(sizeof(net_len) != (ret = _uss_write_exact(uss_mgnter->fd, &net_len, sizeof(net_len))))
-        return ret;
-    // 再发送内容
-    if(len != (ret = _uss_write_exact(uss_mgnter->fd, data, len)))
-        return ret;
+    // 长度+内容，打包发送
+    char *packed = mp_calloc(1, sizeof(uint32_t) + len);
+    memcpy(packed, (uint32_t*)&len, sizeof(uint32_t));
+    memcpy(packed + sizeof(uint32_t), data, len);
+    if(len != (sc = _uss_write_exact(uss_mgnter->fd, packed, len)))
+        ret = ERR_SYS_API_ERROR;
 
-    return ERR_NO_ERROR;
+    return ret;
 }
 
 ssize_t uss_recv(uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size)
@@ -299,6 +299,8 @@ static inline ssize_t _uss_read_exact(int fd, void *buf, size_t len)
         {
             if(errno == EINTR)
                 continue;
+            else if(errno == EAGAIN || errno == EWOULDBLOCK)        // 读取完毕
+                break;
             return -1;
         }
     }

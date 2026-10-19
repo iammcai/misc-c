@@ -52,13 +52,18 @@ void test_proc_entry()
     int run = 1;
     shm_mgnt_write(test_running, 0, &run, sizeof(run));
 
+    sleep(5);
+
     do{
         shm_mgnt_read(test_running, 0, &run, sizeof(run));
         if(unlikely(!run))
             break;
         
         // rpc_call_func_async(PID_CORE, "printf_hello", NULL);
-        usleep(1000 * 1000);
+
+        //rpc_out_param_t out_param = {};
+        //rpc_call_func_sync(PID_CORE, "printf_hello_sync", NULL, &out_param, 5000);
+        usleep(100 * 1000);
     }while(1);
 
     dbg_always("@@@ test process exit");

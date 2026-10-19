@@ -48,6 +48,13 @@ typedef enum{
     ERR_SYS_API_ERROR,              // 系统API报错
     ERR_NO_DEV,                     // 设备不存在
 
+    // rpc
+    ERR_RPC_START = 100,            // rpc错误码起始
+    ERR_RPC_SYNC_POOL_FULL,         // 同步调用池满
+    ERR_RPC_SYNC_TIMEOUT,           // 同步调用超时
+    ERR_RPC_SERVER_FUNC_NOT_EXIST,  // 服务函数不存在
+    ERR_RPC_SYNC_CTX_ERROR,         // 同步调用上下文出错
+
     // web模块，http模块
     ERR_WEB_START = 800,            // web错误码起始
     ERR_WEB_INIT_FAIL,              // 初始化失败

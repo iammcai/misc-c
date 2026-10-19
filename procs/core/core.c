@@ -138,9 +138,21 @@ static void _proc_exit();
 /**
  * @brief       rpc printf hello
  */
-static void _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param)
+static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param)
 {
     dbg_always("hello");
+
+    return ERR_NO_ERROR;
+}
+
+/**
+ * @brief       rpc printf hello, sync version
+ */
+static error_code_e _rpc_printf_hello_sync(rpc_header_t *hdr, rpc_in_param_t *in_param)
+{
+    dbg_always("hello_sync");
+
+    return ERR_NO_ERROR;
 }
 
 /* ========================================================================== */
@@ -417,6 +429,7 @@ static void core_iso_init()
 
     // 注册rpc函数
     rpc_server_func_register("printf_hello", _rpc_printf_hello);
+    rpc_server_func_register("printf_hello_sync", _rpc_printf_hello_sync);
 }
 
 static void core_iso_exit()
