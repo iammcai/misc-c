@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <sys/prctl.h>
 
 #include "plat/compiler.h"
 #include "plat/debug.h"
@@ -37,6 +38,14 @@
 
 // tlv中type字符串长度
 #define RPC_TLV_TYPE_SIZE       (15)
+// tlv中len长度
+#define RPC_TLV_LEN_SIZE        (1)
+
+// 同步调用永久等待
+#define RPC_SYNC_CALL_WAIT_FOREVER  (0)
+
+// 同步调用返回缓存区大小
+#define RPC_SYNC_CALL_TLVS_SIZE     (256)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -48,22 +57,26 @@ typedef struct rpc_in_param_s rpc_in_param_t;
 // rpc返回参数tlv定义
 typedef struct{
     char type[RPC_TLV_TYPE_SIZE];
-    char len;
+    uint8_t len;
 }attr_packed rpc_tlv_hdr_t;
 static_assert(sizeof(rpc_tlv_hdr_t) == 16, "sizeof(rpc_tlv_hdr_t) must be 16");
+
+typedef struct{
+    size_t tlvs_size;           // tlvs有效长度
+    char buf[RPC_SYNC_CALL_TLVS_SIZE];  // 多个tlvs组成的buf
+}rpc_tlvs_t;
 
 // rpc返回参数定义
 typedef struct {
     error_code_e ret;           // 服务函数返回值
-    size_t tlvs_size;           // tlvs总长度
-    char *tlvs;                 // 指向tlvs
+    rpc_tlvs_t tlvs;            
 }rpc_out_param_t;
 
 // rpc头部声明
 typedef struct rpc_header_s rpc_header_t;
 
 // rpc服务函数签名
-typedef error_code_e (*rpc_server_func)(rpc_header_t *hdr, rpc_in_param_t *in_param);
+typedef error_code_e (*rpc_server_func)(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param);
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -137,5 +150,29 @@ extern void rpc_proc_entry();
  * @param[in]   func        - function
  */
 extern void rpc_server_func_register(const char *name, rpc_server_func func);
+
+/**
+ * @brief       add tlv into out_param
+ * 
+ * @param[in]   out_param
+ * @param[in]   type
+ * @param[in]   len         - length of value
+ * @param[in]   value
+ * 
+ * @retval      error code
+ */
+extern error_code_e rpc_out_param_add_tlv(rpc_out_param_t *out_param, const char *type, uint8_t len, void *value);
+
+/**
+ * @brief       get tlv from out_param
+ * 
+ * @param[in]   out_param
+ * @param[in]   type
+ * @param[in]   len         - length of value
+ * @param[in]   value
+ * 
+ * @retval      error code
+ */
+extern error_code_e rpc_out_param_get_tlv(rpc_out_param_t *out_param, const char *type, uint8_t len, void *value);
 
 #endif

@@ -232,12 +232,13 @@ error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t len)
     ssize_t sc = 0;
 
     // 长度+内容，打包发送
-    char *packed = mp_calloc(1, sizeof(uint32_t) + len);
+    size_t tot_len = sizeof(uint32_t) + len;
+    char *packed = mp_calloc(1, tot_len);
     memcpy(packed, (uint32_t*)&len, sizeof(uint32_t));
     memcpy(packed + sizeof(uint32_t), data, len);
-    if(len != (sc = _uss_write_exact(uss_mgnter->fd, packed, len)))
+    if(tot_len != (sc = _uss_write_exact(uss_mgnter->fd, packed, tot_len)))
         ret = ERR_SYS_API_ERROR;
-
+    mp_free(packed, tot_len);
     return ret;
 }
 

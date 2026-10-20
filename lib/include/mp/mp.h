@@ -117,9 +117,11 @@ extern ATOMIC_UINT64_T g_mp_free_size;
 extern void mem_type_attr_module_init();
 
 /**
- * @brief       init mp module
+ * @brief       init mp module bottom half
+ * 
+ * @note        主要是注册rpc服务函数，晚于rpc module init
  */
-extern void mp_module_init();
+extern void mp_module_init_bh();
 
 /**
  * @brief       封装hash add，加到全局哈希表中
@@ -264,6 +266,8 @@ static void _mem_type_attr_register(mem_type_attr_t *attr)
  * @brief       cli hook for: show mem-usage
  * 
  * @note        打印从系统申请/归还内存情况
+ * 
+ *              多进程架构下，补充从所有进程获取内存信息
  */
 extern void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[]);
 

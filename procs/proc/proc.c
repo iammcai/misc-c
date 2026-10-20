@@ -58,3 +58,8 @@ int proc_current_is_core()
 {
     return proc_id_get() == PID_CORE ? 1 : 0;
 }
+
+int proc_is_current(proc_id_e pid)
+{
+    return pid == proc_id_get();
+}

@@ -54,6 +54,7 @@ typedef enum{
     ERR_RPC_SYNC_TIMEOUT,           // 同步调用超时
     ERR_RPC_SERVER_FUNC_NOT_EXIST,  // 服务函数不存在
     ERR_RPC_SYNC_CTX_ERROR,         // 同步调用上下文出错
+    ERR_RPC_OUT_PARAM_TLV_NOT_EXIST,    // rpc调用出参数中tlv不存在
 
     // web模块，http模块
     ERR_WEB_START = 800,            // web错误码起始

@@ -95,6 +95,8 @@ extern error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t le
  * @param[in]   buf_size    - size of buffer
  * 
  * @retval      receive size
+ * 
+ * @note        每次读取一个消息，配合epoll ET需要while(1)调用
  */
 extern ssize_t uss_recv(uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size);
 

@@ -138,7 +138,7 @@ static void _proc_exit();
 /**
  * @brief       rpc printf hello
  */
-static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param)
+static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
 {
     dbg_always("hello");
 
@@ -148,7 +148,7 @@ static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_para
 /**
  * @brief       rpc printf hello, sync version
  */
-static error_code_e _rpc_printf_hello_sync(rpc_header_t *hdr, rpc_in_param_t *in_param)
+static error_code_e _rpc_printf_hello_sync(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
 {
     dbg_always("hello_sync");
 
@@ -196,6 +196,7 @@ static const module_init_entry_t module_init_bh_common_table[] = {
     MODULE_INIT_ENTRY(swdg_init_bh,         swdg_module_init_bh),
     MODULE_INIT_ENTRY(proc_hb_init,         proc_heart_beat_module_init),
     MODULE_INIT_ENTRY(proc_rpc_init,        rpc_module_init),
+    MODULE_INIT_ENTRY(mp_init_bh,           mp_module_init_bh),
 };
 
 // 公共模块退出top half函数集合，在进程自身退出函数前调用
@@ -273,9 +274,6 @@ static const char* process_running_table[] = {
 
 static void platform_init()
 {
-    // core进程命名方便调试
-    prctl(PR_SET_NAME, "CORE");
-
     //debug_level_set(debug_level_all);
     // top half
     for(int i = 0; i < array_size(module_init_th_common_table); ++ i)
@@ -328,6 +326,8 @@ static void platform_init()
 
     // 设置pid core
     proc_id_set(PID_CORE);
+    // core进程命名方便调试
+    prctl(PR_SET_NAME, "CORE");
 
     // core common bottom half
     for(int i = 0; i < array_size(module_init_bh_common_table); ++ i)

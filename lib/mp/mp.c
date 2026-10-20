@@ -29,6 +29,7 @@
 #include "cli/cli.h"
 #include "event/ev_lock.h"
 #include "syslog/syslog.h"
+#include "rpc/rpc.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -94,6 +95,11 @@ extern unsigned int mem_type_attr_slab(const mem_type_attr_t *attr)
 {
     return attr->flag & MEM_TYPE_ATTR_SLAB;
 }
+
+/**
+ * @brief       rpc server func for get mp usage
+ */
+static error_code_e _mp_mem_usage_get_rpc(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -175,26 +181,68 @@ void mem_type_attr_module_init()
     dbg_major("mem type attr for mp init ok");
 }
 
-void mp_module_init()
+void mp_module_init_bh()
 {
-    dbg_major("mp module init ok");
+    rpc_server_func_register("mp_mem_usage_get_rpc", _mp_mem_usage_get_rpc);
+
+    dbg_major("mp module init bottom half ok");
+}
+
+static error_code_e _mp_mem_usage_get_rpc(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
+{
+    error_code_e ret = ERR_NO_ERROR;
+    uint32_t calloc_cnt, calloc_size, free_cnt, free_size;
+
+    calloc_cnt = ATOM_LOAD(&g_mp_calloc_cnt, MORDER_RELAXED);
+    calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_RELAXED);
+    free_cnt = ATOM_LOAD(&g_mp_free_cnt, MORDER_RELAXED);
+    free_size = ATOM_LOAD(&g_mp_free_size, MORDER_RELAXED);
+
+    // add tlv
+    rpc_out_param_add_tlv(out_param, "calloc_cnt", sizeof(uint32_t), &calloc_cnt);
+    rpc_out_param_add_tlv(out_param, "calloc_size", sizeof(uint32_t), &calloc_size);
+    rpc_out_param_add_tlv(out_param, "free_cnt", sizeof(uint32_t), &free_cnt);
+    rpc_out_param_add_tlv(out_param, "free_size", sizeof(uint32_t), &free_size);
+
+    return ret;
 }
 
 void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[])
 {
-    uint32_t calloc_cnt = ATOM_LOAD(&g_mp_calloc_cnt, MORDER_RELAXED);
-    uint32_t calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_RELAXED);
-    uint32_t free_cnt = ATOM_LOAD(&g_mp_free_cnt, MORDER_RELAXED);
-    uint32_t free_size = ATOM_LOAD(&g_mp_free_size, MORDER_RELAXED);
+    // 获取所有进程情况
+    for(proc_id_e pid = PID_CORE; pid < PID_CNT; ++ pid)
+    {
+        uint32_t calloc_cnt = 0, calloc_size = 0, free_cnt = 0, free_size = 0;
+        if(proc_is_current(pid))
+        {
+            calloc_cnt = ATOM_LOAD(&g_mp_calloc_cnt, MORDER_RELAXED);
+            calloc_size = ATOM_LOAD(&g_mp_calloc_size, MORDER_RELAXED);
+            free_cnt = ATOM_LOAD(&g_mp_free_cnt, MORDER_RELAXED);
+            free_size = ATOM_LOAD(&g_mp_free_size, MORDER_RELAXED);
+        }
+        else        // 跨进程需要通过rpc获取
+        {
+            rpc_out_param_t out_param = {};
+            error_code_e ret = rpc_call_func_sync(pid, "mp_mem_usage_get_rpc", NULL, &out_param, 5000);
+            if(ERR_NO_ERROR != ret)
+            {
+                continue;
+            }
+            // 读取返回参数
+            rpc_out_param_get_tlv(&out_param, "calloc_cnt", sizeof(uint32_t), &calloc_cnt);
+            rpc_out_param_get_tlv(&out_param, "calloc_size", sizeof(uint32_t), &calloc_size);
+            rpc_out_param_get_tlv(&out_param, "free_cnt", sizeof(uint32_t), &free_cnt);
+            rpc_out_param_get_tlv(&out_param, "free_size", sizeof(uint32_t), &free_size);
+        }
 
-    safe_printf("\n");
-    safe_printf(MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD,
-        "TYPE", "COUNT", "SIZE",
-        "----", "-----", "----"
-    );
-    safe_printf(MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
-    safe_printf(MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
-    safe_printf(MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
+        safe_printf("\nProc Id: %d\n" MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD, pid,
+            "TYPE", "COUNT", "SIZE",
+            "----", "-----", "----"
+        );
+        safe_printf(MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
+        safe_printf(MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
+        safe_printf(MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
+    }
 
     safe_printf("\n");
 }

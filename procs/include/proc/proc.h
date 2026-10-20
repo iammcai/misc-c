@@ -71,6 +71,15 @@ extern proc_id_e proc_id_get();
  */
 extern int proc_current_is_core();
 
+/**
+ * @brief       check if pid is current proc id
+ * 
+ * @param[in]   pid         - proc id
+ * 
+ * @retval      1 - y, 0 - n
+ */
+extern int proc_is_current(proc_id_e pid);
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */

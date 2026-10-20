@@ -77,9 +77,6 @@
 // 同步调用池大小，最大同时支持同步调用个数
 #define RPC_SYNC_POOL_SIZE          (64)
 
-// 同步调用永久等待
-#define RPC_SYNC_CALL_WAIT_FOREVER  (0)
-
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -250,6 +247,13 @@ static size_t _rpc_call_sync_ctx_pool_add(rpc_header_t *hdr);
  */
 static error_code_e _rpc_call_sync_ctx_pool_set(rpc_header_t *hdr, rpc_out_param_t *out_param);
 
+/**
+ * @brief       handle rpc msg dest to rpc proc
+ * 
+ * @note        处理目的为rpc进程的rpc消息
+ */
+static void _rpc_self_msg_handle(char *msg);
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -316,6 +320,51 @@ void rpc_server_func_register(const char *name, rpc_server_func func)
         rpc_server_func_entry_hash_add(&g_rpc_server_func_entry_table, entry);
 }
 
+error_code_e rpc_out_param_add_tlv(rpc_out_param_t *out_param, const char *type, uint8_t len, void *value)
+{
+    pfm_ensure_ret(out_param && type && len && value, ERR_BAD_PARAM);
+
+    // 检查是否还有空间给该tlv
+    if(out_param->tlvs.tlvs_size + sizeof(rpc_tlv_hdr_t) + len > RPC_SYNC_CALL_TLVS_SIZE)
+        return ERR_NO_MEM;
+
+    rpc_tlv_hdr_t hdr = {.len = len};
+    strncpy(hdr.type, type, RPC_TLV_TYPE_SIZE);
+    // copy hdr
+    memcpy(out_param->tlvs.buf + out_param->tlvs.tlvs_size, &hdr, sizeof(rpc_tlv_hdr_t));
+    out_param->tlvs.tlvs_size += sizeof(rpc_tlv_hdr_t);
+    // copy value
+    memcpy(out_param->tlvs.buf + out_param->tlvs.tlvs_size, value, len);
+    out_param->tlvs.tlvs_size += len;
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e rpc_out_param_get_tlv(rpc_out_param_t *out_param, const char *type, uint8_t len, void *value)
+{
+    pfm_ensure_ret(out_param && type && len && value, ERR_BAD_PARAM);
+
+    error_code_e ret = ERR_RPC_OUT_PARAM_TLV_NOT_EXIST;
+
+    // 遍历所有tlv
+    size_t offset = 0;
+    char *buf = out_param->tlvs.buf;
+    while(offset < out_param->tlvs.tlvs_size)
+    {
+        rpc_tlv_hdr_t *tlv_hdr = (rpc_tlv_hdr_t*)(buf + offset);
+        if(0 == strcmp(tlv_hdr->type, type) && len >= tlv_hdr->len)
+        {
+            ret = ERR_NO_ERROR;
+            char *data = (char*)tlv_hdr + sizeof(rpc_tlv_hdr_t);
+            memcpy(value, data, tlv_hdr->len);
+            break;
+        }
+        offset += (sizeof(rpc_tlv_hdr_t) + tlv_hdr->len);
+    }
+
+    return ret;
+}
+
 static inline int _rpc_check_new_conn(int fd, proc_id_e *pid_out)
 {
     pfm_ensure_ret(pid_out, 0);
@@ -346,6 +395,60 @@ static void _rpc_handle_new_conn(proc_id_e pid)
     dbg_major("handle new rpc connect for pid %d ok", pid);
 }
 
+static void _rpc_self_msg_handle(char *msg)
+{
+    pfm_ensure_ret_void(msg);
+
+    rpc_header_t *rpc_hdr = (rpc_header_t*)msg;
+
+    if(likely(rpc_hdr->req))
+    {
+        // 查服务函数表
+        rpc_server_func_entry_t key = {}, *entry = NULL;
+        strncpy(key.name, rpc_hdr->func, RPC_FUNC_NAME_SIZE - 1);
+        ev_with_rdlock(&g_rpc_server_func_entry_table_rwlock)
+            entry = rpc_server_func_entry_hash_find(&g_rpc_server_func_entry_table, &key);
+        pfm_ensure_ret_void(entry);
+
+        rpc_out_param_t out_param = {};
+        error_code_e ret = entry->server_func(rpc_hdr, NULL, &out_param);       // 执行服务函数
+        if(ERR_NO_ERROR == ret && rpc_hdr->sync)                                // 同步请求需要发送resp
+        {
+            rpc_header_t resp_hdr = {
+                .dest = rpc_hdr->src,
+                .src = proc_id_get(),
+                .sync = 1,
+                .req = 0,
+                .seq = rpc_hdr->seq,
+                .size = sizeof(out_param),
+            };
+#if RPC_DEBUG_FLAG
+            dbg_always("rpc proc generate response: dest %d, src %d, req %d, seq %d, size %d", 
+                resp_hdr.dest, resp_hdr.src, resp_hdr.req, resp_hdr.seq, resp_hdr.size);
+#endif
+            size_t total_size = sizeof(rpc_header_t) + sizeof(rpc_out_param_t);
+            char *resp_buf = (char*)mp_calloc(1, total_size);   // TODO: mp
+            memcpy(resp_buf, &resp_hdr, sizeof(rpc_header_t));
+            memcpy(resp_buf + sizeof(rpc_header_t), &out_param, sizeof(rpc_out_param_t));
+            // 发送hdr + out_param，一次性发送
+            if(ERR_NO_ERROR != uss_send(g_rpc_uss_mgnt_table[resp_hdr.dest].accepter, resp_buf, total_size))
+            {
+                dbg_error("uss_send() rpc sync out fail");
+                mp_free(resp_buf, total_size);
+                return;
+            }
+            mp_free(resp_buf, total_size);
+#if RPC_DEBUG_FLAG
+                dbg_always("rpc proc send rpc sync ret and out param ok");
+#endif
+        }
+    }
+    else
+    {
+        // TODO: 目前没有rpc进程往外请求，接收响应的场景
+    }
+}
+
 static void _rpc_handle_msg(int fd)
 {
     pfm_ensure_ret_void(fd >= 0);
@@ -374,11 +477,10 @@ static void _rpc_handle_msg(int fd)
         {
             if(EINTR == errno)
                 continue;
-            else if(!(errno == EAGAIN || errno == EWOULDBLOCK))
-            {
-                dbg_error("uss_recv fail: %s", strerror(errno));
+            if(errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
-            }
+            dbg_error("uss_recv fail: %s", strerror(errno));
+            break;
         }
 
         // 复制到全局环形缓冲
@@ -391,14 +493,11 @@ static void _rpc_handle_msg(int fd)
             offset += write_size;
             remain -= write_size;
         }
-
-        // read长度小于一次最大值，说明已经读取完
-        if(read_size < RPC_READ_ONCE_SIZE)
-            break;
     }
 }
 
 static void _rpc_fifo_handle(void)
+
 {
     while(1)
     {
@@ -423,10 +522,15 @@ static void _rpc_fifo_handle(void)
 #endif
         if((PROC_ID_IS_VALID(p_header->src) && PROC_ID_IS_VALID(p_header->dest)))
         {
-            // 根据fd找到对应的receiver
-            uss_mgnt_t *sender = g_rpc_uss_mgnt_table[p_header->dest].accepter;
-            if(ERR_NO_ERROR != uss_send(sender, msg, total_size))
-                dbg_error("uss_send fail()");
+            if(proc_is_current(p_header->dest))     // 如果dest是自身，那么直接处理   
+                _rpc_self_msg_handle(msg);
+            else
+            {
+                // 根据fd找到对应的receiver，转发过去
+                uss_mgnt_t *sender = g_rpc_uss_mgnt_table[p_header->dest].accepter;
+                if(ERR_NO_ERROR != uss_send(sender, msg, total_size))
+                    dbg_error("uss_send fail()");
+            }
         }
         else
             dbg_error("error rpc msg");
@@ -458,8 +562,6 @@ static void _rpc_module_init_for_others(void)
         return;
     }
 
-    rpc_server_func_entry_hash_init(&g_rpc_server_func_entry_table);    // init hashtable
-    
     // init ctx pool
     for(int i = 0; i < RPC_SYNC_POOL_SIZE; ++ i)
     {
@@ -494,9 +596,7 @@ static void _non_rpc_fifo_handle()
 
         size_t total_size = sizeof(rpc_header_t) + hdr.size;
         char *pkt = mp_calloc(1, total_size);           // TODO: mp
-        size_t fifo_get_size = fifo_read(g_non_rpc_fifo, pkt, total_size, 1);
-        if(fifo_get_size != total_size)
-            dbg_error("fifo actually get %d, total %d", fifo_get_size, total_size);
+        fifo_read(g_non_rpc_fifo, pkt, total_size, 1);
 
         rpc_header_t *p_hdr = (rpc_header_t*)pkt;
         char *p_ctx = p_hdr->size ? pkt + sizeof(rpc_header_t) : NULL;      // 指向内容，可能无
@@ -512,9 +612,10 @@ static void _non_rpc_fifo_handle()
             ev_with_rdlock(&g_rpc_server_func_entry_table_rwlock)
                 entry = rpc_server_func_entry_hash_find(&g_rpc_server_func_entry_table, &key);
             error_code_e ret;
+            rpc_out_param_t out_param = {};
             if(likely(entry))
             {
-                ret = entry->server_func(p_hdr, NULL);         // 执行服务函数
+                ret = entry->server_func(p_hdr, NULL, &out_param);            // 执行服务函数
 #if RPC_DEBUG_FLAG
                 dbg_always("========= call server func %s ok, ret %d", p_hdr->func, ret);
 #endif
@@ -528,15 +629,10 @@ static void _non_rpc_fifo_handle()
             if(!p_hdr->sync)   continue;        // async call到此结束
             else                                // sync call需要构造响应返回
             {
-                // TODO: tlvs
-                rpc_out_param_t out_param = {
-                    .ret = ret,
-                    .tlvs = NULL,
-                    .tlvs_size = 0,
-                };
                 rpc_header_t resp_hdr = {
                     .dest = hdr.src,
                     .src = proc_id_get(),
+                    .sync = 1,
                     .req = 0,
                     .seq = hdr.seq,
                     .size = sizeof(out_param),
@@ -570,6 +666,7 @@ static void _non_rpc_fifo_handle()
 #endif
             _rpc_call_sync_ctx_pool_set(p_hdr, (rpc_out_param_t*)p_ctx);
         }
+        mp_free(pkt, total_size);
     }
 }
 
@@ -586,11 +683,10 @@ static void _rpc_other_proc_msg_handle()
         {
             if(EINTR == errno)
                 continue;
-            else if(!(errno == EAGAIN || errno == EWOULDBLOCK))        // 非数据读取完毕
-            {
-                dbg_error("uss recv for select msg fail: %s", strerror(errno));
+            if(errno == EAGAIN || errno == EWOULDBLOCK)        // 数据读取完毕
                 break;
-            }
+            dbg_error("uss recv for select msg fail: %s", strerror(errno));
+            break;
         }
 
         size_t remain = read_size;
@@ -603,9 +699,6 @@ static void _rpc_other_proc_msg_handle()
             offset += write_size;
             remain -= write_size;
         }
-        // 本次读取小于最大值，说明已经读取完毕
-        if(read_size < RPC_READ_ONCE_SIZE)
-            break;
     }
 }
 
@@ -646,6 +739,9 @@ static void* _rpc_select_routine(void *args)
 
 void rpc_module_init()
 {
+    // common init
+    rpc_server_func_entry_hash_init(&g_rpc_server_func_entry_table);    // init hashtable
+
     if(proc_id_get() == PID_RPC)
         _rpc_module_init_for_rpc();
     else
@@ -799,6 +895,8 @@ error_code_e rpc_call_func_async(proc_id_e dest, const char* func, rpc_in_param_
         .src = proc_id_get(),
         .dest = dest,
         .sync = 0,              // 异步调用
+        .req = 1,
+        .seq = PRC_SYNC_SEQ_NEW,
     };
     strncpy(buffer.func, func, sizeof(buffer.func) - 1);
     size_t ctx_len = 0;
@@ -807,9 +905,9 @@ error_code_e rpc_call_func_async(proc_id_e dest, const char* func, rpc_in_param_
     buffer.size = ctx_len;
     error_code_e ret = uss_send(g_rpc_uss_mgnt, &buffer, sizeof(rpc_header_t) + ctx_len);
     pfm_ensure_ret(ret == ERR_NO_ERROR, ret);
-
-    dbg("rpc call func async done, src %d, dest %d, func %s", proc_id_get(), dest, func);
-
+#if RPC_DEBUG_FLAG
+    dbg_always("rpc call func async done, src %d, dest %d, func %s", proc_id_get(), dest, func);
+#endif
     return ERR_NO_ERROR;
 }
 
@@ -848,7 +946,9 @@ static error_code_e _rpc_call_sync_ctx_pool_set(rpc_header_t *hdr, rpc_out_param
             rpc_call_sync_ctx_t *ctx = &g_rpc_call_sync_ctx_pool[i];
             if(hdr->seq == ctx->seq && hdr->src == ctx->dest && hdr->dest == ctx->src)
             {
-                memcpy(&ctx->out_param, out_param, sizeof(rpc_out_param_t));
+                memset(&ctx->out_param, 0, sizeof(rpc_out_param_t));
+                if(out_param)
+                    memcpy(&ctx->out_param, out_param, sizeof(rpc_out_param_t));
                 target_sem = &ctx->sem;
                 ret = ERR_NO_ERROR;
                 break;
@@ -905,12 +1005,12 @@ error_code_e rpc_call_func_sync(proc_id_e dest, const char* func, rpc_in_param_t
     else
         ev_sem_wait(&g_rpc_call_sync_ctx_pool[index].sem);
 #if RPC_DEBUG_FLAG
-    dbg_always("@@@ rpc wake up");
+    dbg_always("@@@ rpc sync wake up");
 #endif
     // 获取返回值，将valid置为0，释放pool单元
     ev_with_mutex(&g_rpc_call_sync_ctx_pool_mutex)
     {
-        // 浅拷贝给调用方，tlvs内存需要调用方释放
+        // 拷贝给调用方
         memcpy(out_param, &g_rpc_call_sync_ctx_pool[index].out_param, sizeof(rpc_out_param_t));
         g_rpc_call_sync_ctx_pool[index].valid = 0;        // clear valid
     }
