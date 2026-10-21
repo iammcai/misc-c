@@ -281,3 +281,20 @@ th {
         font-size: 0.85em;
     }
 }
+
+/* 图表外层容器：控制大小和居中 */
+.chart-container {
+    width: 80%;             /* 宽度根据父容器定 */
+    max-width: 500px;       /* 限制最大宽度*/
+    margin: 10px auto;         /* 保持水平居中 */
+    aspect-ratio: 1 / 1;    /* 强制宽高比 1:1，保证是正圆 */
+}
+
+/* 自适应 */
+@media (max-width: 500px) {
+    .chart-container {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 1 / 1; /* 保持正方形 */
+    }
+}

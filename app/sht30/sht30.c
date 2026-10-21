@@ -249,13 +249,12 @@ error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
      double temp_raw = 0.0;
      double humi_raw = 0.0;
 
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
-    {
-        return ERR_SHT30_HW_ERR;
-    }
+     // 暂时忽略错误，比如未接上sht30，返回0给前端
+    _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw);
+    _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw);
 
     snprintf(buf, buf_size, "{\"temperature\":%.1f,\"humidity\":%.1f}", temp_raw / 1000.0, humi_raw / 1000.0);
+
     return ERR_NO_ERROR;
 }
 

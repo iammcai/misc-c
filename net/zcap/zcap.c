@@ -1229,13 +1229,58 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
     return ERR_NO_ERROR;
 }
 
+error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size)
+{
+    memset(buf, 0, buf_size);
+    snprintf(buf, buf_size, 
+        "{"
+            "\"labels\":[\"<64B\",\"64~127B\",\"128~255B\",\"256~511B\",\"512~1023B\",\"1024~1517B\",\">1518B\"]"
+    );
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            // 打印统计数据，收集per-thread stats
+            uint64_t size_lt_64 = 0;
+            uint64_t size_64_128 = 0;
+            uint64_t size_128_256 = 0;
+            uint64_t size_256_512 = 0;
+            uint64_t size_512_1024 = 0;
+            uint64_t size_1024_1518 = 0;
+            uint64_t size_gt_1518 = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                size_lt_64 += captor->alz[q].stats.size_lt_64;
+                size_64_128 += captor->alz[q].stats.size_64_128;
+                size_128_256 += captor->alz[q].stats.size_128_256;
+                size_256_512 += captor->alz[q].stats.size_256_512;
+                size_512_1024 += captor->alz[q].stats.size_512_1024;
+                size_1024_1518 += captor->alz[q].stats.size_1024_1518;
+                size_gt_1518 += captor->alz[q].stats.size_gt_1518;
+            }
+
+            snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                    ",\"%s\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu]",
+                captor->if_name,
+                size_lt_64, size_64_128, size_128_256, size_256_512, size_512_1024, size_1024_1518, size_gt_1518
+            );
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+    snprintf(buf + strlen(buf), buf_size - strlen(buf), "}");
+
+    return ERR_NO_ERROR;
+}
+
 static void _zcap_rate_cal_wf(void *args)
 {
     while(1)
     {
-        swdg_feed();
         ev_with_rdlock(&g_zcaptor_hash_rwlock)
         {
+            swdg_feed();
             zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
             while(captor)
             {

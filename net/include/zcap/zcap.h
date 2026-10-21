@@ -369,6 +369,11 @@ extern int zcap_status_get(const char *if_name);
 extern error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size);
 
 /**
+ * @brief       cb for http cgi: /api/network/stream/pie
+ */
+extern error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size);
+
+/**
  * @brief       register filter into zcaptor
  * 
  * @param[in]   if_name         - if name

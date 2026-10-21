@@ -253,6 +253,76 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
+    /* =-=-=-=-=-=-=-=- stream 饼图 (eth0 & wlan0) -=-=-=-=-=-=-=-= */
+    
+    // 1. 提取公共的颜色和配置
+    const chartColors = [
+        'rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)',
+        'rgba(75, 192, 192, 0.8)', 'rgba(104, 112, 196, 0.8)',
+        'rgba(223, 134, 70, 0.8)', 'rgba(215, 68, 208, 0.8)',
+        'rgba(255, 206, 86, 0.8)'
+    ];
+    // 2. 封装图表创建函数
+    function createStreamChart(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || typeof Chart === 'undefined') return null;
+
+        return new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: ['加载中...'],
+                datasets: [{
+                    data: [1],
+                    backgroundColor: ['#cccccc'],
+                    borderColor: '#ffffff',
+                    borderWidth: 3,
+                    hoverOffset: 15
+                }]
+            },
+            options: {
+                responsive: true,
+                cutout: '60%',
+                plugins: {
+                    title: {
+                        display: true,
+                        text: canvasId.includes('eth0') ? 'eth0 Traffic' : 'wlan0 Traffic',
+                        font: { size: 16, weight: 'bold' },
+                        padding: { bottom: 15 }
+                    },
+                    legend: {
+                        position: 'bottom',
+                        labels: { padding: 15, usePointStyle: true, pointStyle: 'circle', font: { size: 12 } }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                let value = context.parsed || 0;
+                                let total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                let percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return ` ${label}: ${value} pkts (${percentage}%)`; 
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    // 3. 分别创建两个图表实例
+    let eth0ChartInstance = createStreamChart('eth0_stream_pie');
+    let wlan0ChartInstance = createStreamChart('wlan0_stream_pie');
+    // 4. 封装错误状态处理函数
+    function setChartError(chartInstance) {
+        if (!chartInstance) return;
+        chartInstance.data.labels = ['无数据'];
+        chartInstance.data.datasets[0].data = [1];
+        chartInstance.data.datasets[0].backgroundColor = ['#ffcccc'];
+        chartInstance.update();
+    }
+
     /* =-=-=-=-=-=-=-=- sync 定时刷新 -=-=-=-=-=-=-=-= */
     async function sync_poll() {
         const controller = new AbortController();
@@ -278,6 +348,24 @@ document.addEventListener('DOMContentLoaded', function(){
             const wlan0_rx_size = (Number(data.network.wlan0.rx_size) / 1024 / 1024).toFixed(3);
             eth0_rx.textContent = `eth0: 👇 ${data.network.eth0.rx_rate} kB/s, ${eth0_rx_size} MB`;
             wlan0_rx.textContent = `wlan0: 👇 ${data.network.wlan0.rx_rate} kB/s, ${wlan0_rx_size} MB`;
+
+            if (data.stream_pie) {
+                // 更新 eth0
+                if (eth0ChartInstance && data.stream_pie.eth0) {
+                    eth0ChartInstance.data.labels = data.stream_pie.labels;
+                    eth0ChartInstance.data.datasets[0].data = data.stream_pie.eth0;
+                    eth0ChartInstance.data.datasets[0].backgroundColor = chartColors;
+                    eth0ChartInstance.update();
+                }
+                // 更新 wlan0
+                if (wlan0ChartInstance && data.stream_pie.wlan0) {
+                    wlan0ChartInstance.data.labels = data.stream_pie.labels;
+                    wlan0ChartInstance.data.datasets[0].data = data.stream_pie.wlan0;
+                    wlan0ChartInstance.data.datasets[0].backgroundColor = chartColors;
+                    wlan0ChartInstance.update();
+                }
+            }
+
         } catch (err) {
             if (err.name === 'AbortError') {
                 console.warn('sync timeout');
@@ -294,6 +382,10 @@ document.addEventListener('DOMContentLoaded', function(){
             cpu3.textContent = '-- %';
             eth0_rx.textContent = 'eth0: 👇 -- kB/s, -- MB';
             wlan0_rx.textContent = 'wlan0: 👇 -- kB/s, -- MB';
+
+            setChartError(eth0ChartInstance);
+            setChartError(wlan0ChartInstance);
+
         } finally {
             clearTimeout(timeoutId);
             syncTimer = setTimeout(sync_poll, 5000);
