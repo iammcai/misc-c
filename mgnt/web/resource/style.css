@@ -290,6 +290,15 @@ th {
     aspect-ratio: 1 / 1;    /* 强制宽高比 1:1，保证是正圆 */
 }
 
+/* 柱状图外层容器：控制大小和居中 */
+.bar-container {
+    width: 80%;             /* 宽度根据父容器定，与饼图保持一致 */
+    max-width: 500px;       /* 限制最大宽度，与饼图保持一致 */
+    margin: 10px auto;      /* 保持水平居中，与饼图保持一致 */
+    aspect-ratio: 16 / 9;   /* 强制宽高比 16:9，保证柱状图视觉协调（千万别用 1/1） */
+    position: relative;     /* 关键！配合 Chart.js 的 responsive: true 防止高度塌陷 */
+}
+
 /* 自适应 */
 @media (max-width: 500px) {
     .chart-container {

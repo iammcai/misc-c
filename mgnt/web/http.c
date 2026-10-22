@@ -188,10 +188,12 @@ static attr_force_inline error_code_e _http_sync_http_cgi_cb(char *buf, size_t b
     pfm_ensure_ret(ERR_NO_ERROR == zcap_rx_http_cgi_cb(network_status_rxrate, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
     char zcap_stream_pie[HTTP_CGI_BODY_BUFFER_SIZE] = {};
     pfm_ensure_ret(ERR_NO_ERROR == zcap_stream_pie_cgi_cb(zcap_stream_pie, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
+    char zcap_protocol_bar[HTTP_CGI_BODY_BUFFER_SIZE] = {};
+    pfm_ensure_ret(ERR_NO_ERROR == zcap_protocol_bar_cgi_cb(zcap_protocol_bar, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
 
     int n = snprintf(buf, buf_size,
-        "{\"led\":%s,\"sht30\":%s,\"sysmon\":%s,\"network\":%s,\"stream_pie\":%s}",
-        led_status, sht30_sensor, sysmon_cpu_usage, network_status_rxrate, zcap_stream_pie);
+        "{\"led\":%s,\"sht30\":%s,\"sysmon\":%s,\"network\":%s,\"stream_pie\":%s,\"protocol_bar\":%s}",
+        led_status, sht30_sensor, sysmon_cpu_usage, network_status_rxrate, zcap_stream_pie, zcap_protocol_bar);
     if(unlikely(n >= buf_size))
         return ERR_WEB_HTTP_CGI_RESP_ERROR;
 
@@ -221,6 +223,7 @@ static http_cgi_entry_t g_http_cgi_response_table[] = {
     {"/api/sysmon/cpu/usage",           sysmon_cpu_usage_http_cgi_cb},
     {"/api/network/status/rx",          zcap_rx_http_cgi_cb},
     {"/api/network/stream/pie",         zcap_stream_pie_cgi_cb},
+    {"/api/network/protocol/bar",       zcap_protocol_bar_cgi_cb},
 };
 
 /* ========================================================================== */

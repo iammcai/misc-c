@@ -270,7 +270,7 @@ document.addEventListener('DOMContentLoaded', function(){
         return new Chart(canvas.getContext('2d'), {
             type: 'doughnut',
             data: {
-                labels: ['加载中...'],
+                labels: ['Waiting for backend...'],
                 datasets: [{
                     data: [1],
                     backgroundColor: ['#cccccc'],
@@ -283,9 +283,9 @@ document.addEventListener('DOMContentLoaded', function(){
                 responsive: true,
                 cutout: '60%',
                 plugins: {
-                    title: {
+                    title: {            // 标题
                         display: true,
-                        text: canvasId.includes('eth0') ? 'eth0 Traffic' : 'wlan0 Traffic',
+                        text: canvasId.includes('eth0') ? 'eth0 Traffic Size Distribution' : 'wlan0 Traffic Size Distribution',
                         font: { size: 16, weight: 'bold' },
                         padding: { bottom: 15 }
                     },
@@ -320,6 +320,104 @@ document.addEventListener('DOMContentLoaded', function(){
         chartInstance.data.labels = ['无数据'];
         chartInstance.data.datasets[0].data = [1];
         chartInstance.data.datasets[0].backgroundColor = ['#ffcccc'];
+        chartInstance.update();
+    }
+
+    /* =-=-=-=-=-=-=-=- protocol 柱状图 (eth0 & wlan0) -=-=-=-=-=-=-=-= */
+    // 1. 公共的颜色和配置
+    const barChartColors = [
+        'rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)',
+        'rgba(75, 192, 192, 0.8)', 'rgba(104, 112, 196, 0.8)',
+        'rgba(223, 134, 70, 0.8)', 'rgba(215, 68, 208, 0.8)',
+        'rgba(255, 206, 86, 0.8)'
+    ];
+    // 2. 封装图表创建函数
+        function createProtocolBarChart(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || typeof Chart === 'undefined') return null;
+
+        return new Chart(canvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: ['Waiting for backend'],
+                datasets: [{
+                    label: 'pkts',
+                    data: [0],
+                    backgroundColor: barChartColors,
+                    borderColor: barChartColors.map(c => c.replace('0.8', '1')),
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    hoverBackgroundColor: barChartColors.map(c => c.replace('0.8', '1'))
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: canvasId.includes('eth0') ? 'eth0 Protocol Distribution' : 'wlan0 Protocol Distribution',
+                        font: { size: 16, weight: 'bold' },
+                        padding: { bottom: 15 }
+                    },
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                let protocol = context.label || '';
+                                let value = context.parsed.y || 0;
+                                if (!value) return ` ${protocol}: 暂无数据`;
+                                let total = context.dataset.data.reduce((a, b) => a + (b || 0), 0);
+                                let percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                return ` ${protocol}: ${value.toLocaleString()} 个 (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 12, weight: 'bold' } }
+                    },
+                    y: {
+                        type: 'logarithmic',
+                        min: 1,
+                        grid: { color: 'rgba(200, 200, 200, 0.2)' },
+                        ticks: {
+                            font: { size: 11 },
+                            color: '#cdd6f4',
+                            callback: function(value) {
+                                const log10 = Math.log10(value);
+                                if (!Number.isInteger(log10)) return null;
+                                if (value === 1) return '1';
+                                if (value === 10) return '10';
+                                if (value === 100) return '100';
+                                if (value === 1000) return '1k';
+                                if (value === 10000) return '10k';
+                                if (value === 100000) return '100k';
+                                if (value === 1000000) return '1000k';
+                                return value.toExponential(0);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. 分别创建两个图表实例
+    let eth0BarInstance = createProtocolBarChart('eth0_protocol_bar');
+    let wlan0BarInstance = createProtocolBarChart('wlan0_protocol_bar');
+    // 4. 封装错误/无数据状态处理函数
+    function setBarChartError(chartInstance) {
+        if (!chartInstance) return;
+        chartInstance.data.labels = ['无数据'];
+        chartInstance.data.datasets[0].data = [0];
+        chartInstance.data.datasets[0].backgroundColor = ['#ffcccc'];
+        chartInstance.data.datasets[0].borderColor = ['#ff9999'];
         chartInstance.update();
     }
 
@@ -366,6 +464,34 @@ document.addEventListener('DOMContentLoaded', function(){
                 }
             }
 
+            if (data.protocol_bar) {
+                const labels = data.protocol_bar.labels || [];
+                const dynamicBarColors = labels.map((_, i) =>
+                    barChartColors[i % barChartColors.length]
+                );
+                const dynamicBarBorders = dynamicBarColors.map(c => c.replace('0.8', '1'));
+
+                // eth0：先判空再处理
+                if (eth0BarInstance && Array.isArray(data.protocol_bar.eth0)) {
+                    const safeData = data.protocol_bar.eth0.map(v => v === 0 ? null : v);
+                    eth0BarInstance.data.labels = labels;
+                    eth0BarInstance.data.datasets[0].data = safeData;
+                    eth0BarInstance.data.datasets[0].backgroundColor = dynamicBarColors;
+                    eth0BarInstance.data.datasets[0].borderColor = dynamicBarBorders;
+                    eth0BarInstance.update();
+                }
+
+                // wlan0：同样保护
+                if (wlan0BarInstance && Array.isArray(data.protocol_bar.wlan0)) {
+                    const safeData = data.protocol_bar.wlan0.map(v => v === 0 ? null : v);
+                    wlan0BarInstance.data.labels = labels;
+                    wlan0BarInstance.data.datasets[0].data = safeData;
+                    wlan0BarInstance.data.datasets[0].backgroundColor = dynamicBarColors;
+                    wlan0BarInstance.data.datasets[0].borderColor = dynamicBarBorders;
+                    wlan0BarInstance.update();
+                }
+            }
+
         } catch (err) {
             if (err.name === 'AbortError') {
                 console.warn('sync timeout');
@@ -385,6 +511,9 @@ document.addEventListener('DOMContentLoaded', function(){
 
             setChartError(eth0ChartInstance);
             setChartError(wlan0ChartInstance);
+
+            setBarChartError(eth0BarInstance);
+            setBarChartError(wlan0BarInstance);
 
         } finally {
             clearTimeout(timeoutId);

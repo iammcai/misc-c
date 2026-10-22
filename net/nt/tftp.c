@@ -1119,21 +1119,13 @@ static void* _tftp_fsm(void *args)
 void tftp_module_init()
 {
     // 注册UDP报文过滤，TFTP传输数据会指定随机的端口号，这里只能粗匹配
-    zcap_register_pkt_filter("eth0", "udp", _tftp_packet_filter_cb, NULL);
-    zcap_register_field_len_type("eth0", "udp", IPV4, 0xffff);
-    zcap_register_field_pro_type("eth0", "udp", UDP, 0xff);
+    zcap_register_pkt_filter("eth0", "udp_for_tftp", _tftp_packet_filter_cb, NULL);
+    zcap_register_field_len_type("eth0", "udp_for_tftp", IPV4, 0xffff);
+    zcap_register_field_pro_type("eth0", "udp_for_tftp", UDP, 0xff);
 
-    zcap_register_pkt_filter("wlan0", "udp", _tftp_packet_filter_cb, NULL);
-    zcap_register_field_len_type("wlan0", "udp", IPV4, 0xffff);
-    zcap_register_field_pro_type("wlan0", "udp", UDP, 0xff);
-
-    // 注册TCP过滤，仅用于统计数据，先临时放在这
-    zcap_register_pkt_filter("eth0", "tcp", _tcp_packet_filter_cb, NULL);
-    zcap_register_field_len_type("eth0", "tcp", IPV4, 0xffff);
-    zcap_register_field_pro_type("eth0", "tcp", TCP, 0xff);
-    zcap_register_pkt_filter("wlan0", "tcp", _tcp_packet_filter_cb, NULL);
-    zcap_register_field_len_type("wlan0", "tcp", IPV4, 0xffff);
-    zcap_register_field_pro_type("wlan0", "tcp", TCP, 0xff);
+    zcap_register_pkt_filter("wlan0", "udp_for_tftp", _tftp_packet_filter_cb, NULL);
+    zcap_register_field_len_type("wlan0", "udp_for_tftp", IPV4, 0xffff);
+    zcap_register_field_pro_type("wlan0", "udp_for_tftp", UDP, 0xff);
 
     // 启用fsm线程
     int ret = pthread_create(&g_tftp_fsm_tid, NULL, _tftp_fsm, NULL);

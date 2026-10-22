@@ -39,9 +39,6 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// web服务器监听端口
-#define WEB_TCP_PORT        (8080)
-
 // 最大连接数量
 #define WEB_CONNECT_MAX_CNT     (128)
 
@@ -361,7 +358,7 @@ static error_code_e _web_mgnt_init(void)
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_addr = INADDR_ANY,
-        .sin_port = htons(WEB_TCP_PORT),
+        .sin_port = htons(MISC_C_WEB_TCP_PORT),
     };
     pfm_ensure_done(0 == bind(g_web_mgnter.sock_fd, (struct sockaddr*)&addr, sizeof(addr)));
 
@@ -420,14 +417,14 @@ void web_module_init()
     _web_mgnt_init();
 
     // 注册zcap捕获http报文
-    zcap_register_pkt_filter("wlan0", "web", zcap_web_pkt_cb, NULL);
-    zcap_register_field_len_type("wlan0", "web", IPV4, 0xffff);
-    zcap_register_field_pro_type("wlan0", "web", TCP, 0xff);
-    zcap_register_field_l4_dport("wlan0", "web", WEB_TCP_PORT, 0xffff);
-    zcap_register_pkt_filter("eth0", "web", zcap_web_pkt_cb, NULL);
-    zcap_register_field_len_type("eth0", "web", IPV4, 0xffff);
-    zcap_register_field_pro_type("eth0", "web", TCP, 0xff);
-    zcap_register_field_l4_dport("eth0", "web", WEB_TCP_PORT, 0xffff);
+    zcap_register_pkt_filter("wlan0", "miscc_web", zcap_web_pkt_cb, NULL);
+    zcap_register_field_len_type("wlan0", "miscc_web", IPV4, 0xffff);
+    zcap_register_field_pro_type("wlan0", "miscc_web", TCP, 0xff);
+    zcap_register_field_l4_dport("wlan0", "miscc_web", MISC_C_WEB_TCP_PORT, 0xffff);
+    zcap_register_pkt_filter("eth0", "miscc_web", zcap_web_pkt_cb, NULL);
+    zcap_register_field_len_type("eth0", "miscc_web", IPV4, 0xffff);
+    zcap_register_field_pro_type("eth0", "miscc_web", TCP, 0xff);
+    zcap_register_field_l4_dport("eth0", "miscc_web", MISC_C_WEB_TCP_PORT, 0xffff);
 
     dbg_major("web module init ok");
 }

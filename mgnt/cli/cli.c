@@ -188,6 +188,7 @@ const static cli_register_entry_t g_cli_register_table[] = {
     // zcap
     CLI_REG_ENTRY("show zcaptor", "dump info of zcaptor", NULL, zcap_dump_captor_cli_hook),
     CLI_REG_ENTRY("zcaptor dump packet", "dump info of rx packet during a preiod", zcap_dump_pkt_param, zcap_dump_pkt_cli_hook),
+    CLI_REG_ENTRY("show zcaptor src top", "dump TOP3 rx source", NULL, zcap_dump_src_top_cli_hook),
     // ftx
     CLI_REG_ENTRY("show ftxor", "dump all ftxor", NULL, ftxor_dump_cli_hook),
     // arp
@@ -274,6 +275,14 @@ static void* _cli_routine(void *args)
                 {
                     ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED);
                     break;
+                }
+                if(!input)
+                {
+                    // 在 systemd 后台运行时，stdin 会持续返回 NULL (EOF)
+                    // 作为后台服务运行，直接退出 CLI 线程即可
+                    dbg_always("shell input is NULL, exiting CLI thread for background mode.");
+                    ATOM_STORE(&cli_task_running, 0, MORDER_RELAXED); 
+                    break; // 跳出 switch，随后 while 条件不满足，退出循环
                 }
                 if(0 == strcmp(input, "config"))
                     g_cli_mode = CLI_MODE_CONFIG;

@@ -31,6 +31,7 @@
 #include "event/ev_lock.h"
 #include "net_comm.h"
 #include "cli/cli.h"
+#include "type/type_heap.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -130,15 +131,15 @@ typedef struct{
     char packet[];    // 报文内容
 }zcap_packet_t;
 
-// 线程解析数据定义
+// 线程解析数据定义，每个解析线程更新自己的，无锁。全局直接叠加统计，允许一定误差
 typedef struct{
     uint64_t counts;        // 收包数量
     uint64_t bytes;         // 收包字节数
-
+    // cast类型
     uint64_t uc_count;      // 单播报文个数
     uint64_t mc_count;      // 组播报文个数
     uint64_t bc_count;      // 广播报文个数
-
+    // 报文大小
     uint64_t size_lt_64;    // 小于64B的数量
     uint64_t size_64_128;
     uint64_t size_128_256;
@@ -146,6 +147,16 @@ typedef struct{
     uint64_t size_512_1024;
     uint64_t size_1024_1518;
     uint64_t size_gt_1518;
+    // 协议统计数量
+    uint64_t arp;           // arp
+    uint64_t icmp;          // icmp
+    uint64_t miscc_web;     // tcp 8080
+    uint64_t ssh;           // tcp 22
+    uint64_t dns;           // udp 53
+    uint32_t dhcp;          // udp 67/68
+    uint64_t tcp_other;
+    uint64_t udp_other;
+    uint64_t others;
 } attr_aligned(64) zcap_alz_stats_t;        // 按照64B对齐，避免同一个cache line伪共享，多个线程会干扰
 
 // 解析报文结构
@@ -155,6 +166,29 @@ typedef struct{
     ev_sem_t alz_sem;   // 用于唤醒
     zcap_alz_stats_t stats;     // 统计数据
 }zcap_packet_alz_t;
+
+// 预定义流量来源哈希表节点
+pre_declare_hash(zcap_src_top)
+// heap定义
+pre_declare_heap(zcap_src_top)
+
+// 流量来源条目定义
+typedef struct{
+    uint8_t smac[MAC_ADDR_SIZE];
+    uint64_t cnt;
+
+    zcap_src_top_hash_item_t hash_item;     // hash item
+    zcap_src_top_heap_item_t heap_item;     // heap item
+}zcap_top_src_entry_t;
+
+// 处理流量来源top的线程结构定义
+typedef struct{
+    pthread_t tid;      // 线程tid
+    ATOMIC_UINT8_T run;
+    msg_q_t *msgq;      // 消息队列，解析线程发，本线程收
+    zcap_src_top_hash_head_t hashtable;     // 哈希表，存储流量来源信息
+    ev_spinlock_t lock;     // 用于并发，写多读少
+}zcap_top_cal_thd_t;
 
 // 统计数据定义
 typedef struct{
@@ -180,6 +214,8 @@ typedef struct{
     ATOMIC_UINT8_T running; // 启动标志
 
     zcap_packet_alz_t alz[ZCAP_HASH_Q_SIZE];    // 解析线程相关
+
+    zcap_top_cal_thd_t top;     // src top相关
 
     zcap_stats_t stats;         // 统计数据
 
@@ -374,6 +410,11 @@ extern error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size);
 extern error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size);
 
 /**
+ * @brief       cb for http cgi: /api/network/protocol/bar
+ */
+extern error_code_e zcap_protocol_bar_cgi_cb(char *buf, size_t buf_size);
+
+/**
  * @brief       register filter into zcaptor
  * 
  * @param[in]   if_name         - if name
@@ -407,6 +448,13 @@ extern void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[]);
  * @note        开启逐包报文打印一段时间
  */
 extern void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: show zcaptor src top
+ * 
+ * @note        打印流量来源TOP3
+ */
+extern void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[]);
 
 #endif
 /* __ZCAP_H__ end */

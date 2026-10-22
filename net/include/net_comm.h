@@ -44,6 +44,8 @@
 #define PKT_HDR_IPV4_SIZE   (20)
 // UDP头部长度
 #define PKT_HDR_UDP_SIZE    (8)
+// TCP头部长度
+#define PKT_HDR_TCP_SIZE    (20)
 
 // 接口名长度
 #define IF_NAME_SIZE        (8)
@@ -52,10 +54,23 @@
 #define IPV4    (0x0800)
 // ARP类型
 #define ARP     (0x0806)
+// ICMP
+#define ICMP    (0x01)
 // TCP类型
 #define TCP     (0x06)
 // UDP类型
 #define UDP     (0x11)
+
+// ssh端口号
+#define SSH_TCP_PORT            (22)
+// misc-c web端口号
+#define MISC_C_WEB_TCP_PORT     (8080)
+// dns端口号
+#define DNS_UDP_PORT            (53)
+// dhcp服务端口号
+#define DHCP_UDP_SERVER_PORT    (67)
+// dhcp客户端口号
+#define DHCP_UDP_CLIENT_PORT    (68)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -83,6 +98,19 @@ typedef struct{
     uint32_t dst_addr;
 }attr_packed pkthdr_ipv4_t;
 _Static_assert(sizeof(pkthdr_ipv4_t) == PKT_HDR_IPV4_SIZE, "sizeof pkthdr_ipv4_t must be 20");
+
+// tcp头部
+typedef struct{
+    uint16_t src_port;      // 源端口
+    uint16_t dst_port;      // 目的端口
+    uint32_t seq_num;       // 序列号
+    uint32_t ack_num;       // 确认号
+    uint16_t off_flags;     // 数据偏移(4bit) + 保留(3bit) + 标志位(9bit)
+    uint16_t window;        // 窗口大小
+    uint16_t checksum;      // 校验和
+    uint16_t urgent_ptr;    // 紧急指针
+} attr_packed pkthdr_tcp_t;
+static_assert(sizeof(pkthdr_tcp_t) == PKT_HDR_TCP_SIZE, "sizeof pkthdr_tcp_t must be 20");
 
 // UDP头部
 typedef struct{

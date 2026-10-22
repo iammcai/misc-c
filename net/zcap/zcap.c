@@ -78,8 +78,8 @@
 // 打印帧长分布的数据格式
 #define ZCAP_DUMP_SIZE_DIST_FMT_DATA        "%-20s%-16llu%-8.3f%\n"
 
-#define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-8s%-8s\n"
-#define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-8s%-8u\n"  // 打印各类型报文数量的格式，type num
+#define ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT     "%-16s%-8s\n"
+#define ZCAP_DUMP_PKT_TYPE_NUM_FMT          "%-16s%-8u\n"  // 打印各类型报文数量的格式，type num
 #define ZCAP_DUMM_PKT_INFO_FMT              "if-%s,len-%-4d: %s\n"      // 打印报文信息格式
 
 // alz线程等待时间
@@ -91,6 +91,13 @@
 #define ZCAP_STATS_M            (1000000)
 // G=1000000000
 #define ZCAP_STATS_G            (1000000000)
+
+// 计算top用的消息队列容量
+#define ZCAP_TOP_MSGQ_CAP       (1024)
+// 消息队列阻塞时间
+#define ZCAP_TOP_MSGQ_WAIT      (100)
+// 打印top的个数
+#define ZCAP_TOP_CNT            (3)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -108,6 +115,70 @@ typedef struct{
 /* ========================================================================== */
 /*                        Static Function Prototypes                          */
 /* ========================================================================== */
+
+/**
+ * @brief       cmp two zcap_top_src_entry
+ */
+static attr_pure_inline int _zcap_top_src_entry_cmp(zcap_top_src_entry_t *e1, zcap_top_src_entry_t *e2)
+{
+    return strncmp((const char*)e1->smac, (const char*)e2->smac, MAC_ADDR_SIZE);
+}
+
+/**
+ * @brief       cmp for heap
+ * 
+ * @note        大顶堆，逆序
+ */
+static attr_pure_inline int _zcap_top_src_entry_cmp_for_heap(zcap_top_src_entry_t *e1, zcap_top_src_entry_t *e2)
+{
+    if(e1->cnt < e2->cnt)
+        return 1;
+    else if(e1->cnt > e2->cnt)
+        return -1;
+    return 0;
+}
+
+/**
+ * @brief       cmp two zcap_top_src_entry
+ */
+static attr_pure_inline unsigned int _zcap_top_src_entry_hash(zcap_top_src_entry_t *e)
+{
+    int64_t mac = *(int64_t*)e->smac;
+    return type_hash_jhash(&mac, sizeof(int64_t), 0);
+}
+
+// 定义zcap_top_src_entry_t hash操作
+declare_hash(zcap_src_top, zcap_src_top, zcap_top_src_entry_t, hash_item, 1, 31, _zcap_top_src_entry_cmp, _zcap_top_src_entry_hash)
+
+// heap操作
+declare_heap(zcap_src_top, zcap_src_top, zcap_top_src_entry_t, heap_item, 1, 1024, _zcap_top_src_entry_cmp_for_heap)
+
+/**
+ * @brief       cal src top thread entry
+ * 
+ * @param[in]   zcaptor
+ * 
+ * @note        负责进行流量来源top计算的线程
+ */
+static void* _zcap_src_top_cal_routine(void *args);
+
+/**
+ * @brief       添加mac记录到src top记录中
+ * 
+ * @param[in]   top
+ * @param[in]   mac     - src mac
+ */
+static void _zcap_src_top_add(zcap_top_cal_thd_t *top, uint8_t *mac);
+
+/**
+ * @brief       handle protocol and add count
+ * 
+ * @param[in]   stats       - stats
+ * @param[in]   packet      - packet info
+ * 
+ * @note        解析报文协议，添加协议rx个数，线程独立
+ */
+static void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *packet);
 
 /**
  * @brief       cmp two pkt filter
@@ -209,9 +280,9 @@ static attr_force_inline void _zcap_packet_flow_key_extract(zcap_packet_t *packe
 }
 
 /**
- * @brief       cal zaptor rx rate
+ * @brief       cal zaptor rx rate thread entry
  */
-static void _zcap_rate_cal_wf(void *args);
+static void* _zcap_rate_cal_wf(void *args);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -225,7 +296,10 @@ static ev_rwlock_t g_zcaptor_hash_rwlock = EV_RWLOCK_INITIALIZER;
 // 控制是否打印报文简要信息
 static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
 
-declare_ev_thd(zcap_rate_cal, _zcap_rate_cal_wf, NULL, 0)
+// 后台计算rx速率线程tid
+static pthread_t g_zcap_rx_rate_cal_tid;
+// run
+static ATOMIC_UINT8_T g_zcap_rx_rate_cal_tid_run = 0;
 
 // 用于zcap dump的参数
 cli_param_t zcap_dump_pkt_param[] = {
@@ -712,11 +786,13 @@ static void _zcap_analyze_a_packet(zcap_t *captor, zcap_packet_t *packet)
         safe_printf(ZCAP_DUMM_PKT_INFO_FMT, captor->if_name, packet->len, info);
     }
 
+    // src mac信息发给top进程记录
+    _msg_q_push(captor->top.msgq, (void*)eth->h_source, MAC_ADDR_SIZE);
+
     // 提取过滤器所需要的信息
     zcap_pkt_info_t packet_info = {};
     _zcap_pkt_info_extract(packet, &packet_info);
-
-    // 遍历注册的过滤条件，执行回调
+    // 遍历注册的过滤条件，执行注册回调
     zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
     while(filter)
     {
@@ -792,6 +868,9 @@ static void* _zcap_alz_routine(void *args)
             else
                 captor->alz[i].stats.uc_count ++;
 
+            // 预置协议计数处理
+            _zcap_stats_protocol_handle(&captor->alz[i].stats, packet);
+
             // 具体解析
             _zcap_analyze_a_packet(captor, packet);
             mp_nonfixed_node_put(packet);
@@ -811,6 +890,153 @@ static void* _zcap_alz_routine(void *args)
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+static void _zcap_src_top_add(zcap_top_cal_thd_t *top, uint8_t *mac)
+{
+    pfm_ensure_ret_void(top && mac);
+
+    zcap_top_src_entry_t key = {};
+    memcpy(key.smac, mac, MAC_ADDR_SIZE);
+
+    ev_with_spinlock(&top->lock)
+    {
+        zcap_top_src_entry_t *entry = zcap_src_top_hash_find(&top->hashtable, &key);
+        if(unlikely(!entry))
+        {
+            entry = mp_calloc(1, sizeof(zcap_top_src_entry_t));
+            memcpy(entry->smac, mac, MAC_ADDR_SIZE);
+            zcap_src_top_hash_add(&top->hashtable, entry);
+        }
+        ++ entry->cnt;      // 计数++
+        // dbg_always("mac %02x:%02x:%02x:%02x:%02x:%02x, cnt %d", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], entry->cnt);
+    }
+}
+
+static void* _zcap_src_top_cal_routine(void *args)
+{
+    zcap_t *zcaptor = (zcap_t*)args;
+    zcap_top_cal_thd_t *top = &zcaptor->top;
+
+    // 资源初始化
+    ev_spinlock_init(&top->lock);
+    zcap_src_top_hash_init(&top->hashtable);
+    top->msgq = msg_q_create("zcap_top_src_msgq", ZCAP_TOP_MSGQ_CAP, sizeof(uint8_t)*MAC_ADDR_SIZE);
+
+    char name[16];
+    snprintf(name, 15, "zcap_%s_top", zcaptor->if_name);
+    prctl(PR_SET_NAME, name);
+
+    swdg_register(name, ZCAP_TOP_MSGQ_WAIT * 3);       // reg swdg
+
+    ATOM_STORE(&top->run, 1, MORDER_RELAXED);
+    while(ATOM_LOAD(&top->run, MORDER_RELAXED))
+    {
+        swdg_feed();
+
+        uint8_t mac[MAC_ADDR_SIZE];
+        msg_q_ret_type_e ret = _msg_q_pop(top->msgq, sizeof(uint8_t)*MAC_ADDR_SIZE, msg_q_wait_timeout, ZCAP_TOP_MSGQ_WAIT, mac);
+        // 处理消息
+        if(ret == msg_q_ret_ok)
+            _zcap_src_top_add(top, mac);
+    }
+
+    return NULL;
+}
+
+static void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *packet)
+{
+    pfm_ensure_ret_void(stats && packet);
+
+    size_t offset = 0;
+    size_t total_size = packet->len;
+    char *ctx = packet->packet;
+
+    // l2
+    if((offset + PKT_HDR_L2_SIZE) > total_size)
+        goto others;
+    pkthdr_l2_t *l2_hdr = (pkthdr_l2_t*)ctx;
+    uint16_t ethertype = ntohs(l2_hdr->ether_type);
+    offset += PKT_HDR_L2_SIZE;
+    ctx += PKT_HDR_L2_SIZE;
+
+    if(ethertype == ARP)
+    {
+        stats->arp ++;
+        return;
+    }
+    else if(ethertype == IPV4)
+    {
+        // l3
+        if(offset + sizeof(pkthdr_ipv4_t) > total_size)
+            goto others;
+        pkthdr_ipv4_t *ipv4_hdr = (pkthdr_ipv4_t*)ctx;
+        offset += sizeof(pkthdr_ipv4_t);
+        ctx += sizeof(pkthdr_ipv4_t);
+
+        uint8_t protocol = ipv4_hdr->protocol;
+        if(protocol == ICMP)
+        {
+            stats->icmp ++;
+            return;
+        }
+        else if(protocol == TCP)
+        {
+            if(offset + sizeof(pkthdr_tcp_t) > total_size)
+                goto others;
+            pkthdr_tcp_t *tcp_hdr = (pkthdr_tcp_t*)ctx;
+            offset += sizeof(pkthdr_tcp_t);
+            ctx += sizeof(pkthdr_tcp_t);
+
+            uint16_t dport = ntohs(tcp_hdr->dst_port);
+            if(dport == SSH_TCP_PORT)
+            {
+                stats->ssh ++;
+                return;
+            }
+            else if(dport == MISC_C_WEB_TCP_PORT)
+            {
+                stats->miscc_web ++;
+                return;
+            }
+            else
+            {
+                stats->tcp_other ++;
+                return;
+            }
+        }
+        else if(protocol == UDP)
+        {
+            if(offset + sizeof(pkthdr_udp_t) > total_size)
+                goto others;
+            pkthdr_udp_t *udp_hdr = (pkthdr_udp_t*)ctx;
+            offset += sizeof(pkthdr_udp_t);
+            ctx += sizeof(pkthdr_udp_t);
+
+            uint16_t dport = ntohs(udp_hdr->dport);
+            if(dport == DNS_UDP_PORT)                                   // dns
+            {
+                stats->dns ++;
+                return;
+            }
+            else if(dport == DHCP_UDP_CLIENT_PORT || dport == DHCP_UDP_SERVER_PORT)     // dhcp
+            {
+                stats->dhcp ++;
+                return;
+            }
+            else
+            {
+                stats->udp_other ++;
+                return;
+            }
+        }
+        else
+            goto others;
+    }
+
+others:
+    stats->others ++;
+    return;
+}
+
 void zcap_module_init()
 {
     zcaptor_hash_init(&g_zcaptor_hash_head);
@@ -818,10 +1044,8 @@ void zcap_module_init()
     // 内存池注册
     mp_nonfixed_register(zcap);
 
-    // 注册速率计算线程
-    ev_thd_register(zcap_rate_cal)
-    ev_thd_run(zcap_rate_cal)
-    ev_thd_wake(zcap_rate_cal)
+    // 启动线程计算zcaptor rx速率
+    pthread_create(&g_zcap_rx_rate_cal_tid, NULL, _zcap_rate_cal_wf, NULL);
 
     dbg_major("zcap module init ok");
 }
@@ -899,6 +1123,10 @@ void zcap_module_exit_bh()
         }
     }
 
+    // 结束rate线程
+    ATOM_STORE(&g_zcap_rx_rate_cal_tid_run, 0, MORDER_RELAXED);
+    pthread_join(g_zcap_rx_rate_cal_tid, NULL);
+
     dbg_major("zcap module de init bottom half ok");
 }
 
@@ -970,6 +1198,11 @@ void _zcap_start(zcap_t *captor)
         arg->index = i;
         pthread_create(&captor->alz[i].alz_t, NULL, _zcap_alz_routine, arg);
     }
+
+    // 创建src top统计线程
+    pthread_create(&captor->top.tid, NULL, _zcap_src_top_cal_routine, captor);
+    // 等待线程启动
+    while(!ATOM_LOAD(&captor->top.run, MORDER_RELAXED)) usleep(100);
 
     if(-1 == pthread_create(&captor->rx_t, NULL, _zcap_routine, captor))    // 新建抓包线程
     {
@@ -1143,12 +1376,46 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             safe_printf("---------------------------------------------\n");
 
             // L2信息
-            safe_printf("\n");
-            safe_printf("L2 Info\nUnicast Counts: %llu\nMulticast Counts: %llu\nBroadcast Counts: %llu\n",
+            safe_printf("\nL2 Info\nUnicast Counts: %llu\nMulticast Counts: %llu\nBroadcast Counts: %llu\n",
                 uc_counts, mc_counts, bc_counts);
 
+            // 打印协议统计数据
+            uint64_t arp = 0;
+            uint64_t icmp = 0;
+            uint64_t miscc_web = 0;
+            uint64_t ssh = 0;
+            uint64_t dns = 0;
+            uint64_t dhcp = 0;
+            uint64_t tcp_other = 0;
+            uint64_t udp_other = 0;
+            uint64_t others = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                arp += captor->alz[q].stats.arp;
+                icmp += captor->alz[q].stats.icmp;
+                miscc_web += captor->alz[q].stats.miscc_web;
+                ssh += captor->alz[q].stats.ssh;
+                dns += captor->alz[q].stats.dns;
+                dhcp += captor->alz[q].stats.dhcp;
+                tcp_other += captor->alz[q].stats.tcp_other;
+                udp_other += captor->alz[q].stats.udp_other;
+                others += captor->alz[q].stats.others;
+            }
+            safe_printf("\nProtocol Counts:\n"
+                "arp:           %d\n"
+                "icmp:          %d\n"
+                "miscc_web:     %d\n"
+                "ssh:           %d\n"
+                "dns:           %d\n"
+                "dhcp:          %d\n"
+                "tcp_other:     %d\n"
+                "udp_other:     %d\n"
+                "others:        %d\n",
+                arp, icmp, miscc_web, ssh, dns, dhcp, tcp_other, udp_other, others
+            );
+
             // 打印注册的过滤项
-            safe_printf("\n");
+            safe_printf("\nUser Register Packet Filter:\n");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
             safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
             zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
@@ -1186,6 +1453,43 @@ void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
         sleep(period);
         ATOM_STORE(&g_zcap_dump_pkt_info, 0, MORDER_RELAXED);
     }
+}
+
+void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[])
+{
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            zcap_src_top_heap_head_t heap = {};
+            zcap_src_top_heap_init(&heap);
+            // 加入堆排序
+            ev_with_spinlock(&captor->top.lock)
+            {
+                zcap_top_src_entry_t *entry = zcap_src_top_hash_first(&captor->top.hashtable);
+                while(entry)
+                {
+                    zcap_src_top_heap_add(&heap, entry);
+                    entry = zcap_src_top_hash_next(&captor->top.hashtable, entry);
+                }
+            }
+            // 打印一下
+            int top = 0;
+            zcap_top_src_entry_t *entry = NULL;
+            safe_printf("\nTop [%d] of interface: %s\n", ZCAP_TOP_CNT, captor->if_name);
+            while(top < ZCAP_TOP_CNT && (entry = zcap_src_top_heap_pop(&heap)))
+            {
+                safe_printf("Top %d: %02x-%02x-%02x-%02x-%02x-%02x, cnt %d\n", top+1,
+                    entry->smac[0], entry->smac[1], entry->smac[2], entry->smac[3], entry->smac[4], entry->smac[5], entry->cnt);
+                ++ top;
+            }
+
+            zcap_src_top_heap_fini(&heap);
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+    safe_printf("\n");
 }
 
 error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
@@ -1274,9 +1578,63 @@ error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size)
     return ERR_NO_ERROR;
 }
 
-static void _zcap_rate_cal_wf(void *args)
+error_code_e zcap_protocol_bar_cgi_cb(char *buf, size_t buf_size)
 {
-    while(1)
+    memset(buf, 0, buf_size);
+    snprintf(buf, buf_size, 
+        "{"
+            "\"labels\":[\"arp\",\"icmp\",\"miscc_web\",\"ssh\",\"dns\",\"dhcp\",\"tcp_other\",\"udp_other\",\"others\"]"
+    );
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            uint64_t arp = 0;
+            uint64_t icmp = 0;
+            uint64_t miscc_web = 0;
+            uint64_t ssh = 0;
+            uint64_t dns = 0;
+            uint64_t dhcp = 0;
+            uint64_t tcp_other = 0;
+            uint64_t udp_other = 0;
+            uint64_t others = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                arp += captor->alz[q].stats.arp;
+                icmp += captor->alz[q].stats.icmp;
+                miscc_web += captor->alz[q].stats.miscc_web;
+                ssh += captor->alz[q].stats.ssh;
+                dns += captor->alz[q].stats.dns;
+                dhcp += captor->alz[q].stats.dhcp;
+                tcp_other += captor->alz[q].stats.tcp_other;
+                udp_other += captor->alz[q].stats.udp_other;
+                others += captor->alz[q].stats.others;
+            }
+
+            snprintf(buf + strlen(buf), buf_size - strlen(buf),
+                    ",\"%s\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]",
+                captor->if_name,
+                arp, icmp, miscc_web, ssh, dns, dhcp, tcp_other, udp_other, others
+            );
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+    snprintf(buf + strlen(buf), buf_size - strlen(buf), "}");
+
+    return ERR_NO_ERROR;
+}
+
+static void* _zcap_rate_cal_wf(void *args)
+{
+    const char *name = "zcap_rate_cal";
+
+    prctl(PR_SET_NAME, name);
+    swdg_register(name, ZCAP_CAL_RATE_INTERVAL * 3);
+
+    ATOM_STORE(&g_zcap_rx_rate_cal_tid_run, 1, MORDER_RELAXED);
+    while(ATOM_LOAD(&g_zcap_rx_rate_cal_tid_run, MORDER_RELAXED))
     {
         ev_with_rdlock(&g_zcaptor_hash_rwlock)
         {
@@ -1308,4 +1666,6 @@ static void _zcap_rate_cal_wf(void *args)
         }
         usleep(ZCAP_CAL_RATE_INTERVAL * 1000);
     }
+
+    swdg_deregister(name);
 }

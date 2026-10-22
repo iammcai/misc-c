@@ -44,8 +44,6 @@
 #define ICMP_TYPE_ECHO_REPLY    (0x0)
 // icmp id
 #define ICMP_ID                 (0x7903)
-// icmp的三层协议类型
-#define ICMP                    (0x1)
 
 // ICMP请求次数
 #define ICMP_REQUEST_COUNT      (4)
