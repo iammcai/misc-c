@@ -72,6 +72,14 @@
 // dhcp客户端口号
 #define DHCP_UDP_CLIENT_PORT    (68)
 
+// tcp标志掩码
+#define TCP_FLAG_FIN    (0x01)
+#define TCP_FLAG_SYN    (0x02)
+#define TCP_FLAG_RST    (0x04)
+#define TCP_FLAG_PSH    (0x08)
+#define TCP_FLAG_ACK    (0x10)
+#define TCP_FLAG_URG    (0x20)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -106,6 +114,7 @@ typedef struct{
     uint32_t seq_num;       // 序列号
     uint32_t ack_num;       // 确认号
     uint16_t off_flags;     // 数据偏移(4bit) + 保留(3bit) + 标志位(9bit)
+#define TCP_HDR_FLAG(hdr)       (ntohs(hdr->off_flags) & 0x003f)
     uint16_t window;        // 窗口大小
     uint16_t checksum;      // 校验和
     uint16_t urgent_ptr;    // 紧急指针

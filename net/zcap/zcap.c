@@ -171,6 +171,11 @@ static void* _zcap_src_top_cal_routine(void *args);
 static void _zcap_src_top_add(zcap_top_cal_thd_t *top, uint8_t *mac);
 
 /**
+ * @brief       统计tcp flag
+ */
+static void _zcap_stats_tcpflag_handle(zcap_alz_stats_t *stats, uint8_t tcp_flag);
+
+/**
  * @brief       handle protocol and add count
  * 
  * @param[in]   stats       - stats
@@ -942,6 +947,33 @@ static void* _zcap_src_top_cal_routine(void *args)
     return NULL;
 }
 
+static void _zcap_stats_tcpflag_handle(zcap_alz_stats_t *stats, uint8_t tcp_flag)
+{
+    pfm_ensure_ret_void(stats);
+
+    // 纯syn，无ack -> 发起连接
+    if((tcp_flag & (TCP_FLAG_SYN | TCP_FLAG_ACK)) == TCP_FLAG_SYN)
+        stats->tcp_syn ++;
+    // syn+ack -> 服务器同意连接
+    else if((tcp_flag & (TCP_FLAG_SYN | TCP_FLAG_ACK)) == (TCP_FLAG_SYN | TCP_FLAG_ACK))
+        stats->tcp_syn_ack ++;
+    // rst，无论是否ack -> 异常重置或拒绝
+    else if(tcp_flag & TCP_FLAG_RST)
+        stats->tcp_rst ++;
+    // fin，无论ack -> 正常挥手关闭
+    else if(tcp_flag & TCP_FLAG_FIN)
+        stats->tcp_fin ++;
+    // psh + ack -> 携带业务数据
+    else if((tcp_flag & (TCP_FLAG_PSH | TCP_FLAG_ACK)) == (TCP_FLAG_PSH | TCP_FLAG_ACK))
+        stats->tcp_psh_ack ++;
+    // ack -> 纯确认
+    else if(tcp_flag == TCP_FLAG_ACK)
+        stats->tcp_pure_ack ++;
+    // 其它异常组合
+    else
+        stats->tcp_invalid ++;
+}
+
 static void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *packet)
 {
     pfm_ensure_ret_void(stats && packet);
@@ -969,8 +1001,9 @@ static void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *
         if(offset + sizeof(pkthdr_ipv4_t) > total_size)
             goto others;
         pkthdr_ipv4_t *ipv4_hdr = (pkthdr_ipv4_t*)ctx;
-        offset += sizeof(pkthdr_ipv4_t);
-        ctx += sizeof(pkthdr_ipv4_t);
+        uint8_t ihl = (ipv4_hdr->v_ihl & 0x0f) * 4;         // 计算实际的ipv4 header长度
+        offset += ihl;
+        ctx += ihl;
 
         uint8_t protocol = ipv4_hdr->protocol;
         if(protocol == ICMP)
@@ -983,8 +1016,11 @@ static void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *
             if(offset + sizeof(pkthdr_tcp_t) > total_size)
                 goto others;
             pkthdr_tcp_t *tcp_hdr = (pkthdr_tcp_t*)ctx;
-            offset += sizeof(pkthdr_tcp_t);
-            ctx += sizeof(pkthdr_tcp_t);
+            uint8_t tcp_hdr_len = ((ntohs(tcp_hdr->off_flags) >> 12) & 0x0f) * 4;     // 实际tcp header长度
+            offset += tcp_hdr_len;
+            ctx += tcp_hdr_len;
+
+            _zcap_stats_tcpflag_handle(stats, TCP_HDR_FLAG(tcp_hdr));
 
             uint16_t dport = ntohs(tcp_hdr->dst_port);
             if(dport == SSH_TCP_PORT)
@@ -1412,6 +1448,53 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 "udp_other:     %d\n"
                 "others:        %d\n",
                 arp, icmp, miscc_web, ssh, dns, dhcp, tcp_other, udp_other, others
+            );
+
+            // tcp分布
+            uint64_t tcp_syn = 0;
+            uint64_t tcp_syn_ack = 0;
+            uint64_t tcp_rst = 0;
+            uint64_t tcp_fin = 0;
+            uint64_t tcp_psh_ack = 0;
+            uint64_t tcp_pure_ack = 0;
+            uint64_t tcp_invalid = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                tcp_syn += captor->alz[q].stats.tcp_syn;
+                tcp_syn_ack += captor->alz[q].stats.tcp_syn_ack;
+                tcp_rst += captor->alz[q].stats.tcp_rst;
+                tcp_fin += captor->alz[q].stats.tcp_fin;
+                tcp_psh_ack += captor->alz[q].stats.tcp_psh_ack;
+                tcp_pure_ack += captor->alz[q].stats.tcp_pure_ack;
+                tcp_invalid += captor->alz[q].stats.tcp_invalid;
+            }
+            safe_printf(
+                "\n"
+                "-------------------------------------------------------------\n"
+                "               TCP Flag Traffic Statistics                \n"
+                "-------------------------------------------------------------\n"
+                "[ Connection Establishment (Handshake) ]\n"
+                "  SYN       (Client request to open connection):   %10u\n"
+                "  SYN-ACK   (Server acceptance of connection):     %10u\n"
+                "\n"
+                "[ Data Transfer Phase ]\n"
+                "  PSH+ACK   (Actual payload data transfer):        %10u\n"
+                "  Pure ACK  (Acknowledgment only, no payload):     %10u\n"
+                "\n"
+                "[ Connection Teardown & Errors ]\n"
+                "  FIN       (Graceful connection termination):     %10u\n"
+                "  RST       (Abrupt reset / refused connection):   %10u\n"
+                "\n"
+                "[ Security & Anomalies ]\n"
+                "  Invalid   (Malformed flags / port scanning):     %10u\n"
+                "-------------------------------------------------------------\n",
+                tcp_syn, 
+                tcp_syn_ack, 
+                tcp_psh_ack, 
+                tcp_pure_ack, 
+                tcp_fin, 
+                tcp_rst, 
+                tcp_invalid
             );
 
             // 打印注册的过滤项

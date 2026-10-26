@@ -9,18 +9,13 @@ document.addEventListener('DOMContentLoaded', function(){
         system: document.getElementById('page-system'),
     };
 
-    // 切换页面函数
     function switchPage(pageId) {
-        // 隐藏所有页面
         Object.values(pages).forEach(p => p.classList.remove('active-page'));
-        // 显示目标页面
         if (pages[pageId]) pages[pageId].classList.add('active-page');
-        // 更新菜单高亮
         navItems.forEach(item => item.classList.remove('active'));
         document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add('active');
     }
 
-    // 监听菜单点击
     navItems.forEach(item => {
         item.addEventListener('click', function(e) {
             e.preventDefault();
@@ -29,7 +24,6 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
-    // 默认激活 Dashboard
     switchPage('dashboard');
 
     // ----- 原有功能 -----
@@ -253,57 +247,120 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
-    /* =-=-=-=-=-=-=-=- stream 饼图 (eth0 & wlan0) -=-=-=-=-=-=-=-= */
+    /* =-=-=-=-=-=-=-=- stream 流量大小柱状图 (eth0 & wlan0) -=-=-=-=-=-=-=-= */
     
     // 1. 提取公共的颜色和配置
-    const chartColors = [
+    const streamChartColors = [
         'rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)',
         'rgba(75, 192, 192, 0.8)', 'rgba(104, 112, 196, 0.8)',
         'rgba(223, 134, 70, 0.8)', 'rgba(215, 68, 208, 0.8)',
         'rgba(255, 206, 86, 0.8)'
     ];
-    // 2. 封装图表创建函数
+
+    // 2. 过滤掉 data 为 0 的项，并同步映射颜色
+    function filterStreamData(labels, data) {
+        const fLabels = [];
+        const fData = [];
+        const fBgColors = [];
+        const fBorderColors = [];
+        let colorIdx = 0;
+
+        for (let i = 0; i < labels.length; i++) {
+            if (data[i] > 0) {
+                fLabels.push(labels[i]);
+                fData.push(data[i]);
+                const color = streamChartColors[colorIdx % streamChartColors.length];
+                fBgColors.push(color);
+                fBorderColors.push(color.replace('0.8', '1'));
+                colorIdx++;
+            }
+        }
+
+        if (fData.length === 0) {
+            return {
+                labels: ['No Traffic'],
+                data: [1], 
+                bgColors: ['rgba(200, 200, 200, 0.3)'],
+                borderColors: ['rgba(200, 200, 200, 0.5)'],
+                isEmpty: true
+            };
+        }
+
+        return { labels: fLabels, data: fData, bgColors: fBgColors, borderColors: fBorderColors, isEmpty: false };
+    }
+
+    // 3. 封装图表创建函数 (由 doughnut 改为 bar)
     function createStreamChart(canvasId) {
         const canvas = document.getElementById(canvasId);
         if (!canvas || typeof Chart === 'undefined') return null;
 
         return new Chart(canvas.getContext('2d'), {
-            type: 'doughnut',
+            type: 'bar',
             data: {
                 labels: ['Waiting for backend...'],
                 datasets: [{
+                    label: 'pkts',
                     data: [1],
-                    backgroundColor: ['#cccccc'],
-                    borderColor: '#ffffff',
-                    borderWidth: 3,
-                    hoverOffset: 15
+                    backgroundColor: streamChartColors,
+                    borderColor: streamChartColors.map(c => c.replace('0.8', '1')),
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    hoverBackgroundColor: streamChartColors.map(c => c.replace('0.8', '1'))
                 }]
             },
             options: {
                 responsive: true,
-                cutout: '60%',
+                maintainAspectRatio: false,
                 plugins: {
-                    title: {            // 标题
+                    title: {
                         display: true,
                         text: canvasId.includes('eth0') ? 'eth0 Traffic Size Distribution' : 'wlan0 Traffic Size Distribution',
                         font: { size: 16, weight: 'bold' },
                         padding: { bottom: 15 }
                     },
-                    legend: {
-                        position: 'bottom',
-                        labels: { padding: 15, usePointStyle: true, pointStyle: 'circle', font: { size: 12 } }
-                    },
+                    legend: { display: false },
                     tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
                         padding: 12,
                         cornerRadius: 8,
                         callbacks: {
                             label: function(context) {
                                 let label = context.label || '';
-                                let value = context.parsed || 0;
-                                let total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                let percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                                return ` ${label}: ${value} pkts (${percentage}%)`; 
+                                let value = context.parsed.y || 0;
+                                
+                                if (label === 'No Traffic' || label === 'Error') return ` ${label}`;
+                                if (!value || value <= 0) return ` ${label}: 暂无数据`;
+                                
+                                let total = context.dataset.data.reduce((a, b) => a + (b || 0), 0);
+                                let percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                return ` ${label}: ${value.toLocaleString()} pkts (${percentage}%)`; 
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { font: { size: 12, weight: 'bold' } }
+                    },
+                    y: {
+                        type: 'logarithmic',
+                        min: 1,
+                        grid: { color: 'rgba(200, 200, 200, 0.2)' },
+                        ticks: {
+                            font: { size: 11 },
+                            color: '#cdd6f4',
+                            callback: function(value) {
+                                const log10 = Math.log10(value);
+                                if (!Number.isInteger(log10)) return null;
+                                if (value === 1) return '1';
+                                if (value === 10) return '10';
+                                if (value === 100) return '100';
+                                if (value === 1000) return '1k';
+                                if (value === 10000) return '10k';
+                                if (value === 100000) return '100k';
+                                if (value === 1000000) return '1M';
+                                return value.toExponential(0);
                             }
                         }
                     }
@@ -311,28 +368,75 @@ document.addEventListener('DOMContentLoaded', function(){
             }
         });
     }
-    // 3. 分别创建两个图表实例
-    let eth0ChartInstance = createStreamChart('eth0_stream_pie');
-    let wlan0ChartInstance = createStreamChart('wlan0_stream_pie');
-    // 4. 封装错误状态处理函数
-    function setChartError(chartInstance) {
+
+    // 4. 分别创建两个图表实例
+    let eth0ChartInstance = createStreamChart('eth0_stream_bar'); 
+    let wlan0ChartInstance = createStreamChart('wlan0_stream_bar');
+
+    // 5. 供外部调用的正常数据更新函数
+    function updateStreamChart(chartInstance, rawLabels, rawData) {
         if (!chartInstance) return;
-        chartInstance.data.labels = ['无数据'];
+        const filtered = filterStreamData(rawLabels, rawData);
+        chartInstance.data.labels = filtered.labels;
+        chartInstance.data.datasets[0].data = filtered.data;
+        chartInstance.data.datasets[0].backgroundColor = filtered.bgColors;
+        chartInstance.data.datasets[0].borderColor = filtered.borderColors;
+        chartInstance.data.datasets[0].hoverBackgroundColor = filtered.borderColors;
+        chartInstance.update();
+    }
+
+    // 6. 封装错误状态处理函数 (适配柱状图与对数轴)
+    function setStreamChartError(chartInstance) {
+        if (!chartInstance) return;
+        chartInstance.data.labels = ['Error'];
         chartInstance.data.datasets[0].data = [1];
-        chartInstance.data.datasets[0].backgroundColor = ['#ffcccc'];
+        chartInstance.data.datasets[0].backgroundColor = ['rgba(255, 204, 204, 0.5)'];
+        chartInstance.data.datasets[0].borderColor = ['#ff9999'];
+        chartInstance.data.datasets[0].hoverBackgroundColor = ['#ff9999'];
         chartInstance.update();
     }
 
     /* =-=-=-=-=-=-=-=- protocol 柱状图 (eth0 & wlan0) -=-=-=-=-=-=-=-= */
-    // 1. 公共的颜色和配置
+
     const barChartColors = [
         'rgba(54, 162, 235, 0.8)', 'rgba(255, 99, 132, 0.8)',
         'rgba(75, 192, 192, 0.8)', 'rgba(104, 112, 196, 0.8)',
         'rgba(223, 134, 70, 0.8)', 'rgba(215, 68, 208, 0.8)',
         'rgba(255, 206, 86, 0.8)'
     ];
-    // 2. 封装图表创建函数
-        function createProtocolBarChart(canvasId) {
+
+    function filterChartData(labels, data) {
+        const fLabels = [];
+        const fData = [];
+        const fBgColors = [];
+        const fBorderColors = [];
+        let colorIdx = 0;
+
+        for (let i = 0; i < labels.length; i++) {
+            if (data[i] > 0) {
+                fLabels.push(labels[i]);
+                fData.push(data[i]);
+                const color = barChartColors[colorIdx % barChartColors.length];
+                fBgColors.push(color);
+                fBorderColors.push(color.replace('0.8', '1'));
+                colorIdx++;
+            }
+        }
+
+        if (fData.length === 0) {
+            return {
+                labels: ['No Traffic'],
+                data: [1],
+                bgColors: ['rgba(200, 200, 200, 0.3)'],
+                borderColors: ['rgba(200, 200, 200, 0.5)'],
+                isEmpty: true
+            };
+        }
+
+        return { labels: fLabels, data: fData, bgColors: fBgColors, borderColors: fBorderColors, isEmpty: false };
+    }
+
+    function createProtocolBarChart(canvasId) {
         const canvas = document.getElementById(canvasId);
         if (!canvas || typeof Chart === 'undefined') return null;
 
@@ -342,7 +446,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 labels: ['Waiting for backend'],
                 datasets: [{
                     label: 'pkts',
-                    data: [0],
+                    data: [1],
                     backgroundColor: barChartColors,
                     borderColor: barChartColors.map(c => c.replace('0.8', '1')),
                     borderWidth: 2,
@@ -369,10 +473,11 @@ document.addEventListener('DOMContentLoaded', function(){
                             label: function(context) {
                                 let protocol = context.label || '';
                                 let value = context.parsed.y || 0;
-                                if (!value) return ` ${protocol}: 暂无数据`;
+                                if (protocol === 'No Traffic' || protocol === 'Error') return ` ${protocol}`;
+                                if (!value || value <= 0) return ` ${protocol}: 暂无数据`;
                                 let total = context.dataset.data.reduce((a, b) => a + (b || 0), 0);
                                 let percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                                return ` ${protocol}: ${value.toLocaleString()} 个 (${percentage}%)`;
+                                return ` ${protocol}: ${value.toLocaleString()} pkts (${percentage}%)`;
                             }
                         }
                     }
@@ -408,16 +513,27 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     }
 
-    // 3. 分别创建两个图表实例
     let eth0BarInstance = createProtocolBarChart('eth0_protocol_bar');
     let wlan0BarInstance = createProtocolBarChart('wlan0_protocol_bar');
-    // 4. 封装错误/无数据状态处理函数
+
+    function updateBarChart(chartInstance, rawLabels, rawData) {
+        if (!chartInstance) return;
+        const filtered = filterChartData(rawLabels, rawData);
+        chartInstance.data.labels = filtered.labels;
+        chartInstance.data.datasets[0].data = filtered.data;
+        chartInstance.data.datasets[0].backgroundColor = filtered.bgColors;
+        chartInstance.data.datasets[0].borderColor = filtered.borderColors;
+        chartInstance.data.datasets[0].hoverBackgroundColor = filtered.borderColors;
+        chartInstance.update();
+    }
+
     function setBarChartError(chartInstance) {
         if (!chartInstance) return;
-        chartInstance.data.labels = ['无数据'];
-        chartInstance.data.datasets[0].data = [0];
-        chartInstance.data.datasets[0].backgroundColor = ['#ffcccc'];
+        chartInstance.data.labels = ['Error'];
+        chartInstance.data.datasets[0].data = [1];
+        chartInstance.data.datasets[0].backgroundColor = ['rgba(255, 204, 204, 0.5)'];
         chartInstance.data.datasets[0].borderColor = ['#ff9999'];
+        chartInstance.data.datasets[0].hoverBackgroundColor = ['#ff9999'];
         chartInstance.update();
     }
 
@@ -434,6 +550,7 @@ document.addEventListener('DOMContentLoaded', function(){
             clearTimeout(timeoutId);
             if(!r.ok) throw new Error('Network response was not ok');
             const data = await r.json();
+
             update_led_status(data.led.led_status);
             env_temp.textContent = `Temperature: ${data.sht30.temperature.toFixed(1)} ℃`;
             env_humi.textContent = `Humidity: ${data.sht30.humidity.toFixed(1)} %RH`;
@@ -442,61 +559,63 @@ document.addEventListener('DOMContentLoaded', function(){
             update_cpu_usage(cpu1, data.sysmon.cpu1);
             update_cpu_usage(cpu2, data.sysmon.cpu2);
             update_cpu_usage(cpu3, data.sysmon.cpu3);
+
             const eth0_rx_size = (Number(data.network.eth0.rx_size) / 1024 / 1024).toFixed(3);
             const wlan0_rx_size = (Number(data.network.wlan0.rx_size) / 1024 / 1024).toFixed(3);
             eth0_rx.textContent = `eth0: 👇 ${data.network.eth0.rx_rate} kB/s, ${eth0_rx_size} MB`;
             wlan0_rx.textContent = `wlan0: 👇 ${data.network.wlan0.rx_rate} kB/s, ${wlan0_rx_size} MB`;
 
-            if (data.stream_pie) {
-                // 更新 eth0
-                if (eth0ChartInstance && data.stream_pie.eth0) {
-                    eth0ChartInstance.data.labels = data.stream_pie.labels;
-                    eth0ChartInstance.data.datasets[0].data = data.stream_pie.eth0;
-                    eth0ChartInstance.data.datasets[0].backgroundColor = chartColors;
-                    eth0ChartInstance.update();
-                }
-                // 更新 wlan0
-                if (wlan0ChartInstance && data.stream_pie.wlan0) {
-                    wlan0ChartInstance.data.labels = data.stream_pie.labels;
-                    wlan0ChartInstance.data.datasets[0].data = data.stream_pie.wlan0;
-                    wlan0ChartInstance.data.datasets[0].backgroundColor = chartColors;
-                    wlan0ChartInstance.update();
-                }
+            // --- 获取卡片 DOM 元素 ---
+            const cardEth0 = document.getElementById('card-eth0');
+            const cardWlan0 = document.getElementById('card-wlan0');
+
+            // --- 辅助判断函数：检查后端是否返回了该网卡的有效数据 ---
+            function hasValidData(netInterface) {
+                const hasProtocol = data.protocol_bar && Array.isArray(data.protocol_bar[netInterface]) && data.protocol_bar[netInterface].length > 0;
+                const hasStream = data.stream_pie && Array.isArray(data.stream_pie[netInterface]) && data.stream_pie[netInterface].length > 0;
+                return hasProtocol || hasStream;
             }
 
-            if (data.protocol_bar) {
-                const labels = data.protocol_bar.labels || [];
-                const dynamicBarColors = labels.map((_, i) =>
-                    barChartColors[i % barChartColors.length]
-                );
-                const dynamicBarBorders = dynamicBarColors.map(c => c.replace('0.8', '1'));
-
-                // eth0：先判空再处理
-                if (eth0BarInstance && Array.isArray(data.protocol_bar.eth0)) {
-                    const safeData = data.protocol_bar.eth0.map(v => v === 0 ? null : v);
-                    eth0BarInstance.data.labels = labels;
-                    eth0BarInstance.data.datasets[0].data = safeData;
-                    eth0BarInstance.data.datasets[0].backgroundColor = dynamicBarColors;
-                    eth0BarInstance.data.datasets[0].borderColor = dynamicBarBorders;
-                    eth0BarInstance.update();
+            // ================= 处理 eth0 =================
+            if (hasValidData('eth0')) {
+                // 有数据：显示卡片
+                if (cardEth0) cardEth0.style.display = ''; 
+                
+                // 更新流量柱状图
+                if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.eth0)) {
+                    updateStreamChart(eth0ChartInstance, data.stream_pie.labels, data.stream_pie.eth0);
                 }
-
-                // wlan0：同样保护
-                if (wlan0BarInstance && Array.isArray(data.protocol_bar.wlan0)) {
-                    const safeData = data.protocol_bar.wlan0.map(v => v === 0 ? null : v);
-                    wlan0BarInstance.data.labels = labels;
-                    wlan0BarInstance.data.datasets[0].data = safeData;
-                    wlan0BarInstance.data.datasets[0].backgroundColor = dynamicBarColors;
-                    wlan0BarInstance.data.datasets[0].borderColor = dynamicBarBorders;
-                    wlan0BarInstance.update();
+                // 更新协议柱状图
+                if (data.protocol_bar && Array.isArray(data.protocol_bar.labels) && Array.isArray(data.protocol_bar.eth0)) {
+                    updateBarChart(eth0BarInstance, data.protocol_bar.labels, data.protocol_bar.eth0);
                 }
+            } else {
+                // 无数据：彻底隐藏整个卡片
+                if (cardEth0) cardEth0.style.display = 'none';
             }
 
+            // ================= 处理 wlan0 =================
+            if (hasValidData('wlan0')) {
+                // 有数据：显示卡片
+                if (cardWlan0) cardWlan0.style.display = '';
+                
+                // 更新流量柱状图
+                if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.wlan0)) {
+                    updateStreamChart(wlan0ChartInstance, data.stream_pie.labels, data.stream_pie.wlan0);
+                }
+                // 更新协议柱状图
+                if (data.protocol_bar && Array.isArray(data.protocol_bar.labels) && Array.isArray(data.protocol_bar.wlan0)) {
+                    updateBarChart(wlan0BarInstance, data.protocol_bar.labels, data.protocol_bar.wlan0);
+                }
+            } else {
+                // 无数据：彻底隐藏整个卡片
+                if (cardWlan0) cardWlan0.style.display = 'none';
+            }
         } catch (err) {
             if (err.name === 'AbortError') {
                 console.warn('sync timeout');
             } else {
-                console.warn('sunc fail: ', err.message);
+                console.warn('sync fail: ', err.message);
             }
             update_led_status('unknown');
             env_temp.textContent = `Temperature: -- ℃`;
@@ -509,12 +628,16 @@ document.addEventListener('DOMContentLoaded', function(){
             eth0_rx.textContent = 'eth0: 👇 -- kB/s, -- MB';
             wlan0_rx.textContent = 'wlan0: 👇 -- kB/s, -- MB';
 
-            setChartError(eth0ChartInstance);
-            setChartError(wlan0ChartInstance);
+            setStreamChartError(eth0ChartInstance);
+            setStreamChartError(wlan0ChartInstance);
 
             setBarChartError(eth0BarInstance);
             setBarChartError(wlan0BarInstance);
-
+            // 异常时显示
+            const cardEth0 = document.getElementById('card-eth0');
+            const cardWlan0 = document.getElementById('card-wlan0');
+            if (cardEth0) cardEth0.style.display = '';
+            if (cardWlan0) cardWlan0.style.display = '';
         } finally {
             clearTimeout(timeoutId);
             syncTimer = setTimeout(sync_poll, 5000);

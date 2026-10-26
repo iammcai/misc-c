@@ -157,6 +157,14 @@ typedef struct{
     uint64_t tcp_other;
     uint64_t udp_other;
     uint64_t others;
+    // tcp统计
+    uint64_t tcp_syn;       // 纯syn，无ack，发起连接
+    uint64_t tcp_syn_ack;   // 服务端同意连接
+    uint64_t tcp_rst;       // 异常重置、拒绝
+    uint64_t tcp_fin;       // 正常挥手关闭
+    uint64_t tcp_psh_ack;   // 携带业务数据的包
+    uint64_t tcp_pure_ack;  // 纯ack，确认包
+    uint64_t tcp_invalid;   // 异常组合
 } attr_aligned(64) zcap_alz_stats_t;        // 按照64B对齐，避免同一个cache line伪共享，多个线程会干扰
 
 // 解析报文结构
