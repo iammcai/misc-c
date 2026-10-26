@@ -244,7 +244,7 @@ error_code_e sht30_read_humidity(double *humi)
     return ERR_NO_ERROR;
 }
 
-error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e sht30_sensor_http_cgi_cb(json_builder_t *jb)
 {
      double temp_raw = 0.0;
      double humi_raw = 0.0;
@@ -253,7 +253,27 @@ error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size)
     _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw);
     _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw);
 
-    snprintf(buf, buf_size, "{\"temperature\":%.1f,\"humidity\":%.1f}", temp_raw / 1000.0, humi_raw / 1000.0);
+    json_object_start(jb);
+
+    json_add_double(jb, "temperature", temp_raw / 1000.0);
+    json_add_double(jb, "humidity", humi_raw / 1000.0);
+
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e sht30_sync_http_cgi_cb(json_builder_t *jb)
+{
+     double temp_raw = 0.0;
+     double humi_raw = 0.0;
+
+     // 暂时忽略错误，比如未接上sht30，返回0给前端
+    _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw);
+    _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw);
+
+    json_add_double(jb, "temperature", temp_raw / 1000.0);
+    json_add_double(jb, "humidity", humi_raw / 1000.0);
 
     return ERR_NO_ERROR;
 }

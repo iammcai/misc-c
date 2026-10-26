@@ -34,6 +34,7 @@
 #include "sht30/sht30.h"
 #include "sysmon/sysmon.h"
 #include "zcap/zcap.h"
+#include "mp/mp_nonfixed.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -70,6 +71,9 @@ typedef struct{
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
+
+// 声明以使用web的内存池
+declare_mp_nonfixed_extern(web_nonfixed_mp)
 
 /**
  * @brief       find position of \r\n
@@ -138,12 +142,11 @@ static attr_pure_inline const char* _http_get_mime_type(const char *path);
  * @brief       get cgi response body
  * 
  * @param[in]   uri     - uri
- * @param[in]   buf     - json buffer
- * @param[in]   buf_size    - size of buffer
+ * @param[in]   jb      - json builder
  * 
  * @retval      error code
  */
-static attr_pure_inline error_code_e _http_get_cgi_response(const char *uri, char *buf, size_t buf_size);
+static attr_pure_inline error_code_e _http_get_cgi_response(const char *uri, json_builder_t *jb);
 
 /**
  * @brief       send http error response
@@ -157,14 +160,16 @@ static void _http_send_error_response(int fd, int code, const char *reason);
 /**
  * @brief       http response for cgi: /api/sys/realtime
  */
-static attr_force_inline error_code_e sys_realtime_http_cgi_cb(char *buf, size_t buf_size)
+static attr_force_inline error_code_e sys_realtime_http_cgi_cb(json_builder_t *jb)
 {
     char time_str[32] = {}; // 32长度足够
 
     if(ERR_NO_ERROR != realtime_get_str(time_str, sizeof(time_str)))
         return ERR_NOT_SUPPORT;
 
-    snprintf(buf, buf_size, "{\"realtime\":\"%s\"}", time_str);
+    json_object_start(jb);
+    json_add_string(jb, "realtime", time_str);
+    json_object_end(jb);
 
     return ERR_NO_ERROR;
 }
@@ -174,28 +179,35 @@ static attr_force_inline error_code_e sys_realtime_http_cgi_cb(char *buf, size_t
  * 
  * @note        web端定时刷新接口，需要收集所有模块数据上报
  */
-static attr_force_inline error_code_e _http_sync_http_cgi_cb(char *buf, size_t buf_size)
+static attr_force_inline error_code_e _http_sync_http_cgi_cb(json_builder_t *jb)
 {
-    memset(buf, 0, buf_size);
+    json_object_start(jb);
+    // led
+    json_object_start_with_key(jb, "led");
+    led_sync_http_cgi_cb(jb);
+    json_object_end(jb);
+    // sht30
+    json_object_start_with_key(jb, "sht30");
+    sht30_sync_http_cgi_cb(jb);
+    json_object_end(jb);
+    // sysmon
+    json_object_start_with_key(jb, "sysmon");
+    sysmon_sync_http_cgi_cb(jb);
+    json_object_end(jb);
+    // network
+    json_object_start_with_key(jb, "network");
+    zcap_sync_rx_http_cgi_cb(jb);
+    json_object_end(jb);
+    // stream_pie
+    json_object_start_with_key(jb, "stream_pie");
+    zcap_sync_stream_pie_cgi_cb(jb);
+    json_object_end(jb);
+    // protocol_bar
+    json_object_start_with_key(jb, "protocol_bar");
+    zcap_sync_protocol_bar_cgi_cb(jb);
+    json_object_end(jb);
 
-    char led_status[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == led_status_http_cgi_cb(led_status, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-    char sht30_sensor[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == sht30_sensor_http_cgi_cb(sht30_sensor, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-    char sysmon_cpu_usage[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == sysmon_cpu_usage_http_cgi_cb(sysmon_cpu_usage, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-    char network_status_rxrate[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == zcap_rx_http_cgi_cb(network_status_rxrate, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-    char zcap_stream_pie[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == zcap_stream_pie_cgi_cb(zcap_stream_pie, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-    char zcap_protocol_bar[HTTP_CGI_BODY_BUFFER_SIZE] = {};
-    pfm_ensure_ret(ERR_NO_ERROR == zcap_protocol_bar_cgi_cb(zcap_protocol_bar, HTTP_CGI_BODY_BUFFER_SIZE), ERR_WEB_HTTP_CGI_RESP_ERROR);
-
-    int n = snprintf(buf, buf_size,
-        "{\"led\":%s,\"sht30\":%s,\"sysmon\":%s,\"network\":%s,\"stream_pie\":%s,\"protocol_bar\":%s}",
-        led_status, sht30_sensor, sysmon_cpu_usage, network_status_rxrate, zcap_stream_pie, zcap_protocol_bar);
-    if(unlikely(n >= buf_size))
-        return ERR_WEB_HTTP_CGI_RESP_ERROR;
+    json_object_end(jb);
 
     return ERR_NO_ERROR;
 }
@@ -244,14 +256,14 @@ static inline const char* _http_get_mime_type(const char *path)
     return "application/octet-stream";
 }
 
-static inline error_code_e _http_get_cgi_response(const char *uri, char *buf, size_t buf_size)
+static inline error_code_e _http_get_cgi_response(const char *uri, json_builder_t *jb)
 {
     dbg_major("receive uri %s", uri);
 
     for(size_t i = 0; i < array_size(g_http_cgi_response_table); ++ i)
         if(0 == strcasecmp(g_http_cgi_response_table[i].uri, uri))
             if(g_http_cgi_response_table[i].func)
-                return g_http_cgi_response_table[i].func(buf, buf_size);
+                return g_http_cgi_response_table[i].func(jb);
             else
                 return ERR_WEB_HTTP_CGI_NOT_FOUND;
     return ERR_WEB_HTTP_CGI_NOT_FOUND;
@@ -521,17 +533,26 @@ void http_send_cgi_response(int fd, const char *uri)
     // TODO: 实现
     dbg("respone cgi %s for fd %d", uri, fd);
 
+    char *buffer = NULL;
+
     /* =-=-=-=-=-=-=-=- 获取cgi响应体 -=-=-=-=-=-=-=-= */
 
-    char body[HTTP_BODY_BUFFER_SIZE] = {};
-    error_code_e ret = _http_get_cgi_response(uri, body, HTTP_BODY_BUFFER_SIZE);
+    json_builder_t *jb = json_create();
+    error_code_e ret = _http_get_cgi_response(uri, jb);
+    // dbg_always("get body length %d, data: %s", json_length_get(jb), json_string_get(jb));
     if(ERR_NO_ERROR != ret)
         goto not_found;
 
     /* =-=-=-=-=-=-=-=- 组装响应 -=-=-=-=-=-=-=-= */
 
-    char buffer[HTTP_BODY_BUFFER_SIZE] = {};
-    int len = snprintf(buffer, sizeof(buffer),
+    size_t buf_size = HTTP_HEADER_BUFFER_SIZE + json_length_get(jb);
+    buffer = mp_nonfixed_node_get(web_nonfixed_mp, buf_size);    // header预留+实际body长度
+    if(unlikely(!buffer))
+    {
+        dbg_error("no memory for http response buffer");
+        goto not_found;
+    }
+    int len = snprintf(buffer, buf_size - 1,
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: application/json; charset=utf-8\r\n"
         "Content-Length: %ld\r\n"
@@ -539,7 +560,7 @@ void http_send_cgi_response(int fd, const char *uri)
         "Cache-Control: no-cache\r\n"
         "\r\n"
         "%s",
-        (long)strlen(body), body);
+        json_length_get(jb), json_string_get(jb));
 
     /* =-=-=-=-=-=-=-=- 发送 -=-=-=-=-=-=-=-= */
 
@@ -555,9 +576,14 @@ void http_send_cgi_response(int fd, const char *uri)
         written += w;
     }
 
+    mp_nonfixed_node_put(buffer);
+    json_destroy(jb);
+
     return;
 
 not_found:
+    if(buffer)  mp_nonfixed_node_put(buffer);
+    if(jb)      json_destroy(jb);
     _http_send_error_response(fd, 404, "Not Found");
     return;
 }

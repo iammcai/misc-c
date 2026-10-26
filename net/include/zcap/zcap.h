@@ -32,6 +32,7 @@
 #include "net_comm.h"
 #include "cli/cli.h"
 #include "type/type_heap.h"
+#include "json_util/json_util.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -410,17 +411,38 @@ extern int zcap_status_get(const char *if_name);
 /**
  * @brief       cb for http cgi: /api/network/status/rx
  */
-extern error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sync/ zcap rx module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       cb for http cgi: /api/network/stream/pie
  */
-extern error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e zcap_stream_pie_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sync/ zcap pie module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e zcap_sync_stream_pie_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       cb for http cgi: /api/network/protocol/bar
  */
-extern error_code_e zcap_protocol_bar_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e zcap_protocol_bar_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sync/ zcap protocol bar module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e zcap_sync_protocol_bar_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       register filter into zcaptor

@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include "plat/compiler.h"
 #include "plat/debug.h"
+#include "json_util/json_util.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -70,7 +71,7 @@ typedef struct{
 }http_request_t;
 
 // cgi数据内容返回的函数签名
-typedef error_code_e (*http_cgi_response_f)(char *buf, size_t buf_size);
+typedef error_code_e (*http_cgi_response_f)(json_builder_t *jb);
 
 // cgi接口表项条目定义
 typedef struct{

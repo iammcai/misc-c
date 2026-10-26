@@ -102,47 +102,76 @@ void led_off_cli_hook(unsigned char argc, char *argv[])
     syslog_notice(SYSLOG_MODULE_LED, "led turn off");
 }
 
-error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e led_turn_http_cgi_cb(json_builder_t *jb)
 {
+    json_object_start(jb);
+
     led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
     switch(status)
     {
         case LED_STATUS_OFF:
             led_on_cli_hook(0, NULL);
-            snprintf(buf, buf_size, "%s", "{\"status\":\"on\"}");
+            json_add_string(jb, "status", "on");
             break;
         case LED_STATUS_ON:
             led_off_cli_hook(0, NULL);
-            snprintf(buf, buf_size, "%s", "{\"status\":\"off\"}");
-            break;
-        case LED_STATUS_UNKNOWN:
-            snprintf(buf, buf_size, "%s", "{\"status\":\"unknown\"}");
+            json_add_string(jb, "status", "off");
             break;
         default:
-            return ERR_NOT_SUPPORT;
+            json_add_string(jb, "status", "unknown");
+            break;
     }
+
+    json_object_end(jb);
 
     return ERR_NO_ERROR;
 }
 
-error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e led_status_http_cgi_cb(json_builder_t *jb)
+{
+    json_object_start(jb);
+
+    led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
+    switch(status)
+    {
+        case LED_STATUS_OFF:
+            json_add_string(jb, "status", "off");
+            break;
+        case LED_STATUS_ON:
+            json_add_string(jb, "status", "on");
+            break;
+        default:
+            json_add_string(jb, "status", "unknown");
+            break;
+    }
+
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e led_sync_http_cgi_cb(json_builder_t *jb)
 {
     led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
     switch(status)
     {
         case LED_STATUS_OFF:
-            snprintf(buf, buf_size, "%s", "{\"led_status\":\"off\"}");
+            json_add_string(jb, "status", "off");
             break;
         case LED_STATUS_ON:
-            snprintf(buf, buf_size, "%s", "{\"led_status\":\"on\"}");
-            break;
-        case LED_STATUS_UNKNOWN:
-            snprintf(buf, buf_size, "%s", "{\"led_status\":\"unknown\"}");
+            json_add_string(jb, "status", "on");
             break;
         default:
-            return ERR_NOT_SUPPORT;
+            json_add_string(jb, "status", "unknown");
+            break;
     }
+
     return ERR_NO_ERROR;
+}
+
+led_status_e led_status_get()
+{
+    return ATOM_LOAD(&g_led_status, MORDER_RELAXED);
 }
 
 void led_module_init()

@@ -236,16 +236,36 @@ void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
     safe_printf("\r\n");
 }
 
-error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e sysmon_cpu_usage_http_cgi_cb(json_builder_t *jb)
 {
     double temp[SYSMON_CPU_COUNTS] = {};
     ev_with_spinlock(&g_sysmon_cpu_usage_lock)
         memcpy(temp, g_sysmon_cpu_usages, sizeof(double)*SYSMON_CPU_COUNTS);
 
-    memset(buf, 0, buf_size);
-    snprintf(buf, buf_size, 
-        "{\"total\":\"%.2f\",\"cpu0\":\"%.2f\",\"cpu1\":\"%.2f\",\"cpu2\":\"%.2f\",\"cpu3\":\"%.2f\"}",
-        temp[0], temp[1], temp[2], temp[3], temp[4]);
+    json_object_start(jb);
+
+    json_add_double(jb, "total", temp[0]);
+    json_add_double(jb, "cpu0", temp[1]);
+    json_add_double(jb, "cpu1", temp[2]);
+    json_add_double(jb, "cpu2", temp[3]);
+    json_add_double(jb, "cpu3", temp[4]);
+
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e sysmon_sync_http_cgi_cb(json_builder_t *jb)
+{
+    double temp[SYSMON_CPU_COUNTS] = {};
+    ev_with_spinlock(&g_sysmon_cpu_usage_lock)
+        memcpy(temp, g_sysmon_cpu_usages, sizeof(double)*SYSMON_CPU_COUNTS);
+
+    json_add_double(jb, "total", temp[0]);
+    json_add_double(jb, "cpu0", temp[1]);
+    json_add_double(jb, "cpu1", temp[2]);
+    json_add_double(jb, "cpu2", temp[3]);
+    json_add_double(jb, "cpu3", temp[4]);
 
     return ERR_NO_ERROR;
 }

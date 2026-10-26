@@ -32,6 +32,7 @@
 #include "plat/atom.h"
 #include "type/type_list.h"
 #include "mp/mp_fixed.h"
+#include "mp/mp_nonfixed.h"
 #include "zcap/zcap.h"
 #include "swdg/swdg.h"
 
@@ -47,6 +48,9 @@
 
 // web缓冲区长度
 #define WEB_BUFFER_SIZE         (4096)
+
+// web nonfixed内存池大小，256KB
+#define WEB_NONFIXED_MP_SIZE    (256 << 10)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -133,6 +137,9 @@ static attr_force_inline void _web_mgnt_exit(void);
 
 // fixed内存池，用于connection
 declare_mp_fixed(web_connection, WEB_CONNECT_MAX_CNT, sizeof(web_connection_t))
+
+// nonfixed内存池，用于http buffer等
+declare_mp_nonfixed(web_nonfixed_mp, WEB_NONFIXED_MP_SIZE)
 
 // 全局web connection链表
 static web_connection_list_head_t g_web_conn_list = {};
@@ -413,6 +420,8 @@ void web_module_init()
 {
     mem_type_attr_fixed_register(web_connection);
     web_connection_list_init(&g_web_conn_list);
+
+    mp_nonfixed_register(web_nonfixed_mp)
 
     _web_mgnt_init();
 

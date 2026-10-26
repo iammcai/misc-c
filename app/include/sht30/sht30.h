@@ -23,6 +23,7 @@
 
 #include "plat/compiler.h"
 #include "plat/debug.h"
+#include "json_util/json_util.h"
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -40,10 +41,15 @@ extern void sht30_show_humi(unsigned char argc, char *argv[]);
 
 /**
  * @brief       cb for http cgi: /api/sht30/sensor
- * 
- * @retval      json for temp and humi
  */
-extern error_code_e sht30_sensor_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e sht30_sensor_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sync sht30 module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e sht30_sync_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       get temperature form sht30

@@ -1575,10 +1575,8 @@ void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[])
     safe_printf("\n");
 }
 
-error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
+error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
 {
-    memset(buf, 0, buf_size);
-
     double eth0_rx_rate = 0;
     double wlan0_rx_rate = 0;
     unsigned long eth0_rx_size = 0;
@@ -1591,7 +1589,6 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
         {
             if(0 == strcmp(captor->if_name, "eth0"))
             {
-                // TODO: 
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
                     eth0_rx_size += captor->alz[q].stats.bytes;
                 ev_with_spinlock(&captor->stats.lock)
@@ -1599,7 +1596,6 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
             }
             else if(0 == strcmp(captor->if_name, "wlan0"))
             {
-                // TODO: 
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
                     wlan0_rx_size += captor->alz[q].stats.bytes;
                 ev_with_spinlock(&captor->stats.lock)
@@ -1609,20 +1605,81 @@ error_code_e zcap_rx_http_cgi_cb(char *buf, size_t buf_size)
         }
     }
 
-    snprintf(buf, buf_size,
-        "{\"eth0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%lu\"},\"wlan0\":{\"rx_rate\":\"%.3f\",\"rx_size\":\"%lu\"}}",
-        eth0_rx_rate, eth0_rx_size, wlan0_rx_rate, wlan0_rx_size);
+    json_object_start(jb);
+
+    json_object_start_with_key(jb, "eth0");
+    json_add_double(jb, "rx_rate", eth0_rx_rate);
+    json_add_int(jb, "rx_size", eth0_rx_size);
+    json_object_end(jb);
+
+    json_object_start_with_key(jb, "wlan0");
+    json_add_double(jb, "rx_rate", wlan0_rx_rate);
+    json_add_int(jb, "rx_size", wlan0_rx_size);
+    json_object_end(jb);
+
+    json_object_end(jb);
 
     return ERR_NO_ERROR;
 }
 
-error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size)
+error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb)
 {
-    memset(buf, 0, buf_size);
-    snprintf(buf, buf_size, 
-        "{"
-            "\"labels\":[\"<64B\",\"64~127B\",\"128~255B\",\"256~511B\",\"512~1023B\",\"1024~1517B\",\">1518B\"]"
-    );
+    double eth0_rx_rate = 0;
+    double wlan0_rx_rate = 0;
+    unsigned long eth0_rx_size = 0;
+    unsigned long wlan0_rx_size = 0;
+
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            if(0 == strcmp(captor->if_name, "eth0"))
+            {
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                    eth0_rx_size += captor->alz[q].stats.bytes;
+                ev_with_spinlock(&captor->stats.lock)
+                    eth0_rx_rate = captor->stats.Bps / 1000.0;
+            }
+            else if(0 == strcmp(captor->if_name, "wlan0"))
+            {
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                    wlan0_rx_size += captor->alz[q].stats.bytes;
+                ev_with_spinlock(&captor->stats.lock)
+                    wlan0_rx_rate = captor->stats.Bps / 1000.0;
+            }
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+
+    json_object_start_with_key(jb, "eth0");
+    json_add_double(jb, "rx_rate", eth0_rx_rate);
+    json_add_int(jb, "rx_size", eth0_rx_size);
+    json_object_end(jb);
+
+    json_object_start_with_key(jb, "wlan0");
+    json_add_double(jb, "rx_rate", wlan0_rx_rate);
+    json_add_int(jb, "rx_size", wlan0_rx_size);
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e zcap_stream_pie_cgi_cb(json_builder_t *jb)
+{
+    json_object_start(jb);
+
+    // label
+    json_array_start_with_key(jb, "labels");
+    json_array_add_string(jb, "< 64 B");
+    json_array_add_string(jb, "64~127 B");
+    json_array_add_string(jb, "128~255 B");
+    json_array_add_string(jb, "256~511 B");
+    json_array_add_string(jb, "512~1023 B");
+    json_array_add_string(jb, "1024~1517 B");
+    json_array_add_string(jb, ">= 1518 B");
+    json_array_end(jb);
+
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
         zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
@@ -1647,27 +1704,96 @@ error_code_e zcap_stream_pie_cgi_cb(char *buf, size_t buf_size)
                 size_gt_1518 += captor->alz[q].stats.size_gt_1518;
             }
 
-            snprintf(buf + strlen(buf), buf_size - strlen(buf),
-                    ",\"%s\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu]",
-                captor->if_name,
-                size_lt_64, size_64_128, size_128_256, size_256_512, size_512_1024, size_1024_1518, size_gt_1518
-            );
+            json_array_start_with_key(jb, captor->if_name);
+            json_array_add_int(jb, size_lt_64);
+            json_array_add_int(jb, size_64_128);
+            json_array_add_int(jb, size_128_256);
+            json_array_add_int(jb, size_256_512);
+            json_array_add_int(jb, size_512_1024);
+            json_array_add_int(jb, size_1024_1518);
+            json_array_add_int(jb, size_gt_1518);
+            json_array_end(jb);
 
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
     }
-    snprintf(buf + strlen(buf), buf_size - strlen(buf), "}");
+
+    json_object_end(jb);
 
     return ERR_NO_ERROR;
 }
 
-error_code_e zcap_protocol_bar_cgi_cb(char *buf, size_t buf_size)
+error_code_e zcap_sync_stream_pie_cgi_cb(json_builder_t *jb)
 {
-    memset(buf, 0, buf_size);
-    snprintf(buf, buf_size, 
-        "{"
-            "\"labels\":[\"arp\",\"icmp\",\"miscc_web\",\"ssh\",\"dns\",\"dhcp\",\"tcp_other\",\"udp_other\",\"others\"]"
-    );
+    // label
+    json_array_start_with_key(jb, "labels");
+    json_array_add_string(jb, "< 64 B");
+    json_array_add_string(jb, "64~127 B");
+    json_array_add_string(jb, "128~255 B");
+    json_array_add_string(jb, "256~511 B");
+    json_array_add_string(jb, "512~1023 B");
+    json_array_add_string(jb, "1024~1517 B");
+    json_array_add_string(jb, ">= 1518 B");
+    json_array_end(jb);
+
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            // 打印统计数据，收集per-thread stats
+            uint64_t size_lt_64 = 0;
+            uint64_t size_64_128 = 0;
+            uint64_t size_128_256 = 0;
+            uint64_t size_256_512 = 0;
+            uint64_t size_512_1024 = 0;
+            uint64_t size_1024_1518 = 0;
+            uint64_t size_gt_1518 = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                size_lt_64 += captor->alz[q].stats.size_lt_64;
+                size_64_128 += captor->alz[q].stats.size_64_128;
+                size_128_256 += captor->alz[q].stats.size_128_256;
+                size_256_512 += captor->alz[q].stats.size_256_512;
+                size_512_1024 += captor->alz[q].stats.size_512_1024;
+                size_1024_1518 += captor->alz[q].stats.size_1024_1518;
+                size_gt_1518 += captor->alz[q].stats.size_gt_1518;
+            }
+
+            json_array_start_with_key(jb, captor->if_name);
+            json_array_add_int(jb, size_lt_64);
+            json_array_add_int(jb, size_64_128);
+            json_array_add_int(jb, size_128_256);
+            json_array_add_int(jb, size_256_512);
+            json_array_add_int(jb, size_512_1024);
+            json_array_add_int(jb, size_1024_1518);
+            json_array_add_int(jb, size_gt_1518);
+            json_array_end(jb);
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e zcap_protocol_bar_cgi_cb(json_builder_t *jb)
+{
+    json_object_start(jb);
+
+    // label数组
+    json_array_start_with_key(jb, "labels");
+    json_array_add_string(jb, "arp");
+    json_array_add_string(jb, "icmp");
+    json_array_add_string(jb, "miscc_web");
+    json_array_add_string(jb, "ssh");
+    json_array_add_string(jb, "dns");
+    json_array_add_string(jb, "dhcp");
+    json_array_add_string(jb, "tcp_other");
+    json_array_add_string(jb, "udp_other");
+    json_array_add_string(jb, "others");
+    json_array_end(jb);
+
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
         zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
@@ -1695,16 +1821,84 @@ error_code_e zcap_protocol_bar_cgi_cb(char *buf, size_t buf_size)
                 others += captor->alz[q].stats.others;
             }
 
-            snprintf(buf + strlen(buf), buf_size - strlen(buf),
-                    ",\"%s\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]",
-                captor->if_name,
-                arp, icmp, miscc_web, ssh, dns, dhcp, tcp_other, udp_other, others
-            );
+            json_array_start_with_key(jb, captor->if_name);
+            json_array_add_int(jb, arp);
+            json_array_add_int(jb, icmp);
+            json_array_add_int(jb, miscc_web);
+            json_array_add_int(jb, ssh);
+            json_array_add_int(jb, dns);
+            json_array_add_int(jb, dhcp);
+            json_array_add_int(jb, tcp_other);
+            json_array_add_int(jb, udp_other);
+            json_array_add_int(jb, others);
+            json_array_end(jb);
 
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
     }
-    snprintf(buf + strlen(buf), buf_size - strlen(buf), "}");
+
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e zcap_sync_protocol_bar_cgi_cb(json_builder_t *jb)
+{
+    // label数组
+    json_array_start_with_key(jb, "labels");
+    json_array_add_string(jb, "arp");
+    json_array_add_string(jb, "icmp");
+    json_array_add_string(jb, "miscc_web");
+    json_array_add_string(jb, "ssh");
+    json_array_add_string(jb, "dns");
+    json_array_add_string(jb, "dhcp");
+    json_array_add_string(jb, "tcp_other");
+    json_array_add_string(jb, "udp_other");
+    json_array_add_string(jb, "others");
+    json_array_end(jb);
+
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            uint64_t arp = 0;
+            uint64_t icmp = 0;
+            uint64_t miscc_web = 0;
+            uint64_t ssh = 0;
+            uint64_t dns = 0;
+            uint64_t dhcp = 0;
+            uint64_t tcp_other = 0;
+            uint64_t udp_other = 0;
+            uint64_t others = 0;
+            for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+            {
+                arp += captor->alz[q].stats.arp;
+                icmp += captor->alz[q].stats.icmp;
+                miscc_web += captor->alz[q].stats.miscc_web;
+                ssh += captor->alz[q].stats.ssh;
+                dns += captor->alz[q].stats.dns;
+                dhcp += captor->alz[q].stats.dhcp;
+                tcp_other += captor->alz[q].stats.tcp_other;
+                udp_other += captor->alz[q].stats.udp_other;
+                others += captor->alz[q].stats.others;
+            }
+
+            json_array_start_with_key(jb, captor->if_name);
+            json_array_add_int(jb, arp);
+            json_array_add_int(jb, icmp);
+            json_array_add_int(jb, miscc_web);
+            json_array_add_int(jb, ssh);
+            json_array_add_int(jb, dns);
+            json_array_add_int(jb, dhcp);
+            json_array_add_int(jb, tcp_other);
+            json_array_add_int(jb, udp_other);
+            json_array_add_int(jb, others);
+            json_array_end(jb);
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
 
     return ERR_NO_ERROR;
 }

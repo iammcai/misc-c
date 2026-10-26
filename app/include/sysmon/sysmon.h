@@ -23,6 +23,7 @@
 
 #include "plat/compiler.h"
 #include "plat/debug.h"
+#include "json_util/json_util.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -39,7 +40,14 @@
 /**
  * @brief       http cgi response for /api/sysmon/cpu/usage
  */
-extern error_code_e sysmon_cpu_usage_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e sysmon_cpu_usage_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       http cgi response for /api/sync sysmon module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e sysmon_sync_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       get total cpu usage

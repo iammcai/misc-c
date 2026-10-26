@@ -82,6 +82,12 @@ typedef enum{
     ERR_SHT30_DEVICE_NOT_EXIST,     // sht30设备不存在
     ERR_SHT30_ATTR_NOT_EXIST,       // sht30属性不存在
     ERR_SHT30_HW_ERR,               // 硬件错误
+
+    // json
+    ERR_JSON_START = 1300,          // json错误码起始
+    ERR_JSON_DEPTH_MAX,             // json嵌套深度超出
+    ERR_JSON_END_WITHOUT_START,     // 没有start即调用end
+    ERR_JSON_FRAME_TYPE_MISMATCH,   // frame匹配失败，比如{]
 }error_code_e;
 
 /* ========================================================================== */

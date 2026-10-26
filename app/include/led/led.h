@@ -29,6 +29,7 @@
 
 #include "plat/compiler.h"
 #include "plat/debug.h"
+#include "json_util/json_util.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -72,14 +73,26 @@ extern void led_off_cli_hook(unsigned char argc, char *argv[]);
  * 
  * @retval      led status json
  */
-extern error_code_e led_turn_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e led_turn_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       cb for http cgi: /api/led/status
- * 
- * @retval      led status json
  */
-extern error_code_e led_status_http_cgi_cb(char *buf, size_t buf_size);
+extern error_code_e led_status_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sync web module
+ * 
+ * @note        不含{}版本
+ */
+extern error_code_e led_sync_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       get led status
+ * 
+ * @retval      led status
+ */
+extern led_status_e led_status_get();
 
 /**
  * @brief       初始化led模块

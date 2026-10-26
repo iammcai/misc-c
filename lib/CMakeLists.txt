@@ -22,6 +22,7 @@ add_library(Lib STATIC
     ipc/uss/uss.c
     ipc/shm/shm.c
     fifo/fifo.c
+    json_util/json_util.c
 )
 
 # 保存临时文件

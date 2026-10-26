@@ -551,7 +551,7 @@ document.addEventListener('DOMContentLoaded', function(){
             if(!r.ok) throw new Error('Network response was not ok');
             const data = await r.json();
 
-            update_led_status(data.led.led_status);
+            update_led_status(data.led.status);
             env_temp.textContent = `Temperature: ${data.sht30.temperature.toFixed(1)} ℃`;
             env_humi.textContent = `Humidity: ${data.sht30.humidity.toFixed(1)} %RH`;
             update_cpu_usage(cpu_total, data.sysmon.total, 25);
