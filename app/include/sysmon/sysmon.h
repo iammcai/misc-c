@@ -24,6 +24,7 @@
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "json_util/json_util.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -59,7 +60,7 @@ extern void sysmon_cpu_usage_get(double *usage);
 /**
  * @brief       cli hook for show cpu usage
  */
-extern void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[]);
+extern void sysmon_show_cpu_usage_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       init sysmon module

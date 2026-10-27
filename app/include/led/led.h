@@ -30,6 +30,7 @@
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "json_util/json_util.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -59,14 +60,14 @@ typedef enum{
  * 
  * @note        turn led on
  */
-extern void led_on_cli_hook(unsigned char argc, char *argv[]);
+extern void led_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for led off
  * 
  * @note        turn led off
  */
-extern void led_off_cli_hook(unsigned char argc, char *argv[]);
+extern void led_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cb for http cgi: /api/led/turn

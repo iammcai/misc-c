@@ -26,6 +26,7 @@
 #include "type/type_hash.h"
 #include "plat/debug.h"
 #include "mp/mp.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -162,7 +163,7 @@ extern error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr);
 /**
  * @brief       cli hook for show ftxor
  */
-extern void ftxor_dump_cli_hook(unsigned char argc, char* agrv[]);
+extern void ftxor_dump_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* agrv[]);
 
 #endif
 /* __FTX_H__ end */

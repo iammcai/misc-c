@@ -53,15 +53,16 @@ typedef struct{
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+//
 /**
  * @brief       cli hook for: cmcp on
  */
-void cmcp_on_cli_hook(unsigned char argc, char *argv[]);
+void cmcp_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: cmcp off
  */
-void cmcp_off_cli_hook(unsigned char argc, char *argv[]);
+void cmcp_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       init mcp module

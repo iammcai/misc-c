@@ -24,9 +24,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
+
 #include "sht30/sht30.h"
 #include "sht30/miscc_sht30.h"
-#include "cli/cli.h"
 #include "event/ev_thread.h"
 #include "syslog/syslog.h"
 
@@ -186,30 +186,30 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value)
     return ERR_NO_ERROR;
 }
 
-void sht30_show_temp(unsigned char argc, char *argv[])
+void sht30_show_temp(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     double temp_raw = 0.0;
 
     if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
     {
-        safe_printf("-sht30: Measure temperature fail.\n");
+        cli_printf(ctx, "-sht30: Measure temperature fail.\n");
         return;
     }
 
-    safe_printf("-sht30: Temperature: %.3f ℃.\n", temp_raw / 1000.0);
+    cli_printf(ctx, "-sht30: Temperature: %.3f ℃.\n", temp_raw / 1000.0);
 }
 
-void sht30_show_humi(unsigned char argc, char *argv[])
+void sht30_show_humi(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     double humi_raw = 0.0;
 
     if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw))
     {
-        safe_printf("-sht30: Measure temperature fail.\n");
+        cli_printf(ctx, "-sht30: Measure temperature fail.\n");
         return;
     }
 
-    safe_printf("-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
+    cli_printf(ctx, "-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
 }
 
 error_code_e sht30_read_temperature(double *temp)

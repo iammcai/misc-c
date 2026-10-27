@@ -23,6 +23,8 @@
 
 #include <stdint.h>
 
+#include "cli/cli.h"
+
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
@@ -77,7 +79,7 @@ extern void _swdg_feed();
 /**
  * @brief       cli cb for: show swdg
  */
-extern void swdg_show_swdg_cli_cb(unsigned char argc, char *argv[]);
+extern void swdg_show_swdg_cli_cb(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       init swdg module top half

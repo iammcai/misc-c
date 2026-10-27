@@ -234,7 +234,7 @@ cli_param_t arp_scan_param[] = {
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void arp_probe_cli_hook(unsigned char argc, char *argv[])
+void arp_probe_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     uint8_t *buf = NULL;
 
@@ -245,14 +245,14 @@ void arp_probe_cli_hook(unsigned char argc, char *argv[])
     // 检查获取目的ip，网络字节序
     if(1 != inet_pton(AF_INET, dip_str, &dst))
     {
-        safe_printf("-arp: Bad Target IP: %s\n", dip_str);
+        cli_printf(ctx, "-arp: Bad Target IP: %s\n", dip_str);
         return;
     }
 
     buf = mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!buf)
     {
-        safe_printf("-arp: System no memory\n");
+        cli_printf(ctx, "-arp: System no memory\n");
         return;
     }
     memset(buf, 0, ARP_STANDER_SIZE);
@@ -260,12 +260,12 @@ void arp_probe_cli_hook(unsigned char argc, char *argv[])
     if(ERR_NO_ERROR == _arp_request_build(buf, if_name, &dst))
     {
         ftx_send(if_name, buf, ARP_STANDER_SIZE);
-        safe_printf("-arp: Send Arp Request OK... Wait %ds\n", ARP_PROBE_WAIT_INTERVAL);
+        cli_printf(ctx, "-arp: Send Arp Request OK... Wait %ds\n", ARP_PROBE_WAIT_INTERVAL);
     }
     else
     {
         mp_slab_node_put(buf);      // 释放内存
-        safe_printf("-arp: Interface error: %s\n", if_name);
+        cli_printf(ctx, "-arp: Interface error: %s\n", if_name);
         return;
     }
 
@@ -280,13 +280,13 @@ void arp_probe_cli_hook(unsigned char argc, char *argv[])
         cache = arp_reply_cache_hash_find(&g_arp_reply_cache, &key);
 
     if(!cache)
-        safe_printf("-arp: Arp Probe Fail\n");
+        cli_printf(ctx, "-arp: Arp Probe Fail\n");
     else
-        safe_printf("mac address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+        cli_printf(ctx, "mac address: %02x:%02x:%02x:%02x:%02x:%02x\n",
             cache->mac[0],cache->mac[1],cache->mac[2],cache->mac[3],cache->mac[4],cache->mac[5]);
 }
 
-void arp_scan_cli_hook(unsigned char argc, char *argv[])
+void arp_scan_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     const char *cidr_addr = argv[0];
     const char *if_name = argv[1];
@@ -296,12 +296,12 @@ void arp_scan_cli_hook(unsigned char argc, char *argv[])
     // 检查CIDR地址是否合法，解析ip和prefix
     if(ERR_NO_ERROR != cidr_parse(cidr_addr, &dip_net, &prefix))
     {
-        safe_printf("-arp: Bad CIDR address range: %s\n", argv[0]);
+        cli_printf(ctx, "-arp: Bad CIDR address range: %s\n", argv[0]);
         return;
     }
     if(prefix == 31 || prefix == 32)
     {
-        safe_printf("-arp: Bad CIDR prefix for arp scan: %d\n", prefix);
+        cli_printf(ctx, "-arp: Bad CIDR prefix for arp scan: %d\n", prefix);
         return;
     }
     uint32_t dip = ntohl(dip_net);
@@ -311,7 +311,7 @@ void arp_scan_cli_hook(unsigned char argc, char *argv[])
     uint32_t sip_net = 0;
     if(ERR_NO_ERROR != ftx_mac_get(if_name, src_mac) || ERR_NO_ERROR != ftx_ip_get(if_name, &sip_net))
     {
-        safe_printf("-arp: Bad Interface: %s\n", if_name);
+        cli_printf(ctx, "-arp: Bad Interface: %s\n", if_name);
         return;
     }
     uint32_t sip = htonl(sip_net);
@@ -320,7 +320,7 @@ void arp_scan_cli_hook(unsigned char argc, char *argv[])
     char *packet = mp_slab_node_get(ftx, ARP_STANDER_SIZE);
     if(!packet)
     {
-        safe_printf("-arp: No avilable memory.\n");
+        cli_printf(ctx, "-arp: No avilable memory.\n");
         return;
     }
     memset(packet, 0, ARP_STANDER_SIZE);
@@ -367,8 +367,8 @@ void arp_scan_cli_hook(unsigned char argc, char *argv[])
     sleep(ARP_SCAN_SEND_INTERVAL);
 
     // 收集arp cache，打印结果
-    safe_printf("\n" ARP_SCAN_FMT, "ipv4 addr", "mac addr");
-    safe_printf(     ARP_SCAN_FMT, "---------", "--------");
+    cli_printf(ctx, "\n" ARP_SCAN_FMT, "ipv4 addr", "mac addr");
+    cli_printf(ctx, ARP_SCAN_FMT, "---------", "--------");
     arp_reply_cache_t *cache = NULL;
     for(uint32_t dip_iter = dip_start; dip_iter <= dip_end; ++ dip_iter)
     {
@@ -383,10 +383,10 @@ void arp_scan_cli_hook(unsigned char argc, char *argv[])
             inet_ntop(AF_INET, &ip_net, ip_str, sizeof(ip_str));
             snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", 
                 cache->mac[0], cache->mac[1], cache->mac[2], cache->mac[3], cache->mac[4], cache->mac[5]);
-            safe_printf(ARP_SCAN_FMT, ip_str, mac_str);
+            cli_printf(ctx, ARP_SCAN_FMT, ip_str, mac_str);
         }
     }
-    safe_printf("\n");
+    cli_printf(ctx, "\n");
 }
 
 /**
@@ -484,16 +484,17 @@ static void _arp_zcap_filter_cb(char *packet, int size, void *args)
     }
 }
 
-void arp_show_cache_cli_hook(unsigned char argc, char *argv[])
+void arp_show_cache_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    safe_printf("\n");
-    safe_printf(ARP_REPLY_CACHE_FMT_HEAD, "", "Arp Cache Table");
-    safe_printf("%s", "--------------------------------------------------\n");
-    safe_printf(ARP_REPLY_CACHE_FMT, "ipv4 address", "mac address", "aging time(s)");
-    safe_printf(ARP_REPLY_CACHE_FMT, "------------", "-----------", "-------------");
+    cli_printf(ctx, "\n");
+    cli_printf(ctx, ARP_REPLY_CACHE_FMT_HEAD, "", "Arp Cache Table");
+    cli_printf(ctx, "%s", "--------------------------------------------------\n");
+    cli_printf(ctx, ARP_REPLY_CACHE_FMT, "ipv4 address", "mac address", "aging time(s)");
+    cli_printf(ctx, ARP_REPLY_CACHE_FMT, "------------", "-----------", "-------------");
 
     char ip_str[INET_ADDRSTRLEN] = {};
     char mac_str[18] = {};
+    char temp_buf[1024] = {};
 
     ev_with_rdlock(&g_arp_reply_cache_rwlock)
     {
@@ -505,12 +506,14 @@ void arp_show_cache_cli_hook(unsigned char argc, char *argv[])
             snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x", 
                 cache->mac[0], cache->mac[1], cache->mac[2], cache->mac[3], cache->mac[4], cache->mac[5]);
 
-            safe_printf(ARP_REPLY_CACHE_FMT_DATA, ip_str, mac_str, (double)ev_timer_remain(cache->timer)/1000);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                ARP_REPLY_CACHE_FMT_DATA, ip_str, mac_str, (double)ev_timer_remain(cache->timer)/1000);
 
             cache = arp_reply_cache_hash_next(&g_arp_reply_cache, cache);
         }
     }
-    safe_printf("%s", "--------------------------------------------------\n\n");
+    cli_printf(ctx, "%s", temp_buf);
+    cli_printf(ctx, "%s", "--------------------------------------------------\n\n");
 }
 
 error_code_e arp_cache_query(uint32_t ip, uint8_t *mac)

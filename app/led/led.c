@@ -22,7 +22,6 @@
 #include "led/led.h"
 #include "led/miscc_led_ioctl.h"
 #include "plat/atom.h"
-#include "cli/cli.h"
 #include "syslog/syslog.h"
 #include "web/web.h"
 
@@ -60,12 +59,13 @@ static int g_led_fd = -1;
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+//
 /**
  * @brief       cli hook for led on
  * 
  * @note        turn led on
  */
-void led_on_cli_hook(unsigned char argc, char *argv[])
+void led_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_ON)
         return;
@@ -73,7 +73,8 @@ void led_on_cli_hook(unsigned char argc, char *argv[])
     int on = 1;
     if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &on) < 0)
     {
-        safe_printf("-led: ioctl() fail.\n");
+        if(ctx)
+            cli_printf(ctx, "-led: ioctl() fail.\n");
         return;
     }
 
@@ -86,7 +87,7 @@ void led_on_cli_hook(unsigned char argc, char *argv[])
  * 
  * @note        turn led off
  */
-void led_off_cli_hook(unsigned char argc, char *argv[])
+void led_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_OFF)
         return;
@@ -94,7 +95,8 @@ void led_off_cli_hook(unsigned char argc, char *argv[])
     int off = 0;
     if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &off) < 0)
     {
-        safe_printf("-led: ioctl() fail.\n");
+        if(ctx)
+            cli_printf(ctx, "-led: ioctl() fail.\n");
         return;
     }
     ATOM_STORE(&g_led_status, LED_STATUS_OFF, MORDER_RELAXED);
@@ -110,11 +112,11 @@ error_code_e led_turn_http_cgi_cb(json_builder_t *jb)
     switch(status)
     {
         case LED_STATUS_OFF:
-            led_on_cli_hook(0, NULL);
+            led_on_cli_hook(NULL, 0, NULL);
             json_add_string(jb, "status", "on");
             break;
         case LED_STATUS_ON:
-            led_off_cli_hook(0, NULL);
+            led_off_cli_hook(NULL, 0, NULL);
             json_add_string(jb, "status", "off");
             break;
         default:
@@ -205,7 +207,7 @@ void led_module_init()
 void led_module_exit()
 {
     // 退出时熄灭led
-    led_off_cli_hook(0, NULL);
+    led_off_cli_hook(NULL, 0, NULL);
 
     // 关闭led文件
     if(g_led_fd >= 0)

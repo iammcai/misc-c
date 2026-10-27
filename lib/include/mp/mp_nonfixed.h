@@ -149,7 +149,7 @@ extern void _mp_nonfixed_node_put(void *ptr);
 /**
  * @brief       cli hook for: debug show mp nonfixed
  */
-extern void mp_nonfixed_debug_cli_hook(unsigned char argc, char *argv[]);
+extern void mp_nonfixed_debug_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif
 /* __MP_NONFIXED_H__ end */

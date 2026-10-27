@@ -155,6 +155,6 @@ extern void mp_fixed_module_exit_th();
 /**
  * @brief       cli cb for: debug show mp fixed
  */
-extern void mp_fixed_debug_show(unsigned char argc, char *argv[]);
+extern void mp_fixed_debug_show(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif

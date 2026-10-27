@@ -281,17 +281,17 @@ static inline void _proc_heart_beat_work_cancel()
     pthread_join(g_heart_beat_tid, NULL);
 }
 
-void proc_heart_beat_show_cli_cb(unsigned char argc, char *argv[])
+void proc_heart_beat_show_cli_cb(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    safe_printf("\nProcess heart beat info\n-----------------------\n");
-    safe_printf(PROC_HB_FMT_HEAD PROC_HB_FMT_HEAD, 
+    cli_printf(ctx, "\nProcess heart beat info\n-----------------------\n");
+    cli_printf(ctx, PROC_HB_FMT_HEAD PROC_HB_FMT_HEAD, 
         "proc_id", "last_hb",
         "-------", "-------"
     );
     uint64_t curr_time = mono_time_get();
     for(int i = PID_CORE + 1; i < PID_CNT; ++ i)
-        safe_printf(PROC_HB_FMT_DATA, i, 
+        cli_printf(ctx, PROC_HB_FMT_DATA, i, 
             curr_time - ATOM_LOAD(&g_heart_beat_note_array[i], MORDER_RELAXED));
 
-    safe_printf("-----------------------\n");
+    cli_printf(ctx, "-----------------------\n");
 }

@@ -213,15 +213,15 @@ static void _sysmon_cpu_usage_cal(void *args)
     }
 }
 
-void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
+void sysmon_show_cpu_usage_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     double temp[SYSMON_CPU_COUNTS] = {};
     ev_with_spinlock(&g_sysmon_cpu_usage_lock)
         memcpy(temp, g_sysmon_cpu_usages, sizeof(double)*SYSMON_CPU_COUNTS);
 
-    safe_printf("\r\n");
-    safe_printf(SYSMON_CPU_USAGE_FMT_HEAD, "cpu", "usage(%)");
-    safe_printf(SYSMON_CPU_USAGE_FMT_HEAD, "---", "--------");
+    cli_printf(ctx, "\r\n");
+    cli_printf(ctx, SYSMON_CPU_USAGE_FMT_HEAD, "cpu", "usage(%)");
+    cli_printf(ctx, SYSMON_CPU_USAGE_FMT_HEAD, "---", "--------");
 
     for(size_t i = 0; i < SYSMON_CPU_COUNTS; ++ i)
     {
@@ -230,10 +230,10 @@ void sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[])
             snprintf(cpu_str, sizeof(cpu_str), "cpu_%zu", i-1);
         else
             snprintf(cpu_str, sizeof(cpu_str), "cpu");
-        safe_printf(SYSMON_CPU_USAGE_FMT_DATA, cpu_str, temp[i]);
+        cli_printf(ctx, SYSMON_CPU_USAGE_FMT_DATA, cpu_str, temp[i]);
     }
 
-    safe_printf("\r\n");
+    cli_printf(ctx, "\r\n");
 }
 
 error_code_e sysmon_cpu_usage_http_cgi_cb(json_builder_t *jb)

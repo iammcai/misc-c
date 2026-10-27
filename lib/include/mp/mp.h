@@ -29,6 +29,9 @@
 
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
+
+#include "cli/cli.h"
 #include "type/type_list.h"
 #include "type/type_hash.h"
 #include "type/type_atom_queue.h"
@@ -269,7 +272,7 @@ static void _mem_type_attr_register(mem_type_attr_t *attr)
  * 
  *              多进程架构下，补充从所有进程获取内存信息
  */
-extern void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[]);
+extern void mp_show_mem_usage_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */

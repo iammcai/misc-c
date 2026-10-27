@@ -572,17 +572,18 @@ error_code_e ftx_ip_get(const char *if_name, uint32_t *ip_addr)
     return ERR_NO_ERROR;
 }
 
-void ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
+void ftxor_dump_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* agrv[])
 {
+    char temp_buf[512] = {};
     ev_with_rdlock(&g_ftx_hash_rwlock)
     {
         ftx_t *ftxor = ftx_hash_first(&g_ftx_hash);
         while(ftxor)
         {
-            safe_printf(
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),
                 "\n********************************\nif_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n"
                 "if_ipv4: %s\n"
-                "status: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n", 
+                "status: %s\n\ntx_count: %lu\ntx_size: %lu Bytes\n" "********************************\n\n", 
                 ftxor->if_name, ftxor->if_index,
                 ftxor->if_mac[0],ftxor->if_mac[1],ftxor->if_mac[2],
                 ftxor->if_mac[3],ftxor->if_mac[4],ftxor->if_mac[5],
@@ -591,10 +592,10 @@ void ftxor_dump_cli_hook(unsigned char argc, char* agrv[])
                 ATOM_LOAD(&ftxor->stat.tx_count, MORDER_ACQUIRE),
                 ATOM_LOAD(&ftxor->stat.tx_size, MORDER_ACQUIRE)
             );
-            safe_printf("********************************\n\n");
             ftxor = ftx_hash_next(&g_ftx_hash, ftxor);
         }
     }
+    cli_printf(ctx, "%s", temp_buf);
 }
 
 void ftx_module_init(void)

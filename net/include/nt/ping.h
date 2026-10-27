@@ -39,7 +39,7 @@ extern cli_param_t ping_param[];
  * 
  * @param[in]   interface   - ftx interface
  */
-extern void ping_cli_hook(unsigned char argc, char *argv[]);
+extern void ping_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       init ping module

@@ -111,9 +111,9 @@ static void* _cli_routine(void *args);
  * 
  * @note        ? 的回调函数
  */
-static attr_force_inline void _cli_cmd_dump(unsigned char argc, char *argv[])  // cppcheck-suppress constParameterCallback
+static attr_force_inline void _cli_cmd_dump(cli_ctx_t *ctx, unsigned char argc, char *argv[])  // cppcheck-suppress constParameterCallback
 {
-    _cli_trie_dump();
+    _cli_trie_dump(ctx);
 }
 
 /**
@@ -121,12 +121,12 @@ static attr_force_inline void _cli_cmd_dump(unsigned char argc, char *argv[])  /
  * 
  * @note        输入直接传给linux shell，输入config退出
  */
-static attr_force_inline void _cli_shell_cli_hook(unsigned char argc, char *argv[]);   // cppcheck-suppress constParameterCallback
+static attr_force_inline void _cli_shell_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);   // cppcheck-suppress constParameterCallback
 
 /**
  * @brief       cli hook for history
  */
-static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[]);
+static void _cli_dump_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       进入CLI后打印提示语
@@ -225,9 +225,9 @@ const static cli_register_entry_t g_cli_register_table[] = {
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-static inline void _cli_shell_cli_hook(unsigned char argc, char *argv[])    // cppcheck-suppress constParameterCallback
+static inline void _cli_shell_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])    // cppcheck-suppress constParameterCallback
 {
-    safe_printf("-cli: Shell mode, Enter <config> for coming back.\n");
+    cli_printf(ctx, "-cli: Shell mode, Enter <config> for coming back.\n");
     g_cli_mode = CLI_MODE_SHELL;
 }
 
@@ -256,7 +256,7 @@ static void* _cli_routine(void *args)
                 }
                 if(!input)      // ctrl + D 退出cli
                 {
-                    dbg_always("input is NULL");
+                    //dbg_always("input is NULL");
                     if(ATOM_LOAD(&core_running, MORDER_ACQUIRE))    // 检查core_running标志
                         g_cli_mode = CLI_MODE_SHELL;
                     break;
@@ -298,7 +298,7 @@ static void* _cli_routine(void *args)
     return NULL;
 }
 
-static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
+static void _cli_dump_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     int length = cli_gnurl_history_length_get();    // histroy数量
     int base = cli_gnurl_history_base_get();        // base index
@@ -309,7 +309,7 @@ static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
         int n = cli_param_parse_str_2_u32(argv[0]);
         if(n < 0)
         {
-            safe_printf("-cli: Error param: %s\n", argv[0]);
+            cli_printf(ctx, "-cli: Error param: %s\n", argv[0]);
             return;
         }
         num = length < n ? length : n;
@@ -321,7 +321,7 @@ static void _cli_dump_history_cli_hook(unsigned char argc, char *argv[])
     int start = base + length - num;
     int end = base + length;
     for(; start < end; ++ start)
-        safe_printf("%-3d : %s\n", start, cli_gnurl_history_get(start));
+        cli_printf(ctx, "%-3d : %s\n", start, cli_gnurl_history_get(start));
 }
 
 void cli_module_init()

@@ -180,11 +180,13 @@ void _swdg_feed()
     }
 }
 
-void swdg_show_swdg_cli_cb(unsigned char argc, char *argv[])
+void swdg_show_swdg_cli_cb(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     uint64_t curr = low_res_cur_time_get();
 
-    safe_printf("\n                              software watch dog\n" 
+    char temp_buf[2048] = {};
+
+    snprintf(temp_buf, sizeof(temp_buf), "\n                              software watch dog\n" 
         "---------------------------------------------------------------------------------\n"
         SWDG_FMT_HEAD SWDG_FMT_HEAD, 
         "tid", "name", "threshold", "since_last_feed",
@@ -194,11 +196,12 @@ void swdg_show_swdg_cli_cb(unsigned char argc, char *argv[])
         swdg_thd_stats_t *st = swdg_thd_stats_hash_first(&g_swdg_thd_stats_hashtable);
         while(st)
         {
-            safe_printf(SWDG_FMT_DATA, st->tid, st->name, st->threshold, curr - ATOM_LOAD(&st->last_feed, MORDER_ACQUIRE));
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), SWDG_FMT_DATA, st->tid, st->name, st->threshold, curr - ATOM_LOAD(&st->last_feed, MORDER_ACQUIRE));
             st = swdg_thd_stats_hash_next(&g_swdg_thd_stats_hashtable, st);
         }
     }
-    safe_printf("---------------------------------------------------------------------------------\n\n");
+    snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "---------------------------------------------------------------------------------\n\n");
+    cli_printf(ctx, "%s", temp_buf);
 }
 
 void swdg_module_init_th()

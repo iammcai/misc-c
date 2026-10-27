@@ -315,9 +315,10 @@ unsigned char _thp_is_run(thp_t *thp)
     return ATOM_LOAD(&thp->shutdown, MORDER_ACQUIRE) ? 0 : 1;
 }
 
-void thp_dump_cli_hook(unsigned char argc, char *argv[])
+void thp_dump_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    safe_printf("\n");
+    char temp_str[1024] = {};
+    snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "\n");
 
     ev_with_rdlock(&g_thp_hash_rwlock)
     {
@@ -325,7 +326,7 @@ void thp_dump_cli_hook(unsigned char argc, char *argv[])
         thp_t *thp = thp_hash_first(&g_thp_hash);
         while(thp)
         {
-            safe_printf("thp No.%d, name %s, thread counts %d, state: %s\n", i++, thp->name, thp->thread_count, 
+            snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "thp No.%d, name %s, thread counts %d, state: %s\n", i++, thp->name, thp->thread_count, 
                 ATOM_LOAD(&thp->shutdown, MORDER_RELAXED) ? "inactive" : "active");
             for(int j = 0; j < thp->thread_count; ++ j)
             {
@@ -333,14 +334,14 @@ void thp_dump_cli_hook(unsigned char argc, char *argv[])
                 thp_worker_stats_t *stats;
                 ev_with_rdlock(&g_thp_worker_stats_hashtable_rwlock)
                     stats = thp_worker_stats_hash_find(&g_thp_worker_stats_hashtable, &key);
-                safe_printf("\tthread %d, id %lu, work counts %llu\n", j, thp->thread_array[j], ATOM_LOAD(&stats->work_count, MORDER_RELAXED));
+                snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "\tthread %d, id %lu, work counts %llu\n", j, thp->thread_array[j], ATOM_LOAD(&stats->work_count, MORDER_RELAXED));
             }
-            safe_printf("\n");
+            snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "\n");
             thp = thp_hash_next(&g_thp_hash, thp);
         }
     }
 
-    safe_printf("\n");
+    cli_printf(ctx, "%s\n", temp_str);
 }
 
 void thp_module_init(void)

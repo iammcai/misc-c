@@ -904,25 +904,25 @@ static void _tftp_packet_filter_cb(char *packet, int len, void *args);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void tftp_download_cli_hook(unsigned char argc, char *argv[])
+void tftp_download_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     // 检查接口长度
     if(strlen(argv[0]) >= IF_NAME_SIZE)
     {
-        safe_printf("-tftp: Length of ifname too long\n");
+        cli_printf(ctx, "-tftp: Length of ifname too long\n");
         return;
     }
     // 检查接口状态
     if(!(zcap_status_get(argv[0]) && ftx_status_get(argv[0])))
     {
-        safe_printf("-tftp: Interface invalid: %s\n", argv[0]);
+        cli_printf(ctx, "-tftp: Interface invalid: %s\n", argv[0]);
         return;
     }
 
     // 检查文件长度
     if(strlen(argv[2]) >= FILE_NAME_SIZE)
     {
-        safe_printf("-tftp: Length of filename too long\n");
+        cli_printf(ctx, "-tftp: Length of filename too long\n");
         return;
     }
 
@@ -931,7 +931,7 @@ void tftp_download_cli_hook(unsigned char argc, char *argv[])
     struct in_addr addr = {};
     if(1 != inet_pton(AF_INET, server_ip_str, &addr))
     {
-        safe_printf("-tftp: Error Server IP: %s\n", server_ip_str);
+        cli_printf(ctx, "-tftp: Error Server IP: %s\n", server_ip_str);
         return;
     }
     uint32_t server_ip_host = ntohl(addr.s_addr);
@@ -948,25 +948,25 @@ void tftp_download_cli_hook(unsigned char argc, char *argv[])
     ev_sem_wait(&g_tftp_fsm.sem_done);
 }
 
-void tftp_upload_cli_hook(unsigned char argc, char *argv[])
+void tftp_upload_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     // 检查接口长度
     if(strlen(argv[0]) >= IF_NAME_SIZE)
     {
-        safe_printf("-tftp: Length of ifname too long\n");
+        cli_printf(ctx, "-tftp: Length of ifname too long\n");
         return;
     }
     // 检查接口状态
     if(!(zcap_status_get(argv[0]) && ftx_status_get(argv[0])))
     {
-        safe_printf("-tftp: Interface invalid: %s\n", argv[0]);
+        cli_printf(ctx, "-tftp: Interface invalid: %s\n", argv[0]);
         return;
     }
 
     // 检查文件长度
     if(strlen(argv[2]) >= FILE_NAME_SIZE)
     {
-        safe_printf("-tftp: Length of filename too long\n");
+        cli_printf(ctx, "-tftp: Length of filename too long\n");
         return;
     }
 
@@ -975,7 +975,7 @@ void tftp_upload_cli_hook(unsigned char argc, char *argv[])
     struct in_addr addr = {};
     if(1 != inet_pton(AF_INET, server_ip_str, &addr))
     {
-        safe_printf("-tftp: Error Server IP: %s\n", server_ip_str);
+        cli_printf(ctx, "-tftp: Error Server IP: %s\n", server_ip_str);
         return;
     }
     uint32_t server_ip_host = ntohl(addr.s_addr);

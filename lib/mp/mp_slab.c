@@ -461,11 +461,13 @@ void _mp_slab_node_put(void *ptr)
 /**
  * @brief       cli hook for debug show mp slab
  */
-void mp_slab_show_cli_hook(unsigned char argc, char *argv[])
+void mp_slab_show_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     mem_type_attr_t *attr = mem_type_attr_first();
     int i = 0;
-    safe_printf("\nMP SLAB INFO:\n\n");
+    char temp_str[2048] = {};
+
+    snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "\nMP SLAB INFO:\n\n");
     while(attr)
     {
         if(mem_type_attr_slab(attr))
@@ -480,17 +482,17 @@ void mp_slab_show_cli_hook(unsigned char argc, char *argv[])
                     ATOM_LOAD(&attr->slab_used[j], MORDER_RELAXED), attr->slab_node_cnt[j], 
                     (double)ATOM_LOAD(&attr->slab_hit[j], MORDER_RELAXED)/ATOM_LOAD(&attr->hit_total, MORDER_RELAXED) * 100);
             }
-            safe_printf("%s\n", str);
+            snprintf(temp_str + strlen(temp_str), sizeof(temp_str) - strlen(temp_str), "%s\n", str);
             ++ i;
         }
         attr = mem_type_attr_next(attr);
     }
-    safe_printf("\n");
+    cli_printf(ctx, "%s\n", temp_str);
 }
 
 #else
 
-void mp_slab_show_cli_hook(unsigned char argc, char *argv[])
+void mp_slab_show_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     return;
 }

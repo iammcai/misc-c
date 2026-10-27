@@ -24,20 +24,23 @@
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "json_util/json_util.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+typedef struct cli_ctx_s cli_ctx_t;
+
 /**
  * @brief       cli hook for: show temperature
  */
-extern void sht30_show_temp(unsigned char argc, char *argv[]);
+extern void sht30_show_temp(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: show humidity
  */
-extern void sht30_show_humi(unsigned char argc, char *argv[]);
+extern void sht30_show_humi(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cb for http cgi: /api/sht30/sensor

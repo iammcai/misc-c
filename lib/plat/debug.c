@@ -57,8 +57,8 @@ cli_param_t debug_level_set_param[] = {
 
 // 全局调试等级
 static ATOMIC_UINT8_T g_debug_level = debug_level_none;
-// 全局互斥锁
-static ev_mutex_t g_debug_mtx = EV_MUTEX_INITIALIZER;
+// 全局互斥锁，所有打印都需要
+ev_mutex_t g_printf_mtx = EV_MUTEX_INITIALIZER;
 // level - name 对照表
 const char *level_name_table[debug_level_cnt] = {
     "none",
@@ -119,7 +119,7 @@ void _debug_printf(debug_level_e level, const char *file, const char *func, int 
         (double)ts.tv_sec + (double)ts.tv_nsec/1000000000, 
         level_name_table[level], file, line, func, name, proc_id_get(), usr_fmt
     );
-    ev_with_mutex(&g_debug_mtx)
+    ev_with_mutex(&g_printf_mtx)
         vprintf(dbg_fmt, list);     // 输出
 
     va_end(list);
@@ -129,7 +129,7 @@ void _safe_printf(const char *fmt, ...)
 {
     va_list list;
     va_start(list, fmt);
-    ev_with_mutex(&g_debug_mtx)
+    ev_with_mutex(&g_printf_mtx)
         vprintf(fmt, list);     // 输出
 
     va_end(list);

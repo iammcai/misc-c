@@ -99,6 +99,9 @@
 // 打印top的个数
 #define ZCAP_TOP_CNT            (3)
 
+// show zcaptor 临时缓冲区
+#define ZCAP_CLI_BUF_SIZE       (4096)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -1334,20 +1337,23 @@ void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt
     zcap_pkt_field_list_add_tail(&filter->fields, new_field);
 }
 
-void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
+void zcap_dump_captor_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
+    char temp_buf[ZCAP_CLI_BUF_SIZE] = {};
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
         zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
         while(captor)
         {
-            safe_printf("\n********************************\n");
-            safe_printf("if_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n", 
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "\n********************************\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "if_name: %s\nif_index: %d\nif_mac: %02x-%02x-%02x-%02x-%02x-%02x\n", 
                 captor->if_name, captor->if_index,
                 captor->if_mac[0],captor->if_mac[1],captor->if_mac[2],
                 captor->if_mac[3],captor->if_mac[4],captor->if_mac[5]
             );
-            safe_printf("runing flag: %d\n\n", ATOM_LOAD(&captor->running, MORDER_ACQUIRE));
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "runing flag: %d\n\n", ATOM_LOAD(&captor->running, MORDER_ACQUIRE));
 
             // 打印统计数据，收集per-thread stats
             uint64_t total_counts = 0;
@@ -1379,40 +1385,51 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             }
             uint64_t total = size_lt_64 + size_64_128 + size_128_256 + size_256_512 + size_512_1024 + size_1024_1518 + size_gt_1518;
             if(total_counts >= ZCAP_STATS_G)
-                safe_printf("Total counts: %.2f Gpkts\n", (double)total_counts/ZCAP_STATS_G);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total counts: %.2f Gpkts\n", (double)total_counts/ZCAP_STATS_G);
             else if(total_counts >= ZCAP_STATS_M)
-                safe_printf("Total counts: %.2f Mpkts\n", (double)total_counts/ZCAP_STATS_M);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total counts: %.2f Mpkts\n", (double)total_counts/ZCAP_STATS_M);
             else if(total_counts >= ZCAP_STATS_K)
-                safe_printf("Total counts: %.2f Kpkts\n", (double)total_counts/ZCAP_STATS_K);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total counts: %.2f Kpkts\n", (double)total_counts/ZCAP_STATS_K);
             else
-                safe_printf("Total counts: %llu pkts\n", total_counts);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total counts: %llu pkts\n", total_counts);
             if(total_bytes >= ZCAP_STATS_G)
-                safe_printf("Total Bytes: %.2f GB\n", (double)total_bytes/ZCAP_STATS_G);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total Bytes: %.2f GB\n", (double)total_bytes/ZCAP_STATS_G);
             else if(total_bytes >= ZCAP_STATS_M)
-                safe_printf("Total Bytes: %.2f MBs\n", (double)total_bytes/ZCAP_STATS_M);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total Bytes: %.2f MBs\n", (double)total_bytes/ZCAP_STATS_M);
             else if(total_bytes >= ZCAP_STATS_K)
-                safe_printf("Total Bytes: %.2f KB\n", (double)total_bytes/ZCAP_STATS_K);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total Bytes: %.2f KB\n", (double)total_bytes/ZCAP_STATS_K);
             else
-                safe_printf("Total Bytes: %llu B\n", total_bytes);
-            safe_printf("Average Size: %.2f Bytes\n", (double)total_bytes/total_counts);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Total Bytes: %llu B\n", total_bytes);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "Average Size: %.2f Bytes\n", (double)total_bytes/total_counts);
             ev_with_spinlock(&captor->stats.lock)
-                safe_printf("Rate: %.1f pkts/s, %.1f Bytes/s\n", captor->stats.pps, captor->stats.Bps);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                    "Rate: %.1f pkts/s, %.1f Bytes/s\n", captor->stats.pps, captor->stats.Bps);
 
             // 帧长分布
-            safe_printf("\n---------------------------------------------\n");
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "size", "counts", "rate");
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "------", "------", "----");
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "< 64", size_lt_64, (double)size_lt_64/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "64 ~ 127", size_64_128, (double)size_64_128/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "128 ~ 255", size_128_256, (double)size_128_256/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "256 ~ 511", size_256_512, (double)size_256_512/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "512 ~ 1023", size_512_1024, (double)size_512_1024/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "1024 ~ 1517", size_1024_1518, (double)size_1024_1518/total*100.0);
-            safe_printf(ZCAP_DUMP_SIZE_DIST_FMT_DATA, "> 1518", size_gt_1518, (double)size_gt_1518/total*100.0);
-            safe_printf("---------------------------------------------\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "\n---------------------------------------------\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "size", "counts", "rate");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_HEAD, "------", "------", "----");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "< 64", size_lt_64, (double)size_lt_64/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "64 ~ 127", size_64_128, (double)size_64_128/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "128 ~ 255", size_128_256, (double)size_128_256/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "256 ~ 511", size_256_512, (double)size_256_512/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "512 ~ 1023", size_512_1024, (double)size_512_1024/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "1024 ~ 1517", size_1024_1518, (double)size_1024_1518/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_SIZE_DIST_FMT_DATA, "> 1518", size_gt_1518, (double)size_gt_1518/total*100.0);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "---------------------------------------------\n");
 
             // L2信息
-            safe_printf("\nL2 Info\nUnicast Counts: %llu\nMulticast Counts: %llu\nBroadcast Counts: %llu\n",
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "\nL2 Info\nUnicast Counts: %llu\nMulticast Counts: %llu\nBroadcast Counts: %llu\n",
                 uc_counts, mc_counts, bc_counts);
 
             // 打印协议统计数据
@@ -1437,7 +1454,8 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 udp_other += captor->alz[q].stats.udp_other;
                 others += captor->alz[q].stats.others;
             }
-            safe_printf("\nProtocol Counts:\n"
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "\nProtocol Counts:\n"
                 "arp:           %d\n"
                 "icmp:          %d\n"
                 "miscc_web:     %d\n"
@@ -1468,7 +1486,7 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
                 tcp_pure_ack += captor->alz[q].stats.tcp_pure_ack;
                 tcp_invalid += captor->alz[q].stats.tcp_invalid;
             }
-            safe_printf(
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
                 "\n"
                 "-------------------------------------------------------------\n"
                 "               TCP Flag Traffic Statistics                \n"
@@ -1498,35 +1516,36 @@ void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[])
             );
 
             // 打印注册的过滤项
-            safe_printf("\nUser Register Packet Filter:\n");
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
-            safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "\nUser Register Packet Filter:\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "type", "count");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_PKT_TYPE_NUM_HEAD_FMT, "----", "-----");
             zcap_pkt_filter_t *filter = zcap_pkt_filter_hash_first(&captor->filters);
             while(filter)
             {
-                safe_printf(ZCAP_DUMP_PKT_TYPE_NUM_FMT, filter->name, ATOM_LOAD(&filter->match_cnt, MORDER_RELAXED));
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), ZCAP_DUMP_PKT_TYPE_NUM_FMT, filter->name, ATOM_LOAD(&filter->match_cnt, MORDER_RELAXED));
                 filter = zcap_pkt_filter_hash_next(&captor->filters, filter);
             }
 
-            safe_printf("********************************\n\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "********************************\n\n");
 
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
     }
+    cli_printf(ctx, "%s", temp_buf);
 }
 
-void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
+void zcap_dump_pkt_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     if(argc != 1)
     {
-        safe_printf("-zcap: Error param cnt\n");
+        cli_printf(ctx, "-zcap: Error param cnt\n");
         return;
     }
 
     int period = cli_param_parse_str_2_u32(argv[0]);
     if(-1 == period)
     {
-        safe_printf("-zcap: Error param: %s\n", argv[0]);
+        cli_printf(ctx, "-zcap: Error param: %s\n", argv[0]);
         return;
     }
 
@@ -1538,8 +1557,9 @@ void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[])
     }
 }
 
-void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[])
+void zcap_dump_src_top_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
+    char temp_buf[512] = {};
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
         zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
@@ -1560,10 +1580,12 @@ void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[])
             // 打印一下
             int top = 0;
             zcap_top_src_entry_t *entry = NULL;
-            safe_printf("\nTop [%d] of interface: %s\n", ZCAP_TOP_CNT, captor->if_name);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                "\nTop [%d] of interface: %s\n", ZCAP_TOP_CNT, captor->if_name);
             while(top < ZCAP_TOP_CNT && (entry = zcap_src_top_heap_pop(&heap)))
             {
-                safe_printf("Top %d: %02x-%02x-%02x-%02x-%02x-%02x, cnt %d\n", top+1,
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),
+                    "Top %d: %02x-%02x-%02x-%02x-%02x-%02x, cnt %d\n", top+1,
                     entry->smac[0], entry->smac[1], entry->smac[2], entry->smac[3], entry->smac[4], entry->smac[5], entry->cnt);
                 ++ top;
             }
@@ -1572,7 +1594,7 @@ void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[])
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
         }
     }
-    safe_printf("\n");
+    cli_printf(ctx, "%s\n", temp_buf);
 }
 
 error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)

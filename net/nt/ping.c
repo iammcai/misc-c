@@ -224,7 +224,7 @@ static void _ping_icmp_filter_cb(char *packet, int len, void *args);
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void ping_cli_hook(unsigned char argc, char *argv[])
+void ping_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     // 获取ip和接口
     struct in_addr dst = {};
@@ -242,7 +242,7 @@ void ping_cli_hook(unsigned char argc, char *argv[])
         request_cnt = cli_param_parse_str_2_u32(argv[2]);
         if(request_cnt <= 0)
         {
-            safe_printf("-ping: Bad param for -c: %s", argv[2]);
+            cli_printf(ctx, "-ping: Bad param for -c: %s", argv[2]);
             return;
         }
     }
@@ -250,7 +250,7 @@ void ping_cli_hook(unsigned char argc, char *argv[])
     // 检查获取目的ip，网络字节序
     if(1 != inet_pton(AF_INET, dip_str, &dst))
     {
-        safe_printf("-ping: Bad Target IP: %s\n", dip_str);
+        cli_printf(ctx, "-ping: Bad Target IP: %s\n", dip_str);
         return;
     }
     dst_ip_host = ntohl(dst.s_addr);        // 主机序DIP
@@ -259,13 +259,13 @@ void ping_cli_hook(unsigned char argc, char *argv[])
     uint8_t if_mac[MAC_ADDR_SIZE] = {};
     if(ERR_NO_ERROR != ftx_mac_get(if_name, if_mac))
     {
-        safe_printf("-ping: No mac for Interface Name: %s\n", if_name);
+        cli_printf(ctx, "-ping: No mac for Interface Name: %s\n", if_name);
         return;
     }
     uint32_t if_ip = 0;
     if(ERR_NO_ERROR != ftx_ip_get(if_name, &if_ip))
     {
-        safe_printf("-ping: No ip for Interface Name: %s\n", if_name);
+        cli_printf(ctx, "-ping: No ip for Interface Name: %s\n", if_name);
         return;
     }
     uint32_t if_ip_host = ntohl(if_ip);
@@ -273,12 +273,12 @@ void ping_cli_hook(unsigned char argc, char *argv[])
     // 获取目的mac
     if(ERR_NO_ERROR != _ping_get_dst_mac(if_name, dst_ip_host, dst_mac))
     {
-        safe_printf("-ping: Unknown mac for ip %s\n", dip_str);
+        cli_printf(ctx, "-ping: Unknown mac for ip %s\n", dip_str);
         return;
     }
 
     int seq = 0;
-    safe_printf("\nPING %s %d bytes of data.\n"
+    cli_printf(ctx, "\nPING %s %d bytes of data.\n"
         "Note: RTT includes internal processing overhead, for connectivity check only.\n",
         dip_str, ICMP_PAYLOAD_SIZE
     );
@@ -292,7 +292,7 @@ void ping_cli_hook(unsigned char argc, char *argv[])
         packet = (uint8_t*)mp_slab_node_get(ftx, icmp_len);
         if(!packet)
         {
-            safe_printf("-ping: System no memory.\n");
+            cli_printf(ctx, "-ping: System no memory.\n");
             break;
         }
         memset(packet, 0, icmp_len);
@@ -300,7 +300,7 @@ void ping_cli_hook(unsigned char argc, char *argv[])
         if(ERR_NO_ERROR != _ping_icmp_echo_request_build(packet, dst_mac, if_mac, dst_ip_host, if_ip_host, seq))
         {
             mp_slab_node_put(packet);
-            safe_printf("-ping: Icmp echo-request packet build fail.\n");
+            cli_printf(ctx, "-ping: Icmp echo-request packet build fail.\n");
             break;
         }
 
@@ -321,11 +321,11 @@ void ping_cli_hook(unsigned char argc, char *argv[])
             ++ retry;
         }
         if(retry == PING_SESSION_WAIT_TIMES)
-            safe_printf("Destination Unreachable\n");
+            cli_printf(ctx, "Destination Unreachable\n");
         else
         {
             received ++;
-            safe_printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
+            cli_printf(ctx, "%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
                 g_icmp_session.payload_size, dip_str, g_icmp_session.seq, g_icmp_session.ttl, g_icmp_session.rtt_ms
             );
             rtt_arr[seq] = g_icmp_session.rtt_ms;
@@ -340,8 +340,8 @@ void ping_cli_hook(unsigned char argc, char *argv[])
     int end_time = mono_time_get();
 
     // 计算数据
-    safe_printf("--- %s ping statistics ---\n", dip_str);
-    safe_printf("%d packets transmitted, %d received, %.0f%% packet loss, time %dms\n",
+    cli_printf(ctx, "--- %s ping statistics ---\n", dip_str);
+    cli_printf(ctx, "%d packets transmitted, %d received, %.0f%% packet loss, time %dms\n",
         transmit, received, (double)(transmit-received)/transmit, end_time - start_time);
     // 计算平均值
     rtt_avg = rtt_sum / received;
@@ -355,7 +355,7 @@ void ping_cli_hook(unsigned char argc, char *argv[])
     double rtt_variance = rtt_diff_sum / received;
     rtt_mdev = sqrt(rtt_variance);
     // 打印数据
-    safe_printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
+    cli_printf(ctx, "rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n\n", rtt_min, rtt_avg, rtt_max, rtt_mdev);
 
     mp_free(rtt_arr, sizeof(double)*request_cnt);
 }

@@ -470,21 +470,21 @@ extern void _zcap_register_field(const char *if_name, const char *filter_name, z
  * 
  * @note        打印zcaptor信息
  */
-extern void zcap_dump_captor_cli_hook(unsigned char argc, char *argv[]);
+extern void zcap_dump_captor_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: zcap dump
  * 
  * @note        开启逐包报文打印一段时间
  */
-extern void zcap_dump_pkt_cli_hook(unsigned char argc, char *argv[]);
+extern void zcap_dump_pkt_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: show zcaptor src top
  * 
  * @note        打印流量来源TOP3
  */
-extern void zcap_dump_src_top_cli_hook(unsigned char argc, char *argv[]);
+extern void zcap_dump_src_top_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif
 /* __ZCAP_H__ end */

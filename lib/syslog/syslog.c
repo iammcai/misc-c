@@ -235,17 +235,17 @@ static void _syslog_flush_thd_wf(void *args)    // cppcheck-suppress constParame
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void syslog_direction_get_cli_hook(unsigned char argc, char* argv[])
+void syslog_direction_get_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* argv[])
 {
     uint8_t flag = ATOM_LOAD(&g_syslog_direction, MORDER_ACQUIRE);
-    safe_printf(
+    cli_printf(ctx,
         "terminal %d, flash %d\n", 
         0 != (flag & SYSLOG_DIRECTION_TERMINAL),
         0 != (flag & SYSLOG_DIRECTION_FLASH)
     );
 }
 
-void syslog_direction_cli_hook(unsigned char argc, char* argv[])
+void syslog_direction_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* argv[])
 {
     int dirs[2] = {
         0 != (g_syslog_direction & SYSLOG_DIRECTION_TERMINAL),
@@ -257,7 +257,7 @@ void syslog_direction_cli_hook(unsigned char argc, char* argv[])
         dirs[0] = cli_param_parse_str_2_u32(argv[0]);
         if(!(0 == dirs[0] || 1 == dirs[0]))
         {
-            safe_printf("-syslog: error param %s for -t\n", argv[0]);
+            cli_printf(ctx, "-syslog: error param %s for -t\n", argv[0]);
             return;
         }
     }
@@ -267,7 +267,7 @@ void syslog_direction_cli_hook(unsigned char argc, char* argv[])
         dirs[1] = cli_param_parse_str_2_u32(argv[1]);
         if(!(0 == dirs[1] || 1 == dirs[1]))
         {
-            safe_printf("-syslog: error param %s for -f\n", argv[1]);
+            cli_printf(ctx, "-syslog: error param %s for -f\n", argv[1]);
             return;
         }
     }
@@ -343,28 +343,30 @@ void _syslog_entry_push(syslog_module_e module, syslog_facility_e facility, cons
         dbg_error("syslog push msg q fail, ret %d", ret);
 }
 
-void syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
+void syslog_show_buffer_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     // 处理指定数量的参数
     int num = INT32_MAX;
+
     if(argc == 1)
     {
         num = cli_param_parse_str_2_u32(argv[0]);
         if(num <= 0)
         {
-            safe_printf("-syslog: error param %s\n", argv[0]);
+            cli_printf(ctx, "-syslog: error param %s\n", argv[0]);
             return;
         }
     }
 
+    char temp_buf[2048] = {};
     ev_with_rdlock(&g_syslog_ring.lock)
     {
         int size = _syslog_ring_size();
         if(!size)
-            safe_printf("syslog ring buffer is empty.\n");
+            cli_printf(ctx, "syslog ring buffer is empty.\n");
         else
         {
-            safe_printf("syslog buffer cnt: %d\n----------------------\n", size);
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "syslog buffer cnt: %d\n----------------------\n", size);
             uint32_t head = g_syslog_ring.head;
             uint32_t tail = g_syslog_ring.tail;
             if(num < size)
@@ -373,11 +375,12 @@ void syslog_show_buffer_cli_hook(unsigned char argc, char *argv[])
             for(; i != head; ++ i)
             {
                 const syslog_str_t* syslog_str = &g_syslog_ring.entries[syslog_ring_mask(i)];
-                safe_printf("%s\n", syslog_str->str);
+                snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "%s\n", syslog_str->str);
             }
-            safe_printf("----------------------\n");
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "----------------------\n");
         }
     }
+    cli_printf(ctx, "%s", temp_buf);
 }
 
 void syslog_module_init(void)

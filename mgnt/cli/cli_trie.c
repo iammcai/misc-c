@@ -40,6 +40,9 @@
 #define CLI_CMD_HELP_FMT    "%-32s%-64s\n"      // "cmd" + "help"
 #define CLI_PARAM_FMT       "%-32s  %-62s\n"    // " " + "param"
 
+// help / ? 使用的buffer长度
+#define CLI_TRIE_DUMP_BUFFER_SIZE       (8192)
+
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
@@ -92,6 +95,7 @@ static char** _cmd_split(const char *cmd);
 /**
  * @brief       recursive dump cli trie
  * 
+ * @param[in]   ctx     - cli ctx
  * @param[in]   item    - ptr to current item
  * @param[in]   cmd     - current cmd string
  * @param[in]   cmd_max_len     - max len of cmd buffer
@@ -132,6 +136,9 @@ static void _cli_trie_destory_recursive(cli_trie_item_t *item);
 static cli_trie_root_t g_cli_trie = {};
 // 全局互斥锁，保护前缀树
 static ev_mutex_t g_cli_trie_mtx = EV_MUTEX_INITIALIZER;
+
+// 用于dump
+static char g_cli_trie_dump_buffer[CLI_TRIE_DUMP_BUFFER_SIZE] = {};
 
 /* ========================================================================== */
 /*                           Function Definition                              */
@@ -275,7 +282,9 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
         // 如果是is_end节点，进行打印
         if(item->is_end)
         {
-            safe_printf(CLI_CMD_HELP_FMT, cmd, item->help);
+            snprintf(g_cli_trie_dump_buffer + strlen(g_cli_trie_dump_buffer), 
+                        sizeof(g_cli_trie_dump_buffer) - strlen(g_cli_trie_dump_buffer), 
+                        CLI_CMD_HELP_FMT, cmd, item->help);
             if(item->params)    // 如果有参数，展示
             {
                 unsigned char param_i = 0;
@@ -294,7 +303,9 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
                     }
                     snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), ", %s ", param->required ? "required" : "optional");
                     snprintf(fmt + strlen(fmt), sizeof(fmt) - strlen(fmt), ", help: %s", param->help);
-                    safe_printf(CLI_PARAM_FMT, " ", fmt);
+                    snprintf(g_cli_trie_dump_buffer + strlen(g_cli_trie_dump_buffer), 
+                                sizeof(g_cli_trie_dump_buffer) - strlen(g_cli_trie_dump_buffer), 
+                                CLI_PARAM_FMT, " ", fmt);
                 }
             }
         }
@@ -312,13 +323,18 @@ static void _cli_trie_dump_recursive(cli_trie_item_t *item, char *cmd, unsigned 
     mp_free(cmd_ori, cmd_max_len*sizeof(char));
 }
 
-void _cli_trie_dump()
+void _cli_trie_dump(cli_ctx_t *ctx)
 {
     cli_trie_item_t *item = &g_cli_trie.root;
     char cmd[CLI_INPUT_LEN] = {};
 
+    // 清空原来的缓存
+    memset(g_cli_trie_dump_buffer, 0, sizeof(g_cli_trie_dump_buffer));
+
     ev_with_mutex(&g_cli_trie_mtx)
         _cli_trie_dump_recursive(item, cmd, CLI_INPUT_LEN);
+
+    cli_printf(ctx, "%s", g_cli_trie_dump_buffer);
 }
 
 cli_match_info_t _cli_trie_match(char **items, unsigned char items_count)
@@ -443,7 +459,10 @@ void _cli_trie_parse_execute(cli_match_info_t *match)
 
     if(!match->remain_argc && !match->params)   // 没有参数，立即执行
     {
-        match->hook(0, NULL);
+        cli_ctx_t cli_ctx;
+        cli_ctx_init(&cli_ctx);
+        match->hook(&cli_ctx, 0, NULL);
+        cli_ctx_cleanup(&cli_ctx);
         return;
     }
 
@@ -527,7 +546,10 @@ void _cli_trie_parse_execute(cli_match_info_t *match)
 
     dbg("pass param cnt %d", real_param_cnt);
 
-    match->hook(real_param_cnt, usr_argv);
+    cli_ctx_t cli_ctx;
+    cli_ctx_init(&cli_ctx);
+    match->hook(&cli_ctx, real_param_cnt, usr_argv);
+    cli_ctx_cleanup(&cli_ctx);
 
 cleanup:
     // 释放内存

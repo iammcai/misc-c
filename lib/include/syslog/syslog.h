@@ -169,17 +169,17 @@ extern cli_param_t syslog_dir_param[];
 /**
  * @brief       cli hook for show syslog
  */
-extern void syslog_show_buffer_cli_hook(unsigned char argc, char *argv[]);
+extern void syslog_show_buffer_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for get syslog direction
  */
-extern void syslog_direction_get_cli_hook(unsigned char argc, char* argv[]);
+extern void syslog_direction_get_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* argv[]);
 
 /**
  * @brief       cli hook for set syslog direction
  */
-extern void syslog_direction_cli_hook(unsigned char argc, char* argv[]);
+extern void syslog_direction_cli_hook(cli_ctx_t *ctx, unsigned char argc, char* argv[]);
 
 /**
  * @brief       init syslog module

@@ -413,29 +413,33 @@ static void _mp_fixed_recycle_thd_work(void *args)
 
 #if MP_FIXED_DBG
 
-void mp_fixed_debug_show(unsigned char argc, char *argv[])
+void mp_fixed_debug_show(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
+    char temp_buf[1024] = {};
     // 查看attr信息
     ev_with_rdlock(&g_mem_type_attr_fixed_hash_rwlock)
     {
-        safe_printf("\n                  MP_FIXED_ATTR\n");
-        safe_printf("------------------------------------------------\n" MP_FIXED_ATTR_FMT_HEAD MP_FIXED_ATTR_FMT_HEAD, 
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "\n                  MP_FIXED_ATTR\n");
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+            "------------------------------------------------\n" MP_FIXED_ATTR_FMT_HEAD MP_FIXED_ATTR_FMT_HEAD, 
             "name", "size", "count", "used", "free",
             "----", "----", "-----", "----", "----");
         mem_type_attr_fixed_t *attr = mem_type_attr_fixed_hash_first(&g_mem_type_attr_fixed_hashtable);
         while(attr)
         {
-            safe_printf(MP_FIXED_ATTR_FMT_DATA, attr->name, attr->node_size, attr->node_cnt, ATOM_LOAD(&attr->used, MORDER_ACQUIRE), ATOM_LOAD(&attr->free, MORDER_ACQUIRE));
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                MP_FIXED_ATTR_FMT_DATA, attr->name, attr->node_size, attr->node_cnt, ATOM_LOAD(&attr->used, MORDER_ACQUIRE), ATOM_LOAD(&attr->free, MORDER_ACQUIRE));
             attr = mem_type_attr_fixed_hash_next(&g_mem_type_attr_fixed_hashtable, attr);
         }
-        safe_printf("------------------------------------------------\n");
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "------------------------------------------------\n");
     }
 
     // 查看aq信息
     ev_with_rdlock(&g_fixed_mp_recycle_aq_hash_rwlock)
     {
-        safe_printf("\n           MP_FIXED_RECYCLE_QUEUE\n");
-        safe_printf("------------------------------------------\n" MP_FIXED_RECYCLE_AQ_FMT_HEAD MP_FIXED_RECYCLE_AQ_FMT_HEAD,
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "\n           MP_FIXED_RECYCLE_QUEUE\n");
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+            "------------------------------------------\n" MP_FIXED_RECYCLE_AQ_FMT_HEAD MP_FIXED_RECYCLE_AQ_FMT_HEAD,
             "attr_name", "tid", "local", "remote",
             "---------", "---", "-----", "------"
         );
@@ -444,20 +448,23 @@ void mp_fixed_debug_show(unsigned char argc, char *argv[])
         {
             // 根据recycle反推mp
             fixed_mp_t *mp = container_of(recycle, fixed_mp_t, recycle);
-            safe_printf(MP_FIXED_RECYCLE_AQ_FMT_DATA,
+            snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), 
+                MP_FIXED_RECYCLE_AQ_FMT_DATA,
                 mp->attr->name, recycle->tid,
                 mp_fixed_recycle_spsc_atom_queue_count(&recycle->local),
                 mp_fixed_recycle_spsc_atom_queue_count(&recycle->remote)
             );
             recycle = mp_fixed_recycle_hash_next(&g_fixed_mp_recycle_aq_hashtable, recycle);
         }
-        safe_printf("------------------------------------------\n");
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf), "------------------------------------------\n");
     }
+
+    cli_printf(ctx, "%s", temp_buf);
 }
 
 #else
 
-void mp_fixed_debug_show(unsigned char argc, char *argv[])
+void mp_fixed_debug_show(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     return;
 }

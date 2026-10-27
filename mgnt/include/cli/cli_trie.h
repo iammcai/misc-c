@@ -25,13 +25,14 @@
 
 #include "plat/compiler.h"
 #include "plat/debug.h"
+#include "cli/cli_pager.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
 // cli回调钩子函数签名定义
-typedef void (*cli_hook_func)(unsigned char argc, char *argv[]);
+typedef void (*cli_hook_func)(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 // 节点类型定义
 typedef enum{
@@ -104,7 +105,7 @@ extern void _cli_trie_excute(const char *cmd);
  * 
  * @note        打印cli前缀树
  */
-extern void _cli_trie_dump();
+extern void _cli_trie_dump(cli_ctx_t *ctx);
 
 /**
  * @brief       search in trie by prefix，find possibly text for completion

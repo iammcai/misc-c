@@ -22,10 +22,12 @@
 /* ========================================================================== */
 
 #include <pthread.h>
+
 #include "plat/compiler.h"
 #include "plat/debug.h"
 #include "type/type_hash.h"
 #include "type/type_list.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -207,6 +209,6 @@ extern unsigned char _thp_is_run(thp_t *thp);
  * 
  * @note        打印所有thp的cli回调
  */
-extern void thp_dump_cli_hook(unsigned char argc, char *argv[]);
+extern void thp_dump_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif

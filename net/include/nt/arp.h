@@ -82,19 +82,19 @@ extern error_code_e arp_cache_query(uint32_t ip, uint8_t *mac);
  * 
  * @param[in]   target_ip
  */
-extern void arp_probe_cli_hook(unsigned char argc, char *argv[]);
+extern void arp_probe_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for arp scan
  */
-extern void arp_scan_cli_hook(unsigned char argc, char *argv[]);
+extern void arp_scan_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for show arp cache
  * 
  * @note        打印arp cache
  */
-extern void arp_show_cache_cli_hook(unsigned char argc, char *argv[]);
+extern void arp_show_cache_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif
 /* #ifndef __ARP_H_ end */

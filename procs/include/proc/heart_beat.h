@@ -22,6 +22,7 @@
 /* ========================================================================== */
 
 #include "plat/compiler.h"
+#include "cli/cli.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -49,6 +50,6 @@ extern void proc_heart_beat_module_init();
  */
 extern void proc_heart_beat_module_exit();
 
-extern void proc_heart_beat_show_cli_cb(unsigned char argc, char *argv[]);
+extern void proc_heart_beat_show_cli_cb(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 #endif

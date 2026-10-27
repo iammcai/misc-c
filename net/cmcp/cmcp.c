@@ -54,13 +54,13 @@ static pthread_t g_mcp_fsm_tid;
 /*                           Function Definition                              */
 /* ========================================================================== */
 
-void cmcp_on_cli_hook(unsigned char argc, char *argv[])
+void cmcp_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     cmcp_fsm_msg_t msg = {.event = CMCP_EVENT_START};
     cmcp_fsm_msg_push(&msg);
 }
 
-void cmcp_off_cli_hook(unsigned char argc, char *argv[])
+void cmcp_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     cmcp_fsm_msg_t msg = {.event = CMCP_EVENT_ABORT};
     cmcp_fsm_msg_push(&msg);

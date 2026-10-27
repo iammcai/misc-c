@@ -207,8 +207,9 @@ static error_code_e _mp_mem_usage_get_rpc(rpc_header_t *hdr, rpc_in_param_t *in_
     return ret;
 }
 
-void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[])
+void mp_show_mem_usage_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
+    char temp_buf[1024] = {};
     // 获取所有进程情况
     for(proc_id_e pid = PID_CORE; pid < PID_CNT; ++ pid)
     {
@@ -235,14 +236,15 @@ void mp_show_mem_usage_cli_hook(unsigned char argc, char *argv[])
             rpc_out_param_get_tlv(&out_param, "free_size", sizeof(uint32_t), &free_size);
         }
 
-        safe_printf("\nProc Id: %d\n" MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD, pid,
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),
+            "\nProc Id: %d\n" MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD, pid,
             "TYPE", "COUNT", "SIZE",
             "----", "-----", "----"
         );
-        safe_printf(MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
-        safe_printf(MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
-        safe_printf(MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
+        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
     }
 
-    safe_printf("\n");
+    cli_printf(ctx, "%s\n",temp_buf);
 }

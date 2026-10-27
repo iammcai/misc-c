@@ -45,7 +45,7 @@ extern cli_param_t tftp_ul_param[];
  * @param[in]   server_ip   - host order
  * @param[in]   filename    - file name
  */
-extern void tftp_download_cli_hook(unsigned char argc, char *argv[]);
+extern void tftp_download_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for tftp upload
@@ -54,7 +54,7 @@ extern void tftp_download_cli_hook(unsigned char argc, char *argv[]);
  * @param[in]   server_ip   - host order
  * @param[in]   filename    - file name
  */
-extern void tftp_upload_cli_hook(unsigned char argc, char *argv[]);
+extern void tftp_upload_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       tftp module init
