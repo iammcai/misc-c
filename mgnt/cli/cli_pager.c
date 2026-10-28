@@ -56,29 +56,26 @@ static int _cli_get_key(void)
         return '\n';
 
     struct termios oldt, newt;
-    int ch;
+    unsigned char ch; // 用 unsigned char 存字符
+    ssize_t ret;      // 用 ssize_t 存 read 返回值
 
     if(tcgetattr(STDIN_FILENO, &oldt) != 0)
         return '\n';
 
     newt = oldt;
-
-    // 关闭规范模式（无需回车）和回显（按键不显示在屏幕）
     newt.c_lflag &= ~(ICANON | ECHO);
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 
-    // 用 read 直接读字节，避免 stdio 缓冲导致残留按键被“预读”
     do {
-        ch = (int)read(STDIN_FILENO, &ch, 1);
-    } while(ch < 0 && errno == EINTR);
+        ret = read(STDIN_FILENO, &ch, 1);
+    } while(ret < 0 && errno == EINTR);
 
-    // 恢复终端属性
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 
-    if(ch <= 0)
+    if(ret <= 0)
         return '\n';
 
-    return ch;
+    return (int)ch; // 返回实际读取到的字符
 }
 
 /**
