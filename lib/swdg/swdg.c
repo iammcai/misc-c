@@ -184,7 +184,7 @@ void swdg_show_swdg_cli_cb(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     uint64_t curr = low_res_cur_time_get();
 
-    char temp_buf[2048] = {};
+    char temp_buf[4096] = {};
 
     snprintf(temp_buf, sizeof(temp_buf), "\n                              software watch dog\n" 
         "---------------------------------------------------------------------------------\n"

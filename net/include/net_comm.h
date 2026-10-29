@@ -95,8 +95,10 @@ _Static_assert(sizeof(pkthdr_l2_t) == PKT_HDR_L2_SIZE, "sizeof pkthdr_l2_t must 
 // ipv4头部
 typedef struct{
     uint8_t v_ihl;              // 4bit version + 4bit ihl(uint 4B)
+#define IPV4_HEADER_SIZE(ipv4_hdr)  (((ipv4_hdr->v_ihl) & 0x0f) * 4)        // ipv4头部实际长度
     uint8_t tos;
     uint16_t tot_len;           // 总长度 头部+负载
+#define IPV4_TOTAL_SIZE(ipv4_hdr)   (ntohs((ipv4_hdr)->tot_len))
     uint16_t id;
     uint16_t flag_frag;         // [15:13] flag, [12:0] frag offset
     uint8_t ttl;
@@ -115,6 +117,7 @@ typedef struct{
     uint32_t ack_num;       // 确认号
     uint16_t off_flags;     // 数据偏移(4bit) + 保留(3bit) + 标志位(9bit)
 #define TCP_HDR_FLAG(hdr)       (ntohs(hdr->off_flags) & 0x003f)
+#define TCP_HEADER_SIZE(hdr)    (((ntohs(hdr->off_flags) >> 12) & 0x0f) * 4)
     uint16_t window;        // 窗口大小
     uint16_t checksum;      // 校验和
     uint16_t urgent_ptr;    // 紧急指针
@@ -129,6 +132,15 @@ typedef struct{
     uint16_t checksum;          // 校验和
 }attr_packed pkthdr_udp_t;
 _Static_assert(sizeof(pkthdr_udp_t) == PKT_HDR_UDP_SIZE, "sizeof pkthdr_udp_t must be 8");
+
+// 五元组定义
+typedef struct{
+    uint32_t src_ip;
+    uint32_t dst_ip;
+    uint16_t src_port;
+    uint16_t dst_port;
+    uint8_t protocol;
+}pkt_flow_5_t;
 
 // 接口状态定义
 typedef struct{

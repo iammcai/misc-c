@@ -415,7 +415,7 @@ static void _mp_fixed_recycle_thd_work(void *args)
 
 void mp_fixed_debug_show(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    char temp_buf[1024] = {};
+    char temp_buf[4096] = {};
     // 查看attr信息
     ev_with_rdlock(&g_mem_type_attr_fixed_hash_rwlock)
     {

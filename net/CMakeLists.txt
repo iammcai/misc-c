@@ -8,6 +8,7 @@ add_library(Net STATIC
     cmcp/cmcp_pkt.c
     cmcp/cmcp_fsm.c
     cmcp/cmcp.c
+    dissect/tcp.c
 )
 
 target_include_directories(Net PUBLIC
