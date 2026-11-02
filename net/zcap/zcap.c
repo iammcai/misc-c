@@ -1623,6 +1623,8 @@ error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
     double wlan0_rx_rate = 0;
     unsigned long eth0_rx_size = 0;
     unsigned long wlan0_rx_size = 0;
+    unsigned long eth0_rx_count = 0;
+    unsigned long wlan0_rx_count = 0;
 
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
@@ -1632,14 +1634,20 @@ error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
             if(0 == strcmp(captor->if_name, "eth0"))
             {
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
                     eth0_rx_size += captor->alz[q].stats.bytes;
+                    eth0_rx_count += captor->alz[q].stats.counts;
+                }
                 ev_with_spinlock(&captor->stats.lock)
                     eth0_rx_rate = captor->stats.Bps / 1000.0;
             }
             else if(0 == strcmp(captor->if_name, "wlan0"))
             {
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
                     wlan0_rx_size += captor->alz[q].stats.bytes;
+                    wlan0_rx_count += captor->alz[q].stats.counts;
+                }
                 ev_with_spinlock(&captor->stats.lock)
                     wlan0_rx_rate = captor->stats.Bps / 1000.0;
             }
@@ -1652,11 +1660,13 @@ error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
     json_object_start_with_key(jb, "eth0");
     json_add_double(jb, "rx_rate", eth0_rx_rate);
     json_add_int(jb, "rx_size", eth0_rx_size);
+    json_add_int(jb, "rx_count", eth0_rx_count);
     json_object_end(jb);
 
     json_object_start_with_key(jb, "wlan0");
     json_add_double(jb, "rx_rate", wlan0_rx_rate);
     json_add_int(jb, "rx_size", wlan0_rx_size);
+    json_add_int(jb, "rx_count", wlan0_rx_count);
     json_object_end(jb);
 
     json_object_end(jb);
@@ -1670,6 +1680,8 @@ error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb)
     double wlan0_rx_rate = 0;
     unsigned long eth0_rx_size = 0;
     unsigned long wlan0_rx_size = 0;
+    unsigned long eth0_rx_count = 0;
+    unsigned long wlan0_rx_count = 0;
 
     ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
@@ -1679,14 +1691,20 @@ error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb)
             if(0 == strcmp(captor->if_name, "eth0"))
             {
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
                     eth0_rx_size += captor->alz[q].stats.bytes;
+                    eth0_rx_count += captor->alz[q].stats.counts;
+                }
                 ev_with_spinlock(&captor->stats.lock)
                     eth0_rx_rate = captor->stats.Bps / 1000.0;
             }
             else if(0 == strcmp(captor->if_name, "wlan0"))
             {
                 for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
                     wlan0_rx_size += captor->alz[q].stats.bytes;
+                    wlan0_rx_count += captor->alz[q].stats.counts;
+                }
                 ev_with_spinlock(&captor->stats.lock)
                     wlan0_rx_rate = captor->stats.Bps / 1000.0;
             }
@@ -1697,11 +1715,13 @@ error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb)
     json_object_start_with_key(jb, "eth0");
     json_add_double(jb, "rx_rate", eth0_rx_rate);
     json_add_int(jb, "rx_size", eth0_rx_size);
+    json_add_int(jb, "rx_count", eth0_rx_count);
     json_object_end(jb);
 
     json_object_start_with_key(jb, "wlan0");
     json_add_double(jb, "rx_rate", wlan0_rx_rate);
     json_add_int(jb, "rx_size", wlan0_rx_size);
+    json_add_int(jb, "rx_count", wlan0_rx_count);
     json_object_end(jb);
 
     return ERR_NO_ERROR;

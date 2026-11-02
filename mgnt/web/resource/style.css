@@ -5,26 +5,92 @@
     box-sizing: border-box;
 }
 
+html, body {
+    height: 100%;            /* ⭐ 修复：严格限制高度，防止溢出产生留白 */
+    overflow: hidden;        /* ⭐ 修复：禁止 body 出现滚动条 */
+}
+
 body {
     font-family: "Times New Roman", Times, serif;
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-    min-height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;    /* ⭐ 修复：从 center 改为 stretch，防止垂直居中挤出留白 */
     padding: 10px;
 }
 
-/* ===== 卡片容器 ===== */
+/* ===== 布局框架 ===== */
+.layout {
+    display: flex;
+    height: 100%;            /* ⭐ 修复：从 min-height: 100vh 改为 100%，配合 padding 不超屏 */
+    width: min(95%, 1400px);
+    margin: 0 auto;
+    gap: 20px;
+    padding: 10px 0;         /* ⭐ 修复：减小上下 padding，防止总高度超出视口 */
+}
+
+/* ========== 左侧菜单 ========== */
+.sidebar {
+    flex: 0 0 clamp(180px, 25%, 300px);
+    align-self: stretch;
+    overflow-y: auto;
+    position: sticky;
+    top: 0;                  /* ⭐ 修复：配合父级 padding，不需要再写 top: 20px */
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    border-radius: 24px;
+    padding: 25px 15px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sidebar-title {
+    font-size: 1.3em;
+    font-weight: bold;
+    padding: 0 10px 15px;
+    border-bottom: 1px solid rgba(0,0,0,0.08);
+    margin-bottom: 10px;
+}
+
+.nav-item {
+    display: block;
+    padding: 10px 15px;
+    border-radius: 12px;
+    text-decoration: none;
+    color: #333;
+    transition: all 0.2s ease;
+    font-size: 0.95em;
+    cursor: pointer;
+}
+
+.nav-item:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.nav-item.active {
+    background: rgba(0, 120, 255, 0.12);
+    color: #0078ff;
+    font-weight: 600;
+}
+
+/* ===== 卡片容器（右侧主内容区） ===== */
 .container {
-    flex : 1;
+    flex: 1;
     min-width: 0;
     background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(10px);
     border-radius: 24px;
     padding: 25px 20px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-    transition: transform 0.3s ease;
+    transition: box-shadow 0.3s ease; /* ⭐ 修复：去掉了 transform，改用阴影变化代替悬停效果 */
+    
+    /* ⭐ 核心新增：让右侧内容独立滚动，彻底解决留白 */
+    height: 100%;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .container h2 {
@@ -34,12 +100,14 @@ body {
 }
 
 .container:hover {
-    transform: translateY(-5px);
+    /* ⭐ 修复：删除了 translateY(-5px)，这是底部多出隐形空白的元凶之一 */
+    box-shadow: 0 25px 65px rgba(0, 0, 0, 0.18); 
 }
 
 /* ===== 页面切换容器 ===== */
 .page-container {
     width: 100%;
+    flex: 1;                 /* ⭐ 新增：撑满中间剩余空间 */
 }
 
 .page {
@@ -55,7 +123,7 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 20px;
-    margin: 30px 0;
+    margin: 20px 0;          /* ⭐ 微调：减小上下 margin */
     justify-content: flex-start;
 }
 
@@ -120,7 +188,7 @@ span {
     font-size: 1.05rem;
     line-height: 1.7;
     color: #2d3748;
-    margin-bottom: 30px;
+    margin-bottom: 20px;     /* ⭐ 微调：减小底部间距 */
 }
 
 .content p {
@@ -161,26 +229,26 @@ span {
 
 /* ===== 表格 ===== */
 table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 10px;
-  border: 1px solid #ccc;
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 10px;
+    border: 1px solid #ccc;
 }
 
 th, td {
-  border: 1px solid #ccc;
-  padding: 6px 12px;
-  text-align: center;
+    border: 1px solid #ccc;
+    padding: 6px 12px;
+    text-align: center;
 }
 
 th {
-  font-weight: normal;
-  background-color: #f2f2f2;
+    font-weight: normal;
+    background-color: #f2f2f2;
 }
 
 /* ===== 页脚 ===== */
 .footer {
-    margin-top: 30px;
+    margin-top: auto;        /* ⭐ 修复：在 flex 容器中自动推到底部，不留多余空白 */
     padding-top: 20px;
     border-top: 1px solid #e2e8f0;
     text-align: center;
@@ -201,68 +269,16 @@ th {
     }
 }
 
-/* ========== 布局框架 ========== */
-.layout {
-    display: flex;
-    min-height: 100vh;
-    width: min(95%, 1400px);
-    margin: 0 auto;
-    gap: 20px;
-    padding: 20px 0;
-}
-
-/* ========== 左侧菜单 ========== */
-.sidebar {
-    flex: 0 0 clamp(180px, 25%, 300px);
-    align-self: stretch;
-    max-height: calc(100vh - 40px);
-    overflow-y: auto;
-    position: sticky;
-    top: 20px;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(10px);
-    border-radius: 24px;
-    padding: 25px 15px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.sidebar-title {
-    font-size: 1.3em;
-    font-weight: bold;
-    padding: 0 10px 15px;
-    border-bottom: 1px solid rgba(0,0,0,0.08);
-    margin-bottom: 10px;
-}
-
-.nav-item {
-    display: block;
-    padding: 10px 15px;
-    border-radius: 12px;
-    text-decoration: none;
-    color: #333;
-    transition: all 0.2s ease;
-    font-size: 0.95em;
-    cursor: pointer;
-}
-
-.nav-item:hover {
-    background: rgba(0, 0, 0, 0.06);
-}
-
-.nav-item.active {
-    background: rgba(0, 120, 255, 0.12);
-    color: #0078ff;
-    font-weight: 600;
-}
-
 /* ========== 响应式：小屏变上下布局 ========== */
 @media (max-width: 768px) {
+    html, body {
+        overflow: auto;      /* 手机端允许 body 滚动 */
+    }
     .layout {
         flex-direction: column;
         width: 95%;
+        height: auto;        /* 手机端取消固定高度 */
+        padding: 10px 0;
     }
     .sidebar {
         width: 100%;
@@ -280,23 +296,28 @@ th {
         padding: 8px 12px;
         font-size: 0.85em;
     }
+    .container {
+        height: auto;        /* 手机端取消固定高度 */
+        overflow-y: visible;
+    }
 }
 
 /* 图表外层容器：控制大小和居中 */
 .chart-container {
-    width: 80%;             /* 宽度根据父容器定 */
-    max-width: 500px;       /* 限制最大宽度*/
-    margin: 10px auto;         /* 保持水平居中 */
-    aspect-ratio: 1 / 1;    /* 强制宽高比 1:1，保证是正圆 */
+    width: 80%;
+    max-width: 500px;
+    margin: 10px auto;
+    aspect-ratio: 1 / 1;
 }
 
-/* 柱状图外层容器：控制大小和居中 */
+/* 柱状图外层容器：改为横向并排，限制高度 */
 .bar-container {
-    width: 80%;             /* 宽度根据父容器定，与饼图保持一致 */
-    max-width: 500px;       /* 限制最大宽度，与饼图保持一致 */
-    margin: 10px auto;      /* 保持水平居中，与饼图保持一致 */
-    aspect-ratio: 16 / 9;   /* 强制宽高比 16:9，保证柱状图视觉协调（千万别用 1/1） */
-    position: relative;     /* 关键！配合 Chart.js 的 responsive: true 防止高度塌陷 */
+    flex: 1 1 300px;
+    min-width: 280px;
+    height: 250px;
+    max-height: 300px;
+    margin: 10px 0;
+    position: relative;
 }
 
 /* 自适应 */
@@ -304,6 +325,143 @@ th {
     .chart-container {
         width: 100%;
         height: auto;
-        aspect-ratio: 1 / 1; /* 保持正方形 */
+        aspect-ratio: 1 / 1;
     }
+}
+
+/* ==========================================
+   Network Dashboard 紧凑版（不挤压图表）
+   ========================================== */
+
+/* 仪表盘改为横向单排（Flex） */
+.net-dashboard {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+/* 单个指标卡片 */
+.net-stat-card {
+    flex: 1 1 120px;
+    min-width: 100px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,247,250,0.7) 100%);
+    border-radius: 12px;
+    padding: 10px 8px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.net-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.08);
+}
+
+/* 顶部装饰条保留 */
+.net-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+}
+
+.stat-blue .net-stat-card::before   { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.stat-green .net-stat-card::before  { background: linear-gradient(90deg, #10b981, #34d399); }
+.stat-purple .net-stat-card::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.stat-orange .net-stat-card::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+
+/* 图标：保留原生 Emoji，加一个精致的底座 */
+.net-stat-icon {
+    font-size: 1.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 8px auto;
+    background: rgba(102, 126, 234, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(102, 126, 234, 0.15);
+    -webkit-text-fill-color: initial !important;
+    color: initial !important;
+    opacity: 1 !important;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+/* 让不同卡片的底座颜色稍微呼应一下主题色 */
+.stat-blue .net-stat-icon   { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.2); }
+.stat-green .net-stat-icon  { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.2); }
+.stat-purple .net-stat-icon { background: rgba(139, 92, 246, 0.1); border-color: rgba(139, 92, 246, 0.2); }
+.stat-orange .net-stat-icon { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.2); }
+
+.net-stat-card:hover .net-stat-icon {
+    transform: scale(1.1);
+}
+
+/* 标签文字：更紧凑 */
+.net-stat-label {
+    font-size: 0.7rem;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
+    font-weight: 600;
+}
+
+/* 核心数值：缩小字号 */
+.net-stat-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-family: 'Courier New', monospace;
+    line-height: 1.2;
+}
+
+/* 单位：更紧凑 */
+.net-stat-unit {
+    font-size: 0.65rem;
+    color: #a0aec0;
+    margin-top: 2px;
+    display: block;
+}
+
+/* 分隔线 */
+.net-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(102,126,234,0.2), transparent);
+    margin: 10px 0 15px 0;
+    border: none;
+}
+
+/* 响应式：极小屏幕才变成两列 */
+@media (max-width: 500px) {
+    .net-stat-card {
+        flex: 1 1 45%;
+    }
+}
+
+/* 新增：用来包裹两个柱状图的横向容器 */
+.charts-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    width: 100%;
+    justify-content: center;
+}
+
+/* 折线图容器也顺便限制一下高度，防止它撑大 */
+.line-chart-container {
+    width: 100%;
+    height: 250px;
+    max-height: 300px;
+    margin: 15px 0 5px 0;
+    position: relative;
 }

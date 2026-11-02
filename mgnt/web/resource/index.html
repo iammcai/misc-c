@@ -73,19 +73,88 @@
             <div class="page" id="page-network">
                 <div class="card-grid">
                     <div class="card-item" id="card-eth0" style="order: 1;">
-                        <div class="bar-container">
-                            <canvas id="eth0_protocol_bar"></canvas>
+                        <div class="net-dashboard">
+                            <!-- 下行速率 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">👇</span>
+                                <div class="net-stat-label">RX Rate</div>
+                                <div class="net-stat-value" id="eth0_rx_rate">--</div>
+                                <span class="net-stat-unit">kB/s</span>
+                            </div>
+                            <!-- 总接收量 -->
+                            <div class="net-stat-card stat-purple">
+                                <span class="net-stat-icon">💾</span>
+                                <div class="net-stat-label">Total RX Size</div>
+                                <div class="net-stat-value" id="eth0_total_rx_size">--</div>
+                                <span class="net-stat-unit">MB</span>
+                            </div>
+                            <!-- 总接收数量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">🛍</span>
+                                <div class="net-stat-label">Total RX Count</div>
+                                <div class="net-stat-value" id="eth0_total_rx_count">--</div>
+                                <span class="net-stat-unit">pkts</span>
+                            </div>
+                            <!-- 包平均长度 -->
+                            <div class="net-stat-card stat-purple">
+                                <span class="net-stat-icon">🧩</span>
+                                <div class="net-stat-label">Average RX Packet Size</div>
+                                <div class="net-stat-value" id="eth0_rx_avg_size">--</div>
+                                <span class="net-stat-unit">B</span>
+                            </div>
                         </div>
-                        <div class="bar-container">
-                            <canvas id="eth0_stream_bar"></canvas>
+                        <div class="charts-row">
+                            <div class="bar-container">
+                                <canvas id="eth0_protocol_bar"></canvas>
+                            </div>
+                            <div class="bar-container">
+                                <canvas id="eth0_stream_bar"></canvas>
+                            </div>
+                        </div>
+                        <div class="line-chart-container">
+                            <div class="line-chart-container">
+                                <canvas id="eth0_rx_line_chart"></canvas>       <!-- rx速率曲线 -->
+                            </div>
                         </div>
                     </div>
                     <div class="card-item" id="card-wlan0" style="order: 2;">
-                        <div class="bar-container">
-                            <canvas id="wlan0_protocol_bar"></canvas>
+                        <div class="net-dashboard">
+                            <!-- 下行速率 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">👇</span>
+                                <div class="net-stat-label">RX Rate</div>
+                                <div class="net-stat-value" id="wlan0_rx_rate">--</div>
+                                <span class="net-stat-unit">kB/s</span>
+                            </div>
+                            <!-- 总接收量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">💾</span>
+                                <div class="net-stat-label">Total RX Size</div>
+                                <div class="net-stat-value" id="wlan0_total_rx_size">--</div>
+                                <span class="net-stat-unit">MB</span>
+                            </div>
+                            <!-- 总接收数量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">🛍</span>
+                                <div class="net-stat-label">Total RX Count</div>
+                                <div class="net-stat-value" id="wlan0_total_rx_count">--</div>
+                                <span class="net-stat-unit">pkts</span>
+                            </div>
+                            <!-- 包平均长度 -->
+                            <div class="net-stat-card stat-purple">
+                                <span class="net-stat-icon">🧩</span>
+                                <div class="net-stat-label">Average RX Packet Size</div>
+                                <div class="net-stat-value" id="wlan0_rx_avg_size">--</div>
+                                <span class="net-stat-unit">B</span>
+                            </div>
                         </div>
-                        <div class="bar-container">
-                            <canvas id="wlan0_stream_bar"></canvas>
+                        <div class="charts-row">
+                            <div class="bar-container">
+                                <canvas id="wlan0_protocol_bar"></canvas>
+                            </div>
+                            <div class="bar-container">
+                                <canvas id="wlan0_stream_bar"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>

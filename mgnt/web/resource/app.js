@@ -1,30 +1,67 @@
-document.addEventListener('DOMContentLoaded', function(){
+// ==========================================
+// 页面路由切换逻辑（支持刷新保持状态）
+// ==========================================
 
-    // ----- 页面切换逻辑 -----
-    const navItems = document.querySelectorAll('.nav-item');
-    const pages = {
-        dashboard: document.getElementById('page-dashboard'),
-        devices: document.getElementById('page-devices'),
-        network: document.getElementById('page-network'),
-        system: document.getElementById('page-system'),
-    };
+/**
+ * 切换到指定页面
+ * @param {string} pageName - 对应 HTML 中的 data-page 值 (如 'dashboard', 'network')
+ * @param {boolean} updateHash - 是否需要更新 URL hash
+ */
+function switchPage(pageName, updateHash = true) {
+    // 1. 隐藏所有页面
+    document.querySelectorAll('.page').forEach(page => {
+        page.classList.remove('active-page');
+    });
 
-    function switchPage(pageId) {
-        Object.values(pages).forEach(p => p.classList.remove('active-page'));
-        if (pages[pageId]) pages[pageId].classList.add('active-page');
-        navItems.forEach(item => item.classList.remove('active'));
-        document.querySelector(`.nav-item[data-page="${pageId}"]`)?.classList.add('active');
+    // 2. 显示目标页面
+    const targetPage = document.getElementById(`page-${pageName}`);
+    if (targetPage) {
+        targetPage.classList.add('active-page');
+    } else {
+        // 如果找不到目标页，降级显示 dashboard
+        document.getElementById('page-dashboard').classList.add('active-page');
+        pageName = 'dashboard';
     }
 
-    navItems.forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault();
-            const page = this.dataset.page;
-            if (page) switchPage(page);
+    // 3. 更新左侧菜单的高亮状态
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-page') === pageName) {
+            item.classList.add('active');
+        }
+    });
+
+    // 4. 更新 URL 的 Hash（不触发页面刷新）
+    if (updateHash) {
+        window.history.replaceState(null, '', `#${pageName}`);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+
+    // 绑定左侧导航栏点击事件
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault(); // ⭐ 阻止 <a> 标签默认的跳转行为
+            const pageName = item.getAttribute('data-page');
+            switchPage(pageName);
         });
     });
 
-    switchPage('dashboard');
+    // ⭐ 核心：页面加载/刷新时，读取 URL Hash 决定显示哪个页面
+    const currentHash = window.location.hash.substring(1); // 去掉 '#'，得到 'network'
+    
+    if (currentHash) {
+        switchPage(currentHash, false);
+    } else {
+        switchPage('dashboard', false); // 默认首页
+    }
+
+    // 监听浏览器“前进/后退”按钮
+    window.addEventListener('hashchange', () => {
+        const hash = window.location.hash.substring(1);
+        switchPage(hash || 'dashboard', false);
+    });
 
     // ----- 原有功能 -----
     let realtimeTimer = null;
@@ -537,6 +574,8 @@ document.addEventListener('DOMContentLoaded', function(){
         chartInstance.update();
     }
 
+    /* =-=-=-=-=-=-=-=- rx折线图 -=-=-=-=-=-=-=-= */
+
     /* =-=-=-=-=-=-=-=- sync 定时刷新 -=-=-=-=-=-=-=-= */
     async function sync_poll() {
         const controller = new AbortController();
@@ -579,7 +618,18 @@ document.addEventListener('DOMContentLoaded', function(){
             // ================= 处理 eth0 =================
             if (hasValidData('eth0')) {
                 // 有数据：显示卡片
-                if (cardEth0) cardEth0.style.display = ''; 
+                if (cardEth0) cardEth0.style.display = '';
+
+                // 仪表盘
+                const net_stat_eth0_rx_size = document.getElementById('eth0_total_rx_size');
+                const net_stat_eth0_rx_rate = document.getElementById('eth0_rx_rate');
+                const net_stat_eth0_rx_count = document.getElementById('eth0_total_rx_count');
+                const net_stat_eth0_rx_avg_size = document.getElementById('eth0_rx_avg_size');
+                net_stat_eth0_rx_size.textContent = `${eth0_rx_size}`;
+                net_stat_eth0_rx_rate.textContent = `${data.network.eth0.rx_rate}`;
+                net_stat_eth0_rx_count.textContent = `${data.network.eth0.rx_count}`;
+                const eth0_rx_avg_size = (Number(data.network.eth0.rx_size) / Number(data.network.eth0.rx_count)).toFixed(2);
+                net_stat_eth0_rx_avg_size.textContent = `${eth0_rx_avg_size}`;
                 
                 // 更新流量柱状图
                 if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.eth0)) {
@@ -598,6 +648,17 @@ document.addEventListener('DOMContentLoaded', function(){
             if (hasValidData('wlan0')) {
                 // 有数据：显示卡片
                 if (cardWlan0) cardWlan0.style.display = '';
+
+                // 仪表盘
+                const net_stat_wlan0_rx_size = document.getElementById('wlan0_total_rx_size');
+                const net_stat_wlan0_rx_rate = document.getElementById('wlan0_rx_rate');
+                const net_stat_wlan0_rx_count = document.getElementById('wlan0_total_rx_count');
+                const net_stat_wlan0_rx_avg_size = document.getElementById('eth0_rx_avg_size');
+                net_stat_wlan0_rx_size.textContent = `${wlan0_rx_size}`;
+                net_stat_wlan0_rx_rate.textContent = `${data.network.wlan0.rx_rate}`;
+                net_stat_wlan0_rx_count.textContent = `${data.network.wlan0.rx_count}`;
+                const wlan0_rx_avg_size = (Number(data.network.wlan0.rx_size) / Number(data.network.wlan0.rx_count)).toFixed(2);
+                net_stat_wlan0_rx_avg_size.textContent = `${wlan0_rx_avg_size}`;
                 
                 // 更新流量柱状图
                 if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.wlan0)) {
@@ -640,7 +701,7 @@ document.addEventListener('DOMContentLoaded', function(){
             if (cardWlan0) cardWlan0.style.display = '';
         } finally {
             clearTimeout(timeoutId);
-            syncTimer = setTimeout(sync_poll, 5000);
+            syncTimer = setTimeout(sync_poll, 1000);
         }
     }
     sync_poll();
