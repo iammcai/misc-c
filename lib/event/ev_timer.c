@@ -29,7 +29,6 @@
 
 #include "plat/atom.h"
 #include "event/ev_timer.h"
-#include "event/ev_thread.h"
 #include "event/ev_lock.h"
 #include "plat/debug.h"
 #include "mp/mp.h"
@@ -50,6 +49,9 @@
 
 // 高精度epoll等待时间
 #define EV_HIGH_RES_EPOLL_WAIT      (200)
+
+// 低精度时钟触发间隔
+#define EV_LOW_RES_TIMER_INTERVAL   (100)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -120,12 +122,16 @@ static void _low_res_clock_work(void *args);
  */
 static void* _ev_timer_high_res_epoll_main(void *args);
 
+/**
+ * @brief       thread for low res timer
+ * 
+ * @note        从evthd改为独立维护线程，修正语义
+ */
+static void* _ev_low_res_timer_routine(void *args);
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
-
-// 低精度时钟更新线程
-declare_ev_thd(low_res_clock, _low_res_clock_work, NULL, 0)
 // 运行标志
 static ATOMIC_UINT8_T g_low_res_clock_running = 0;
 
@@ -144,8 +150,11 @@ declare_thp(ev_timer, THREAD_POOL_TH_COUNT_MAX)
 // 高精度线程池
 declare_thp(ev_high_res_timer, THREAD_POOL_TH_COUNT_MAX)
 
+// 低精度定时器线程id
+static pthread_t g_low_res_timer_tid;
+
 // 高精度定时器epoll线程id
-static pthread_t g_high_res_timer_epoll_tid = -1;
+static pthread_t g_high_res_timer_epoll_tid;
 // epoll_fd
 static int g_high_res_timer_epoll_fd = -1;
 // 运行标志
@@ -158,12 +167,15 @@ static ATOMIC_UINT8_T g_high_res_timer_run;
 // 定义堆操作
 declare_heap(ev_timer, ev_timer, ev_timer_t, item, 1, 1024, _ev_timer_cmp)
 
-static void _low_res_clock_work(void *args)
+static void* _ev_low_res_timer_routine(void *args)
 {
+    const char* name = "ev_lr_timer";
+    prctl(PR_SET_NAME, name);
+    swdg_register(name, EV_LOW_RES_TIMER_INTERVAL * 3);     // 300ms内必须feed
+
     ATOM_STORE(&g_low_res_clock_running, 1, MORDER_RELAXED);
     while(ATOM_LOAD(&g_low_res_clock_running, MORDER_RELAXED))
     {
-        // 不走ev_thd定时唤醒，需要手动喂狗
         swdg_feed();
 
         uint64_t ms = mono_time_get();
@@ -204,8 +216,10 @@ static void _low_res_clock_work(void *args)
         for(int i = 0; i < batch_count; ++ i)
             thp_submit_task(ev_timer, expired_batch[i]->cb, expired_batch[i]->args);
 
-        usleep(100 * 1000);
+        usleep(EV_LOW_RES_TIMER_INTERVAL * 1000);     // 100ms运行间隔
     }
+
+    swdg_deregister(name);
 }
 
 ev_timer_t* ev_timer_create(const char *name, uint32_t timeout, ev_timer_cb_func cb, void *args)
@@ -453,10 +467,8 @@ void ev_timer_module_init(void)
 
     ev_timer_heap_init(&g_ev_timer_heap);
 
-    ev_thd_register(low_res_clock);
-    ev_thd_run(low_res_clock);
-    ev_thd_wake(low_res_clock);     // 唤醒一次
-
+    // 低精度定时器管理线程
+    pthread_create(&g_low_res_timer_tid, NULL, _ev_low_res_timer_routine, NULL);
     // 高精度定时器管理线程
     pthread_create(&g_high_res_timer_epoll_tid, NULL, _ev_timer_high_res_epoll_main, NULL);
 
@@ -470,7 +482,7 @@ void ev_timer_module_exit()
     pthread_join(g_high_res_timer_epoll_tid, NULL);
     // 结束低精度时钟维护事件线程
     ATOM_STORE(&g_low_res_clock_running, 0, MORDER_RELAXED);
-    ev_thd_cancel(low_res_clock);
+    pthread_join(g_low_res_timer_tid, NULL);
 
     // 销毁低精度定时器堆
     ev_with_spinlock(&g_heap_spinlock)
