@@ -43,9 +43,24 @@ extern void sht30_show_temp(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 extern void sht30_show_humi(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
+ * @brief       cli hook for: show temperature history
+ */
+extern void sht30_show_temp_history(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: show humidity history
+ */
+extern void sht30_show_humi_history(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+
+/**
  * @brief       cb for http cgi: /api/sht30/sensor
  */
 extern error_code_e sht30_sensor_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       cb for http cgi: /api/sht30/history
+ */
+extern error_code_e sht30_history_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       cb for http cgi: /api/sync sht30 module

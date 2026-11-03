@@ -20,7 +20,6 @@
 
 #include "fifo/fifo.h"
 #include "mp/mp.h"
-#include "plat/debug.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -148,4 +147,35 @@ size_t fifo_read(fifo_t *fifo, char *dest, size_t len, int out)
 size_t fifo_get_used(fifo_t *fifo)
 {
     return !fifo ? 0 : fifo->tail - fifo->head;
+}
+
+int fifo_is_full(fifo_t *fifo)
+{
+    pfm_ensure_ret(fifo, 0);
+    return fifo_get_used(fifo) == fifo->size;
+}
+
+error_code_e fifo_peek(fifo_t *fifo, size_t index, void *dest, size_t item_size)
+{
+    pfm_ensure_ret(fifo && dest && item_size, ERR_BAD_PARAM);
+
+    // 获取当前有效元素个数
+    size_t count = fifo_get_used(fifo) / item_size;
+    if(index >= count)
+        return ERR_BAD_PARAM; // 索引越界
+
+    size_t mask = fifo->size - 1;
+    // 获取物理地址
+    size_t phy_offset = (fifo->head + index * item_size) & mask;
+    size_t first_chunk = fifo->size - phy_offset;
+    if(first_chunk >= item_size)
+        memcpy(dest, fifo->buffer + phy_offset, item_size);
+    else
+    {
+        // 物理内存被截断成两段，分两次拷贝
+        memcpy(dest, fifo->buffer + phy_offset, first_chunk);
+        memcpy((char *)dest + first_chunk, fifo->buffer, item_size - first_chunk);
+    }
+
+    return ERR_NO_ERROR;
 }

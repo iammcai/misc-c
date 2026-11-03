@@ -24,6 +24,7 @@
 #include <stddef.h>
 
 #include "plat/compiler.h"
+#include "plat/debug.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -40,6 +41,7 @@ typedef struct fifo_s fifo_t;
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+//
 /**
  * @brief       create a fifo
  * 
@@ -87,5 +89,26 @@ extern size_t fifo_read(fifo_t *fifo, char *dest, size_t len, int out);
  * @retval      used size
  */
 extern size_t fifo_get_used(fifo_t *fifo);
+
+/**
+ * @brief       check if fifo is full
+ * 
+ * @param[in]   fifo
+ * 
+ * @retval      1 - full, 0 - not full
+ */
+extern int fifo_is_full(fifo_t *fifo);
+
+/**
+ * @brief       fifo peek
+ * 
+ * @param[in]   fifo
+ * @param[in]   index
+ * @param[out]  dest
+ * @param[in]   item_size
+ * 
+ * @retval      error code
+ */
+error_code_e fifo_peek(fifo_t *fifo, size_t index, void *dest, size_t item_size);
 
 #endif

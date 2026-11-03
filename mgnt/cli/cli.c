@@ -183,6 +183,8 @@ const static cli_register_entry_t g_cli_register_table[] = {
     // sht30
     CLI_REG_ENTRY("show temperature", "dump temperature measured by sht30", NULL, sht30_show_temp),
     CLI_REG_ENTRY("show humidity", "dump humidity measured by sht30", NULL, sht30_show_humi),
+    CLI_REG_ENTRY("show temperature history", "dump temperature history", NULL, sht30_show_temp_history),
+    CLI_REG_ENTRY("show humidity history", "dump humidity history", NULL, sht30_show_humi_history),
     // sysmon
     CLI_REG_ENTRY("show cpu usage", "dump cpu usage", NULL, sysmon_show_cpu_usage_cli_hook),
     // zcap

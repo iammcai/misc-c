@@ -358,7 +358,7 @@ void syslog_show_buffer_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[
         }
     }
 
-    char temp_buf[2048] = {};
+    char temp_buf[4096] = {};
     ev_with_rdlock(&g_syslog_ring.lock)
     {
         int size = _syslog_ring_size();

@@ -29,6 +29,8 @@
 #include "sht30/miscc_sht30.h"
 #include "event/ev_thread.h"
 #include "syslog/syslog.h"
+#include "fifo/fifo.h"
+#include "event/ev_lock.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -45,8 +47,13 @@
 // 设备路径最大长度
 #define FILE_PATH_MAX_LEN   (256)
 
-// 120s检测一次
-#define SHT30_MEASURE_INTERVAL      (120 * 1000)
+// 60s检测一次
+#define SHT30_MEASURE_INTERVAL      (60 * 1000)
+
+// sht30记录历史数据个数
+#define SHT30_HISTORY_SIZE          (128)
+// 打印sht30历史记录的缓冲长度
+#define SHT30_HISTORY_BUF_SIZE      (1024)
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
@@ -72,6 +79,17 @@ static error_code_e _sht30_find_device_path_by_name(const char *name);
  */
 static error_code_e _sht30_read_attr(const char *attr_name, double *value);
 
+/**
+ * @brief       update sht30 measure history
+ * 
+ * @param[in]   temp    - 实际温度
+ * @param[out]  humi    - 实际湿度
+ */
+static void _sht30_history_update(double temp, double humi);
+
+/**
+ * @brief       ev thd work func for sht30
+ */
 static attr_force_inline void _sht30_ev_thd_measure(void *args)
 {
     double temp_raw = 0.0, humi_raw = 0.0;
@@ -83,9 +101,7 @@ static attr_force_inline void _sht30_ev_thd_measure(void *args)
         return;
     }
 
-    char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-    snprintf(ctx, SYSLOG_ENTRY_CTX_SIZE, "Periodic monitoring: temperature %.3f ℃ humidity %.3f %%.", temp_raw/1000.0, humi_raw/1000.0);
-    syslog_notice(SYSLOG_MODULE_SHT30, ctx);
+    _sht30_history_update(temp_raw/1000.0, humi_raw/1000.0);
 }
 
 /* ========================================================================== */
@@ -98,9 +114,37 @@ static char g_sht30_file_path[FILE_PATH_MAX_LEN] = {};
 // 事件线程，定时检测
 declare_ev_thd(sht30_measure, _sht30_ev_thd_measure, NULL, SHT30_MEASURE_INTERVAL);
 
+// 温度历史数据
+static fifo_t *g_sht30_history_temp = NULL;
+// 湿度历史数据
+static fifo_t *g_sht30_history_humi = NULL;
+// lock for history
+static ev_spinlock_t g_sht30_history_splock = EV_SPINLOCK_INITIALIZER;
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
+
+static void _sht30_history_update(double temp, double humi)
+{
+    double tmp;
+
+    if(likely(g_sht30_history_temp))
+        ev_with_spinlock(&g_sht30_history_splock)
+        {
+            if(fifo_is_full(g_sht30_history_temp))      // fifo满，则读掉第一个
+                fifo_read(g_sht30_history_temp, (char*)&tmp, sizeof(double), 1);
+            fifo_write(g_sht30_history_temp, &temp, sizeof(double));
+        }
+
+    if(likely(g_sht30_history_humi))
+        ev_with_spinlock(&g_sht30_history_splock)
+        {
+            if(fifo_is_full(g_sht30_history_humi))
+                fifo_read(g_sht30_history_humi, (char*)&tmp, sizeof(double), 1);
+            fifo_write(g_sht30_history_humi, &humi, sizeof(double));
+        }
+}
 
 static error_code_e _sht30_find_device_path_by_name(const char *name)
 {
@@ -212,6 +256,60 @@ void sht30_show_humi(cli_ctx_t *ctx, unsigned char argc, char *argv[])
     cli_printf(ctx, "-sht30: Humidity: %.3f %%.\n", humi_raw / 1000.0);
 }
 
+void sht30_show_temp_history(cli_ctx_t *ctx, unsigned char argc, char *argv[])
+{
+    char buf[SHT30_HISTORY_BUF_SIZE] = {};
+
+    // 如果sht30设备不存在，那么不会创建fifo以及定期检测
+    if(unlikely(!g_sht30_history_temp))
+    {
+        safe_snprintf(buf, "-sht30: Device SHT30 not exist.");
+        goto done;
+    }
+
+    safe_snprintf(buf, "\nHistory order: old->new, time interval %d s\n", SHT30_MEASURE_INTERVAL / 1000);
+    ev_with_spinlock(&g_sht30_history_splock)
+    {
+        int cnt = fifo_get_used(g_sht30_history_temp) / sizeof(double);
+        for(int i = 0; i < cnt; ++ i)
+        {
+            double temp;
+            fifo_peek(g_sht30_history_temp, i, &temp, sizeof(double));
+            safe_snprintf(buf, "%.2f ℃\n", temp);
+        }
+    }
+
+done:
+    cli_printf(ctx, "%s\n", buf);
+}
+
+void sht30_show_humi_history(cli_ctx_t *ctx, unsigned char argc, char *argv[])
+{
+    char buf[SHT30_HISTORY_BUF_SIZE] = {};
+
+    // 如果sht30设备不存在，那么不会创建fifo以及定期检测
+    if(unlikely(!g_sht30_history_humi))
+    {
+        safe_snprintf(buf, "-sht30: Device SHT30 not exist.");
+        goto done;
+    }
+
+    safe_snprintf(buf, "\nHistory order: old->new, time interval %d s\n", SHT30_MEASURE_INTERVAL / 1000);
+    ev_with_spinlock(&g_sht30_history_splock)
+    {
+        int cnt = fifo_get_used(g_sht30_history_humi) / sizeof(double);
+        for(int i = 0; i < cnt; ++ i)
+        {
+            double humi;
+            fifo_peek(g_sht30_history_humi, i, &humi, sizeof(double));
+            safe_snprintf(buf, "%.2f %%RH\n", humi);
+        }
+    }
+
+done:
+    cli_printf(ctx, "%s\n", buf);
+}
+
 error_code_e sht30_read_temperature(double *temp)
 {
     double temp_raw = 0.0;
@@ -278,6 +376,46 @@ error_code_e sht30_sync_http_cgi_cb(json_builder_t *jb)
     return ERR_NO_ERROR;
 }
 
+error_code_e sht30_history_http_cgi_cb(json_builder_t *jb)
+{
+    json_object_start(jb);
+
+    if(unlikely(!g_sht30_history_temp || !g_sht30_history_humi))
+        goto done;
+
+    ev_with_spinlock(&g_sht30_history_splock)
+    {
+        int count = fifo_get_used(g_sht30_history_temp) / sizeof(double);
+        json_array_start_with_key(jb, "labels");
+        for(int i = 1; i <= count; ++ i)
+            json_array_add_int(jb, i);
+        json_array_end(jb);
+
+        json_array_start_with_key(jb, "temp");
+        double temp;
+        for(int i = 0; i < count; ++ i)
+        {
+            fifo_peek(g_sht30_history_temp, i, &temp, sizeof(double));
+            json_array_add_double(jb, temp);
+        }
+        json_array_end(jb);
+
+        json_array_start_with_key(jb, "humi");
+        double humi;
+        for(int i = 0; i < count; ++ i)
+        {
+            fifo_peek(g_sht30_history_humi, i, &humi, sizeof(double));
+            json_array_add_double(jb, humi);
+        }
+        json_array_end(jb);
+    }
+
+done:
+    json_object_end(jb);
+
+    return ERR_NO_ERROR;
+}
+
 void sht30_module_init()
 {
     // 加载驱动，忽略错误
@@ -290,6 +428,10 @@ void sht30_module_init()
         return;
     }
 
+    // 初始化fifo
+    g_sht30_history_temp = fifo_create(SHT30_HISTORY_SIZE * sizeof(double));
+    g_sht30_history_humi = fifo_create(SHT30_HISTORY_SIZE * sizeof(double));
+
     // 注册定时任务检测温度湿度
     ev_thd_register(sht30_measure);
     ev_thd_run(sht30_measure);
@@ -301,6 +443,12 @@ void sht30_module_exit()
 {
     // 停止定时检测事件线程
     ev_thd_cancel(sht30_measure);
+
+    // 关闭fifo
+    if(likely(g_sht30_history_temp))
+        fifo_destroy(&g_sht30_history_temp);
+    if(likely(g_sht30_history_humi))
+        fifo_destroy(&g_sht30_history_humi);
 
     // 注销驱动
     system("rmmod miscc_sht30");

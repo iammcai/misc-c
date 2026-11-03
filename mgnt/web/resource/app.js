@@ -37,6 +37,9 @@ function switchPage(pageName, updateHash = true) {
     }
 }
 
+// 引入device.js
+import { SHT30Chart } from './device.js';
+
 document.addEventListener('DOMContentLoaded', function(){
 
     // 绑定左侧导航栏点击事件
@@ -93,17 +96,25 @@ document.addEventListener('DOMContentLoaded', function(){
     const led_turn_btn = document.getElementById('led_turn_btn');
     const led_poll_btn = document.getElementById('led_poll_btn');
     const led_status = document.getElementById('led_status');
+    const dev_led = document.getElementById('dev_led');
+    const ledToggle = document.getElementById('led_toggle');
 
     function update_led_status(status) {
         if(status === 'on') {
             led_status.textContent = 'Led Status: ON';
             led_status.style.color = 'green';
+            dev_led.textContent = 'ON';
+            ledToggle.checked = 1;
         } else if (status === 'off') {
             led_status.textContent = 'Led Status: OFF';
             led_status.style.color = 'red';
+            dev_led.textContent = 'OFF';
+            ledToggle.checked = 0;
         } else {
             led_status.textContent = 'Led Status: UNKNOWN';
             led_status.style.color = 'gray';
+            dev_led.textContent = '--';
+            ledToggle.checked = 0;
         }
     }
 
@@ -148,9 +159,33 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
+
+    ledToggle.addEventListener('change', (e) => {
+        const isOn = e.target.checked;  // true = 开, false = 关
+        // 立即更新文字状态
+        dev_led.textContent = isOn ? 'ON' : 'OFF';
+        // fetch backend
+        fetch('/api/led/turn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            })
+            .then(res => {
+                if (!res.ok) throw new Error('led trun fail');
+                console.log('LED turn ok:', isOn);
+            })
+            .catch(err => {
+                console.error('LED turn fail:', err);
+                // 失败时把开关拨回去
+                ledToggle.checked = !isOn;
+                dev_led.textContent = !isOn ? 'ON' : 'OFF';
+            });
+    });
+
     /* =-=-=-=-=-=-=-=- SHT30 -=-=-=-=-=-=-=-= */
     const env_temp = document.getElementById('env_temp');
     const env_humi = document.getElementById('env_humi');
+    const dev_temp = document.getElementById(`dev_temp`);
+    const dev_humi = document.getElementById(`dev_humi`);
     const sht30_poll_btn = document.getElementById('sht30_poll_btn');
 
     sht30_poll_btn.addEventListener('click', function() {
@@ -177,6 +212,8 @@ document.addEventListener('DOMContentLoaded', function(){
             sht30_poll_btn.textContent = 'Poll';
         });
     });
+
+    SHT30Chart.init();
 
     /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */
     const realtime = document.getElementById('realtime');
@@ -591,8 +628,13 @@ document.addEventListener('DOMContentLoaded', function(){
             const data = await r.json();
 
             update_led_status(data.led.status);
+
             env_temp.textContent = `Temperature: ${data.sht30.temperature.toFixed(1)} ℃`;
             env_humi.textContent = `Humidity: ${data.sht30.humidity.toFixed(1)} %RH`;
+
+            dev_temp.textContent = `${data.sht30.temperature.toFixed(1)}`;
+            dev_humi.textContent = `${data.sht30.humidity.toFixed(1)}`;
+
             update_cpu_usage(cpu_total, data.sysmon.total, 25);
             update_cpu_usage(cpu0, data.sysmon.cpu0);
             update_cpu_usage(cpu1, data.sysmon.cpu1);
@@ -653,7 +695,7 @@ document.addEventListener('DOMContentLoaded', function(){
                 const net_stat_wlan0_rx_size = document.getElementById('wlan0_total_rx_size');
                 const net_stat_wlan0_rx_rate = document.getElementById('wlan0_rx_rate');
                 const net_stat_wlan0_rx_count = document.getElementById('wlan0_total_rx_count');
-                const net_stat_wlan0_rx_avg_size = document.getElementById('eth0_rx_avg_size');
+                const net_stat_wlan0_rx_avg_size = document.getElementById('wlan0_rx_avg_size');
                 net_stat_wlan0_rx_size.textContent = `${wlan0_rx_size}`;
                 net_stat_wlan0_rx_rate.textContent = `${data.network.wlan0.rx_rate}`;
                 net_stat_wlan0_rx_count.textContent = `${data.network.wlan0.rx_count}`;
@@ -681,6 +723,8 @@ document.addEventListener('DOMContentLoaded', function(){
             update_led_status('unknown');
             env_temp.textContent = `Temperature: -- ℃`;
             env_humi.textContent = `Humidity: -- %RH`;
+            dev_humi.textContent = `--`;
+            dev_temp.textContent = `--`;
             cpu_total.textContent = '-- %';
             cpu0.textContent = '-- %';
             cpu1.textContent = '-- %';

@@ -86,4 +86,7 @@
 #define unlikely(x) __builtin_expect(!!(x), 0)
 #endif
 
+// 安全snprintf
+#define safe_snprintf(buf, fmt, args...)        snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf) - 1, fmt, ##args)
+
 #endif

@@ -465,3 +465,264 @@ th {
     margin: 15px 0 5px 0;
     position: relative;
 }
+
+/* ==========================================
+   Devices 页面 - 精简版 (LED & SHT30)
+   ========================================== */
+
+/* 1. 设备卡片 */
+.device-card {
+    flex: 1 1 240px;
+    max-width: 300px;         /* 限制最大宽度，两个卡片不会拉得太宽 */
+    background: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(245,247,250,0.7) 100%);
+    border-radius: 16px;
+    padding: 24px 20px;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.device-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+/* 顶部装饰条 */
+.device-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+}
+.device-card.dev-blue::before  { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.device-card.dev-green::before { background: linear-gradient(90deg, #10b981, #34d399); }
+
+/* 2. 图标底座 */
+.device-icon {
+    font-size: 1.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    -webkit-text-fill-color: initial !important;
+    color: initial !important;
+    opacity: 1 !important;
+}
+.dev-blue .device-icon  { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); }
+.dev-green .device-icon { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); }
+
+/* 3. 文字样式 */
+.device-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.device-status {
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.status-on  { color: #10b981; }
+.status-off { color: #a0aec0; }
+
+/* 4. iOS 风格开关 */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+    margin-top: 5px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #cbd5e0;
+    transition: .4s;
+    border-radius: 34px;
+}
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px; width: 20px;
+    left: 3px; bottom: 3px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+input:checked + .toggle-slider {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+
+/* 5. SHT30 数据行 */
+.sensor-data {
+    width: 100%;
+    display: flex;
+    justify-content: space-around;
+    margin-top: 5px;
+}
+.sensor-val {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.sensor-label {
+    font-size: 0.75rem;
+    color: #718096;
+    margin-top: 2px;
+}
+
+/* ==========================================
+   Devices 页面 - 全局工具栏 (极简文本版)
+   ========================================== */
+
+/* 1. 工具栏容器 */
+.devices-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    margin-bottom: 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05); /* 极细实线分隔 */
+}
+
+/* 2. 提示文字：不缩小，使用与 .content 一致的字号和颜色 */
+.toolbar-hint {
+    font-size: 1.05rem;       /* ⭐ 恢复标准正文字号 */
+    color: #59667c;           /* ⭐ 使用你现有 .card-item p 的颜色 */
+    font-weight: 400;
+    line-height: 1.5;
+}
+
+/* 3. 全局刷新按钮：纯文本幽灵按钮，无背景无边框 */
+.btn-global-poll {
+    background: transparent !important; /* ⭐ 完全透明 */
+    border: none !important;            /* ⭐ 无边框 */
+    box-shadow: none !important;        /* ⭐ 无阴影 */
+    
+    color: #667eea;                     /* 主题紫蓝色 */
+    -webkit-text-fill-color: #667eea;   /* 防止被 span 渐变覆盖 */
+    
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    
+    /* 清除之前伪元素做的渐变边框 */
+    position: static;
+}
+
+/* 去掉之前的 ::before 伪元素效果 */
+.btn-global-poll::before {
+    display: none;
+}
+
+/* 悬停时只加一点点浅色底，不突兀 */
+.btn-global-poll:hover {
+    background: rgba(102, 126, 234, 0.08) !important;
+    color: #764ba2;
+    -webkit-text-fill-color: #764ba2;
+}
+
+/* 点击时轻微缩放 */
+.btn-global-poll:active {
+    transform: scale(0.96);
+    background: rgba(102, 126, 234, 0.15) !important;
+}
+
+/* 禁用状态（加载中） */
+.btn-global-poll:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* 图标样式 */
+.poll-icon {
+    font-size: 1.1rem;
+    display: inline-block;
+    line-height: 1;
+}
+
+/* 加载中旋转动画 */
+.btn-global-poll.loading .poll-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% { transform: rotate(360deg); }
+}
+
+/* 响应式：小屏幕上下排列 */
+@media (max-width: 500px) {
+    .devices-toolbar {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+        align-items: center;
+    }
+}
+
+/* ==========================================
+   2. 图表专属样式（锁死比例）
+   ========================================== */
+.chart-section {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.chart-card {
+    width: 100%;
+    max-width: 800px; /* 限制最大宽度，大屏下不会太扁 */
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+/* ⭐ 核心：给 Canvas 一个明确的物理边界 */
+.chart-container {
+    position: relative;
+    width: 100%;
+    height: 280px; /* 锁死高度！Chart.js 会根据这个高度自适应 */
+}
+
+/* 移动端适配 */
+@media (max-width: 600px) {
+    .chart-container {
+        height: 220px; /* 手机上稍微矮一点 */
+    }
+    .chart-card {
+        padding: 15px;
+    }
+}

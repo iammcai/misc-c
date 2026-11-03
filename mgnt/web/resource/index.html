@@ -65,8 +65,52 @@
 
             <!-- ===== Devices 页面（占位） ===== -->
             <div class="page" id="page-devices">
-                <h2>Devices</h2>
-                <p>Coming soon...</p>
+                <div class="devices-toolbar">
+                    <span class="toolbar-hint">Auto-sync every 1s</span>
+                    <button class="btn-device btn-global-poll" id="global_poll_btn">
+                        <span class="poll-icon">⟳</span> Refresh All
+                    </button>
+                </div>
+                <div class="card-grid" style="justify-content: center;">
+                    <!-- 1. LED 控制 -->
+                    <div class="device-card dev-blue">
+                        <span class="device-icon">💡</span>
+                        <div class="device-name">LED</div>
+                        <div class="device-status status-off" id="dev_led">--</div>
+                        
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="led_toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <!-- 2. SHT30 传感器 -->
+                    <div class="device-card dev-green">
+                        <span class="device-icon">🌡️</span>
+                        <div class="device-name">SHT30 Sensor</div>
+                        
+                        <div class="sensor-data">
+                            <div>
+                                <div class="sensor-val" id="dev_temp">--</div>
+                                <div class="sensor-label">Temperature (℃)</div>
+                            </div>
+                            <div>
+                                <div class="sensor-val" id="dev_humi">--</div>
+                                <div class="sensor-label">Humidity (%RH)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-section">
+                    <div class="device-card chart-card">
+                        <div class="chart-header">
+                            <span class="device-icon">📈</span>
+                            <div class="device-name">SHT30 History Trend</div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="sht30Chart"></canvas>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- ===== Network Tools 页面 ===== -->
@@ -202,6 +246,6 @@
     </main>
 </div>
 
-<script src="/app.js"></script>
+<script type="module" src="/app.js"></script>
 </body>
 </html>
