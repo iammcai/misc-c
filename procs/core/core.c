@@ -38,7 +38,6 @@
 #include "mp/mp_nonfixed.h"
 #include "mp/mp_slab.h"
 #include "thp/thp.h"
-#include "syslog/syslog.h"
 #include "zcap/zcap.h"
 #include "ftx/ftx.h"
 #include "nt/arp.h"
@@ -53,6 +52,7 @@
 #include "test_proc/test.h"
 #include "rpc/rpc.h"
 #include "ipc/shm/shm.h"
+#include "syslog/syslog_api.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -138,7 +138,7 @@ static void _proc_exit();
 /**
  * @brief       rpc printf hello
  */
-static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
+static error_code_e _rpc_printf_hello(rpc_in_param_t *in_param, rpc_out_param_t *out_param)
 {
     dbg_always("hello");
 
@@ -148,7 +148,7 @@ static error_code_e _rpc_printf_hello(rpc_header_t *hdr, rpc_in_param_t *in_para
 /**
  * @brief       rpc printf hello, sync version
  */
-static error_code_e _rpc_printf_hello_sync(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
+static error_code_e _rpc_printf_hello_sync(rpc_in_param_t *in_param, rpc_out_param_t *out_param)
 {
     dbg_always("hello_sync");
 
@@ -220,7 +220,6 @@ static const module_exit_entry_t module_exit_common_table[] = {
 
 // core进程模块初始化函数集合。fork后执行，仅core进程模块调用
 static const module_init_entry_t module_init_core_table[] = {
-    MODULE_INIT_ENTRY(syslog_init,          syslog_module_init),
     MODULE_INIT_ENTRY(zcap_init,            zcap_module_init),
     MODULE_INIT_ENTRY(ftx_init,             ftx_module_init),
     MODULE_INIT_ENTRY(core_i,               core_iso_init),
@@ -253,19 +252,20 @@ static const module_exit_entry_t module_exit_core_table[] = {
     MODULE_EXIT_ENTRY(core_e,               core_iso_exit),
     MODULE_EXIT_ENTRY(ftx_exit,             ftx_module_exit),
     MODULE_EXIT_ENTRY(zcap_exit_bh,         zcap_module_exit_bh),
-    MODULE_EXIT_ENTRY(syslog_exit,          syslog_module_exit),
 };
 
 // 进程入口函数集合
 static const process_entry_t process_entry_table[] = {
     PROCESS_ENTRY(PID_RPC,          rpc_broker,         rpc_proc_entry),
     PROCESS_ENTRY(PID_TEST,         test,               test_proc_entry),
+    PROCESS_ENTRY(PID_SYSLOG,       syslog,             syslog_proc_entry),
 };
 
 // 进程退出标志shm_name集合，共享内存，core写入0来结束进程
 static const char* process_running_table[] = {
     RPC_PROCESS_RUNNING_SHM_NAME,                   // rpc进程
     TEST_PROCESS_RUNNING_SHM_NAME,                  // test
+    SYSLOG_PROCESS_RUNNING_SHM_NAME,                // syslog
 };
 
 /* ========================================================================== */

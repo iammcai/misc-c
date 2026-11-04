@@ -54,7 +54,12 @@ typedef enum{
     ERR_RPC_SYNC_TIMEOUT,           // 同步调用超时
     ERR_RPC_SERVER_FUNC_NOT_EXIST,  // 服务函数不存在
     ERR_RPC_SYNC_CTX_ERROR,         // 同步调用上下文出错
+    ERR_RPC_IN_PARAM_TLV_NOT_EXIST,     // rpc调用入参数中tlv不存在
     ERR_RPC_OUT_PARAM_TLV_NOT_EXIST,    // rpc调用出参数中tlv不存在
+
+    // timer
+    ERR_EV_TIMER_START = 200,       // 定时器错误码起始
+    ERR_EV_TIMER_CREATE_FAIL,       // 定时器创建失败
 
     // web模块，http模块
     ERR_WEB_START = 800,            // web错误码起始
@@ -88,6 +93,13 @@ typedef enum{
     ERR_JSON_DEPTH_MAX,             // json嵌套深度超出
     ERR_JSON_END_WITHOUT_START,     // 没有start即调用end
     ERR_JSON_FRAME_TYPE_MISMATCH,   // frame匹配失败，比如{]
+
+    // syslog
+    ERR_SYSLOG_START = 1400,        // syslog错误码起始
+    ERR_SYSLOG_BUFFER_NO_EXIST,     // syslog buffer不存在
+    ERR_SYSLOG_BUFFER_WRITE_FAIL,   // syslog buffer写入失败
+    ERR_SYSLOG_FLASH_FILE_NO_EXIST, // 日志flash文件不存在
+
 }error_code_e;
 
 /* ========================================================================== */

@@ -28,7 +28,6 @@
 #include "event/ev_thread.h"
 #include "cli/cli.h"
 #include "event/ev_lock.h"
-#include "syslog/syslog.h"
 #include "rpc/rpc.h"
 
 /* ========================================================================== */
@@ -99,7 +98,7 @@ extern unsigned int mem_type_attr_slab(const mem_type_attr_t *attr)
 /**
  * @brief       rpc server func for get mp usage
  */
-static error_code_e _mp_mem_usage_get_rpc(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param);
+static error_code_e _mp_mem_usage_get_rpc(rpc_in_param_t *in_param, rpc_out_param_t *out_param);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -188,7 +187,7 @@ void mp_module_init_bh()
     dbg_major("mp module init bottom half ok");
 }
 
-static error_code_e _mp_mem_usage_get_rpc(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param)
+static error_code_e _mp_mem_usage_get_rpc(rpc_in_param_t *in_param, rpc_out_param_t *out_param)
 {
     error_code_e ret = ERR_NO_ERROR;
     uint32_t calloc_cnt, calloc_size, free_cnt, free_size;

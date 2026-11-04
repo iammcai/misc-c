@@ -5,6 +5,10 @@ add_library(Mgnt STATIC
     cli/cli_pager.c
     web/http.c
     web/web.c
+    syslog/syslog_client.c
+    syslog/syslog_query.c
+    syslog/syslog_proc.c
+    syslog/syslog_store.c
 )
 
 target_include_directories(Mgnt PUBLIC

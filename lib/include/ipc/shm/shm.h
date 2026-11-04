@@ -39,6 +39,7 @@ typedef struct shm_mgnt_s shm_mgnt_t;
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+//
 /**
  * @brief       open shm
  * 

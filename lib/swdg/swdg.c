@@ -30,7 +30,6 @@
 #include "event/ev_lock.h"
 #include "event/ev_timer.h"
 #include "event/ev_thread.h"
-#include "syslog/syslog.h"
 #include "cli/cli.h"
 
 /* ========================================================================== */
@@ -118,11 +117,7 @@ static void _swdg_monitor_wf(void *args)
         while(st)
         {
             if(unlikely(curr - ATOM_LOAD(&st->last_feed, MORDER_ACQUIRE) > st->threshold))
-            {
-                char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                snprintf(ctx, sizeof(ctx), "thd %s, tid %d, dog need feed!!", st->name, st->tid);
-                syslog_warn(SYSLOG_MODULE_SWDG, ctx);
-            }
+                dbg_error("thd %s, tid %d, dog need feed!!", st->name, st->tid);
             st = swdg_thd_stats_hash_next(&g_swdg_thd_stats_hashtable, st);
         }
     }

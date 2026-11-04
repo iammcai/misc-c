@@ -27,7 +27,6 @@
 #include "event/ev_lock.h"
 #include "type/type_skiplist.h"
 #include "event/ev_thread.h"
-#include "syslog/syslog.h"
 #if MP_NONFIXED_DBG
 #include "cli/cli.h"
 #endif
@@ -466,10 +465,7 @@ static void _mp_nonfixed_free_sl_full_merged(nonfixed_mp_t *mp)
 
     memcpy(&mp->addr_sl, &addr_sl_new, sizeof(mp_nonfixed_node_addr_skiplist_head_t));
 
-    // 日志记录
-    char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-    snprintf(ctx, sizeof(ctx), "nonfixed memory pool [%s] trigger full merged, piece count %d -> %d", mp->attr->name, before, after);
-    syslog_notice(SYSLOG_MODULE_MP, ctx);
+    dbg_major("nonfixed memory pool [%s] trigger full merged, piece count %d -> %d", mp->attr->name, before, after);
 }
 
 /**

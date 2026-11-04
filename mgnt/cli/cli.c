@@ -47,7 +47,6 @@
 #include "mp/mp_nonfixed.h"
 #include "mp/mp_slab.h"
 #include "thp/thp.h"
-#include "syslog/syslog.h"
 #include "swdg/swdg.h"
 #include "proc/heart_beat.h"
 
@@ -213,10 +212,6 @@ const static cli_register_entry_t g_cli_register_table[] = {
     // TODO: debug
     // thp
     CLI_REG_ENTRY("show thread pool", "show all thread pools info", NULL, thp_dump_cli_hook),
-    // syslog
-    CLI_REG_ENTRY("show syslog buffer", "dump syslog ring buffer", syslog_get_param, syslog_show_buffer_cli_hook),
-    CLI_REG_ENTRY("show syslog direction", "show syslog direction", NULL, syslog_direction_get_cli_hook),
-    CLI_REG_ENTRY("syslog direction", "set syslog direction", syslog_dir_param, syslog_direction_cli_hook),
     // swdg
     CLI_REG_ENTRY("show swdg", "show software watch dog status", NULL, swdg_show_swdg_cli_cb),
     // heartbeat

@@ -28,7 +28,6 @@
 #include "sht30/sht30.h"
 #include "sht30/miscc_sht30.h"
 #include "event/ev_thread.h"
-#include "syslog/syslog.h"
 #include "fifo/fifo.h"
 #include "event/ev_lock.h"
 
@@ -47,8 +46,8 @@
 // 设备路径最大长度
 #define FILE_PATH_MAX_LEN   (256)
 
-// 60s检测一次
-#define SHT30_MEASURE_INTERVAL      (60 * 1000)
+// 30s检测一次
+#define SHT30_MEASURE_INTERVAL      (30 * 1000)
 
 // sht30记录历史数据个数
 #define SHT30_HISTORY_SIZE          (128)
@@ -96,10 +95,7 @@ static attr_force_inline void _sht30_ev_thd_measure(void *args)
 
     if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
         ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
-    {
-        syslog_err(SYSLOG_MODULE_SHT30, "Periodic temperature and humidity monitoring failed");
         return;
-    }
 
     _sht30_history_update(temp_raw/1000.0, humi_raw/1000.0);
 }

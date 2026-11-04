@@ -40,7 +40,6 @@
 #include "event/ev_thread.h"
 #include "mp/mp_nonfixed.h"
 #include "mp/mp_fixed.h"
-#include "syslog/syslog.h"
 #include "swdg/swdg.h"
 
 /* ========================================================================== */
@@ -621,10 +620,7 @@ static void* _zcap_routine(void *args)
                 zcap_packet_t *packet = mp_nonfixed_node_get(zcap, sizeof(zcap_packet_t)+pkt_len);
                 if(!packet)
                 {
-                    char syslog_ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-                    snprintf(syslog_ctx, sizeof(syslog_ctx), "get mem node for size %zu fail, packet loss", 
-                        sizeof(zcap_packet_t) + pkt_len);
-                    syslog_warn(SYSLOG_MODULE_ZCAP, syslog_ctx);
+                    dbg_error("get mem node for size %zu fail, packet loss", sizeof(zcap_packet_t) + pkt_len);
                     continue;
                 }
                 memset(packet, 0, sizeof(zcap_packet_t)+pkt_len);

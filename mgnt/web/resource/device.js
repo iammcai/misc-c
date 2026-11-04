@@ -8,8 +8,8 @@ let pollTimer = null;
 
 // ⭐ 配置项：你的 C 服务器返回数据的 API 路径
 const API_URL = '/api/sht30/history'; 
-// ⭐ 配置项：轮询间隔 (60秒)
-const POLL_INTERVAL = 60 * 1000; 
+// ⭐ 配置项：轮询间隔 (15秒)
+const POLL_INTERVAL = 15 * 1000; 
 
 /**
  * @brief 初始化空图表

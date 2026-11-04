@@ -26,7 +26,6 @@
 #include "event/ev_thread.h"
 #include "event/ev_lock.h"
 #include "cli/cli.h"
-#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -140,11 +139,6 @@ done:
  */
 static void _sysmon_cpu_usage_cal(void *args);
 
-/**
- * @brief       cb for cli: show cpu usage
- */
-static void* _sysmon_show_cpu_usage_cli_hook(unsigned char argc, char *argv[]);
-
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
@@ -202,12 +196,14 @@ static void _sysmon_cpu_usage_cal(void *args)
             if(g_sysmon_cpu_usages_high[i] >= SYSMON_CPU_HIGH_COUNTS_THRESHOLD)
             {
                 g_sysmon_cpu_usages_high[i] = 0;
-                char buf[SYSLOG_ENTRY_CTX_SIZE] = {};
                 if(i == 0)
-                    snprintf(buf, sizeof(buf), "cpu total usage %.2f %% is ltoo high, please check", g_sysmon_cpu_usages[i]);
+                {
+                    dbg_error("cpu total usage %.2f %% is ltoo high, please check", g_sysmon_cpu_usages[i]);
+                }
                 else
-                    snprintf(buf, sizeof(buf), "cpu core %zu usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i]);
-                syslog_warn(SYSLOG_MODULE_SYSMON, buf);
+                {
+                    dbg_error("cpu core %zu usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i]);
+                }
             }
         }
     }

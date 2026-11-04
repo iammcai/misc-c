@@ -87,11 +87,6 @@ typedef struct{
     uss_mgnt_t *accepter;       // accept后返回的新的uss
 }rpc_uss_mgnt_t;
 
-// TODO: rpc用户输入参数定义
-struct rpc_in_param_s{
-    int reserved;
-};
-
 // rpc头部结构定义
 struct rpc_header_s{
     proc_id_e src;      // 调用方pid
@@ -262,6 +257,7 @@ static void _rpc_self_msg_handle(char *msg);
 static const char* g_rpc_uss_path_table[PID_CNT] = {
     [PID_CORE] = "/tmp/core.sock",
     [PID_TEST] = "/tmp/test.sock",
+    [PID_SYSLOG] = "/tmp/syslog.sock",
 };
 
 // rpc进程使用，与其它进程的ipc通道receiver, accepter数组
@@ -325,7 +321,7 @@ error_code_e rpc_out_param_add_tlv(rpc_out_param_t *out_param, const char *type,
     pfm_ensure_ret(out_param && type && len && value, ERR_BAD_PARAM);
 
     // 检查是否还有空间给该tlv
-    if(out_param->tlvs.tlvs_size + sizeof(rpc_tlv_hdr_t) + len > RPC_SYNC_CALL_TLVS_SIZE)
+    if(out_param->tlvs.tlvs_size + sizeof(rpc_tlv_hdr_t) + len > RPC_TLVS_BUFFER_SIZE)
         return ERR_NO_MEM;
 
     rpc_tlv_hdr_t hdr = {.len = len};
@@ -410,8 +406,11 @@ static void _rpc_self_msg_handle(char *msg)
             entry = rpc_server_func_entry_hash_find(&g_rpc_server_func_entry_table, &key);
         pfm_ensure_ret_void(entry);
 
+        char *in_param = NULL;
+        if(rpc_hdr->size)
+            in_param = msg + sizeof(rpc_header_t);
         rpc_out_param_t out_param = {};
-        error_code_e ret = entry->server_func(rpc_hdr, NULL, &out_param);       // 执行服务函数
+        error_code_e ret = entry->server_func((rpc_in_param_t*)in_param, &out_param);   // 执行服务函数
         if(ERR_NO_ERROR == ret && rpc_hdr->sync)                                // 同步请求需要发送resp
         {
             rpc_header_t resp_hdr = {
@@ -497,7 +496,6 @@ static void _rpc_handle_msg(int fd)
 }
 
 static void _rpc_fifo_handle(void)
-
 {
     while(1)
     {
@@ -599,7 +597,7 @@ static void _non_rpc_fifo_handle()
         fifo_read(g_non_rpc_fifo, pkt, total_size, 1);
 
         rpc_header_t *p_hdr = (rpc_header_t*)pkt;
-        char *p_ctx = p_hdr->size ? pkt + sizeof(rpc_header_t) : NULL;      // 指向内容，可能无
+        char *param = p_hdr->size ? pkt + sizeof(rpc_header_t) : NULL;      // 请求入参/响应出参，可能无
 #if RPC_DEBUG_FLAG
         dbg_always("handle select fifo msg: src_pid %d, dest_pid %d, func %s, sync %d, seq %d, req %d, size %d",
             p_hdr->src, p_hdr->dest, p_hdr->func, p_hdr->sync, p_hdr->seq, p_hdr->req, p_hdr->size);
@@ -615,7 +613,13 @@ static void _non_rpc_fifo_handle()
             rpc_out_param_t out_param = {};
             if(likely(entry))
             {
-                ret = entry->server_func(p_hdr, NULL, &out_param);            // 执行服务函数
+                rpc_in_param_t in_param;
+                if(param)
+                    memcpy(&in_param, param, sizeof(rpc_in_param_t));                           // 避免强制转换导致内存错位
+#if RPC_DEBUG_FLAG
+                dbg_always("========= call server func %s start", p_hdr->func);
+#endif
+                ret = entry->server_func(param ? &in_param : NULL, &out_param);                 // 执行服务函数
 #if RPC_DEBUG_FLAG
                 dbg_always("========= call server func %s ok, ret %d", p_hdr->func, ret);
 #endif
@@ -629,6 +633,7 @@ static void _non_rpc_fifo_handle()
             if(!p_hdr->sync)   continue;        // async call到此结束
             else                                // sync call需要构造响应返回
             {
+                out_param.ret = ret;            // 返回值写入out_param
                 rpc_header_t resp_hdr = {
                     .dest = hdr.src,
                     .src = proc_id_get(),
@@ -664,7 +669,7 @@ static void _non_rpc_fifo_handle()
 #if RPC_DEBUG_FLAG
             dbg_always("handle response");
 #endif
-            _rpc_call_sync_ctx_pool_set(p_hdr, (rpc_out_param_t*)p_ctx);
+            _rpc_call_sync_ctx_pool_set(p_hdr, (rpc_out_param_t*)param);
         }
         mp_free(pkt, total_size);
     }
@@ -885,25 +890,35 @@ void rpc_proc_entry()
     dbg_always("@@@ rpc process exit...");
 }
 
-// TODO: 
 error_code_e rpc_call_func_async(proc_id_e dest, const char* func, rpc_in_param_t *in_param)
 {
     pfm_ensure_ret(PROC_ID_IS_VALID(dest) && func && strlen(func) < RPC_FUNC_NAME_SIZE, ERR_BAD_PARAM);
 
-    // buffer初始化
-    rpc_header_t buffer = {
+    // header
+    rpc_header_t rpc_hdr = {
         .src = proc_id_get(),
         .dest = dest,
         .sync = 0,              // 异步调用
         .req = 1,
         .seq = PRC_SYNC_SEQ_NEW,
     };
-    strncpy(buffer.func, func, sizeof(buffer.func) - 1);
+    strncpy(rpc_hdr.func, func, RPC_FUNC_NAME_SIZE - 1);
     size_t ctx_len = 0;
-    // TODO: + ctx
+    if(in_param)
+        ctx_len = sizeof(rpc_in_param_t);
+    rpc_hdr.size = ctx_len;
 
-    buffer.size = ctx_len;
-    error_code_e ret = uss_send(g_rpc_uss_mgnt, &buffer, sizeof(rpc_header_t) + ctx_len);
+    size_t total_size = sizeof(rpc_header_t) + ctx_len;
+    char *buf = alloca(total_size);         // 直接开辟栈内存，速度快
+    pfm_ensure_ret(buf, ERR_NO_MEM);
+
+    // copy header + ctx
+    memcpy(buf, &rpc_hdr, sizeof(rpc_header_t));
+    if(in_param)
+        memcpy(buf + sizeof(rpc_header_t), in_param, sizeof(rpc_in_param_t));
+
+    // send
+    error_code_e ret = uss_send(g_rpc_uss_mgnt, buf, total_size);
     pfm_ensure_ret(ret == ERR_NO_ERROR, ret);
 #if RPC_DEBUG_FLAG
     dbg_always("rpc call func async done, src %d, dest %d, func %s", proc_id_get(), dest, func);
@@ -1018,4 +1033,58 @@ error_code_e rpc_call_func_sync(proc_id_e dest, const char* func, rpc_in_param_t
     dbg_always("@@@ rpc sync call done, ret %d\n\n", out_param->ret);
 #endif
     return out_param->ret;
+}
+
+void rpc_in_param_init(rpc_in_param_t *in_param)
+{
+    pfm_ensure_ret_void(in_param);
+    memset(in_param, 0, sizeof(rpc_in_param_t));
+}
+
+error_code_e rpc_in_param_add(rpc_in_param_t *in_param, const char *name, void *val, size_t size)
+{
+    pfm_ensure_ret(in_param && name && strlen(name) < RPC_TLV_TYPE_SIZE && val && size, ERR_BAD_PARAM);
+
+    if(in_param->tlvs.tlvs_size + sizeof(rpc_tlv_hdr_t) + size > RPC_TLVS_BUFFER_SIZE)
+    {
+        dbg_error("rpc in param tlvs out of size");
+        return ERR_NO_MEM;
+    }
+
+    rpc_tlv_hdr_t hdr = {};
+    memcpy(hdr.type, name, strlen(name));
+    hdr.len = size;
+
+    memcpy(in_param->tlvs.buf + in_param->tlvs.tlvs_size, &hdr, sizeof(rpc_tlv_hdr_t));
+    in_param->tlvs.tlvs_size += sizeof(rpc_tlv_hdr_t);
+    memcpy(in_param->tlvs.buf + in_param->tlvs.tlvs_size, val, size);
+    in_param->tlvs.tlvs_size += size;
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e rpc_in_param_get(rpc_in_param_t *in_param, const char *name, void *buf, size_t size)
+{
+    pfm_ensure_ret(in_param && name && strlen(name) < RPC_TLV_TYPE_SIZE && buf && size, ERR_BAD_PARAM);
+
+    // 查找tlvs中的key
+    size_t offset = 0;
+    while(offset < in_param->tlvs.tlvs_size)
+    {
+        rpc_tlv_hdr_t *hdr = (rpc_tlv_hdr_t*)(in_param->tlvs.buf + offset);
+        if(!strcmp(hdr->type, name))
+        {
+            if(unlikely(size < hdr->len))
+            {
+                dbg_error("out of buf size");
+                return ERR_BAD_PARAM;
+            }
+            memcpy(buf, (char*)hdr + sizeof(rpc_tlv_hdr_t), hdr->len);
+            return ERR_NO_ERROR;
+        }
+
+        offset += (sizeof(rpc_tlv_hdr_t) + hdr->len);
+    }
+
+    return ERR_RPC_IN_PARAM_TLV_NOT_EXIST;
 }

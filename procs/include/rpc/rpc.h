@@ -44,17 +44,14 @@
 // 同步调用永久等待
 #define RPC_SYNC_CALL_WAIT_FOREVER  (0)
 
-// 同步调用返回缓存区大小
-#define RPC_SYNC_CALL_TLVS_SIZE     (256)
+// tlv缓存区大小
+#define RPC_TLVS_BUFFER_SIZE     (512)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
 /* ========================================================================== */
 
-// rpc输入参数声明
-typedef struct rpc_in_param_s rpc_in_param_t;
-
-// rpc返回参数tlv定义
+// rpc参数tlv定义
 typedef struct{
     char type[RPC_TLV_TYPE_SIZE];
     uint8_t len;
@@ -63,8 +60,13 @@ static_assert(sizeof(rpc_tlv_hdr_t) == 16, "sizeof(rpc_tlv_hdr_t) must be 16");
 
 typedef struct{
     size_t tlvs_size;           // tlvs有效长度
-    char buf[RPC_SYNC_CALL_TLVS_SIZE];  // 多个tlvs组成的buf
+    char buf[RPC_TLVS_BUFFER_SIZE];     // 多个tlvs组成的buf
 }rpc_tlvs_t;
+
+// rpc输入参数声明
+typedef struct{
+    rpc_tlvs_t tlvs;            // 入参tlvs
+}rpc_in_param_t;
 
 // rpc返回参数定义
 typedef struct {
@@ -76,22 +78,42 @@ typedef struct {
 typedef struct rpc_header_s rpc_header_t;
 
 // rpc服务函数签名
-typedef error_code_e (*rpc_server_func)(rpc_header_t *hdr, rpc_in_param_t *in_param, rpc_out_param_t *out_param);
+typedef error_code_e (*rpc_server_func)(rpc_in_param_t *in_param, rpc_out_param_t *out_param);
 
 /* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+//
+
 /**
- * @brief       add int type param into rpc in_param
+ * @brief       init rpc in param
+ * 
+ * @param[in]   in_param
+ */
+extern void rpc_in_param_init(rpc_in_param_t *in_param);
+
+/**
+ * @brief       add param into rpc in_param
  * 
  * @param[in]   in_param        - in params
  * @param[in]   name            - param name
  * @param[in]   val             - param value
+ * @param[in]   size            - param size
  * 
  * @retval      error code
  */
-extern error_code_e rpc_in_param_add_int(rpc_in_param_t *in_param, const char *name, int val);
+extern error_code_e rpc_in_param_add(rpc_in_param_t *in_param, const char *name, void *val, size_t size);
+
+/**
+ * @brief       get param from in_param
+ * 
+ * @param[in]   in_param
+ * @param[in]   name
+ * @param[out]  buf
+ * @param[in]   size    - buf size
+ */
+extern error_code_e rpc_in_param_get(rpc_in_param_t *in_param, const char *name, void *buf, size_t size);
 
 /**
  * @brief       rpc call function, async mode

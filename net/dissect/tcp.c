@@ -25,7 +25,6 @@
 #include "net_comm.h"
 #include "mp/mp_fixed.h"
 #include "event/ev_timer.h"
-#include "syslog/syslog.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */

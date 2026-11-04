@@ -66,6 +66,7 @@ typedef struct{
 /*                           Function Definition                              */
 /* ========================================================================== */
 
+//
 shm_mgnt_t* shm_mgnt_open(const char *name, size_t size, int is_creater)
 {
     pfm_ensure_ret(name && name[0] == '/' && size > 0, NULL);

@@ -34,7 +34,6 @@
 #include "mp/mp.h"
 #include "thp/thp.h"
 #include "event/ev_loop.h"
-#include "syslog/syslog.h"
 #include "swdg/swdg.h"
 
 /* ========================================================================== */
@@ -106,6 +105,11 @@ uint64_t mono_time_get()
     clock_gettime(CLOCK_MONOTONIC, &ts);
     uint64_t ms = ts.tv_sec * 1000UL + ts.tv_nsec / 1000000UL;
     return ms;
+}
+
+void mono_time_get_timestamp(struct timespec *ts)
+{
+    clock_gettime(CLOCK_MONOTONIC, ts);
 }
 
 /**
@@ -282,7 +286,8 @@ void ev_timer_start(ev_timer_t *timer)
 
 void ev_timer_stop(ev_timer_t *timer)
 {
-    assert(timer);
+    if(unlikely(!timer))
+        return;
     // 设置deleted标记
     ATOM_STORE(&timer->deleted, 1, MORDER_RELEASE);
 }
@@ -377,11 +382,7 @@ void ev_high_res_timer_start(ev_high_res_timer_t *hr_timer)
     };
 
     if(timerfd_settime(hr_timer->tfd, 0, &its, NULL) < 0)
-    {
-        char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-        snprintf(ctx, sizeof(ctx), "ev_hr_timer [%s] start fail", hr_timer->name);
-        syslog_warn(SYSLOG_MODULE_TIMER, ctx);
-    }
+        dbg_error("ev_hr_timer [%s] start fail", hr_timer->name);
 
     return;
 }

@@ -125,6 +125,16 @@ static attr_force_inline error_code_e realtime_get_str_brief(char *buf, size_t b
 }
 
 /**
+ * @brief       get real time timestamp
+ * 
+ * @param[in]   ts
+ */
+static attr_force_inline void realtime_get_timestamp(struct timespec *ts)
+{
+    clock_gettime(CLOCK_REALTIME, ts);
+}
+
+/**
  * @brief       get low res time currently
  * 
  * @retval      g_curr_ms
@@ -139,6 +149,13 @@ extern uint64_t low_res_cur_time_get();
  * @retval      ms
  */
 extern uint64_t mono_time_get();
+
+/**
+ * @brief       get system mono time stamp
+ * 
+ * @param[out]  ts
+ */
+extern void mono_time_get_timestamp(struct timespec *ts);
 
 /**
  * @brief       get running time

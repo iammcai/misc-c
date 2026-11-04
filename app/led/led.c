@@ -22,8 +22,8 @@
 #include "led/led.h"
 #include "led/miscc_led_ioctl.h"
 #include "plat/atom.h"
-#include "syslog/syslog.h"
 #include "web/web.h"
+#include "syslog/syslog_api.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -79,7 +79,8 @@ void led_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
     }
 
     ATOM_STORE(&g_led_status, LED_STATUS_ON, MORDER_RELAXED);
-    syslog_notice(SYSLOG_MODULE_LED, "led turn on");
+
+    SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led turn on");
 }
 
 /**
@@ -101,7 +102,7 @@ void led_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
     }
     ATOM_STORE(&g_led_status, LED_STATUS_OFF, MORDER_RELAXED);
 
-    syslog_notice(SYSLOG_MODULE_LED, "led turn off");
+    SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led trun off");
 }
 
 error_code_e led_turn_http_cgi_cb(json_builder_t *jb)

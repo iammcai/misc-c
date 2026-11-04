@@ -26,7 +26,6 @@
 #include "cli/cli.h"
 #include "mp/mp_fixed.h"
 #include "plat/atom.h"
-#include "syslog/syslog.h"
 #include "event/ev_lock.h"
 
 /* ========================================================================== */
@@ -273,9 +272,7 @@ void _thp_submit_task(thp_t *thp, thp_work_func wf, void *args)
     thp_work_t *task = mp_fixed_node_get(thp_work_node);    // 尝试获取内存
     if(!task)
     {
-        char ctx[SYSLOG_ENTRY_CTX_SIZE] = {};
-        snprintf(ctx, sizeof(ctx), "thp %s get task node memory fail, task lose.", thp->name);
-        syslog_warn(SYSLOG_MODULE_THP, ctx);
+        dbg_error("thp %s get task node memory fail, task lose.", thp->name);
         return;
     }
     memset(task, 0, sizeof(thp_work_t));

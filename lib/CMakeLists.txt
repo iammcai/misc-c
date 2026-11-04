@@ -16,7 +16,6 @@ add_library(Lib STATIC
     thp/thp.c
     event/ev_timer.c
     event/ev_loop.c
-    syslog/syslog.c
     swdg/swdg.c
     ipc/uds/uds.c
     ipc/uss/uss.c
