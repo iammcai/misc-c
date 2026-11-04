@@ -72,6 +72,7 @@ typedef enum{
 typedef enum{
     SYSLOG_MODULE_ID_ZCAP,      // zcap
     SYSLOG_MODULE_ID_LED,       // led
+    SYSLOG_MODULE_ID_SHT30,     // sht30
 
     SYSLOG_MODULE_ID_MAX,       // 计数
 }syslog_module_id_e;
@@ -104,6 +105,7 @@ extern void syslog_proc_entry();
 static const char* syslog_module_str[SYSLOG_MODULE_ID_MAX] = {
     "zcap",
     "led",
+    "sht30",
 };
 
 #endif

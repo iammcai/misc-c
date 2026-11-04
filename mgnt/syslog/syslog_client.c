@@ -56,6 +56,20 @@ error_code_e _syslog_add_rpc_server(rpc_in_param_t *in_param, rpc_out_param_t *o
     if(ERR_NO_ERROR != ret)
         return ret;
 
+    // 打印到终端
+    // 转换为可读格式
+    char log[SYSLOG_ENTRY_CTX_SIZE*2] = {};
+    struct tm tm_info;
+    char time_str[32] = {};
+    localtime_r(&entry.ts.tv_sec, &tm_info);
+    strftime(time_str, 32, "%Y-%m-%d %H:%M:%S", &tm_info);
+    snprintf(log, sizeof(log), "[%s][%s][%u/%s] %s\n", 
+        time_str, syslog_module_str[entry.module], 
+        entry.facility, syslog_facility_str[entry.facility],
+        entry.ctx
+    );
+    safe_printf("%s", log);
+
     _syslog_store_buffer(&entry);       // store in buffer
 }
 

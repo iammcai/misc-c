@@ -30,6 +30,7 @@
 #include "event/ev_thread.h"
 #include "fifo/fifo.h"
 #include "event/ev_lock.h"
+#include "syslog/syslog_api.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -48,6 +49,40 @@
 
 // 30s检测一次
 #define SHT30_MEASURE_INTERVAL      (30 * 1000)
+
+// 日志告警阈值，连续10次检测，5min异常才会写入日志
+#define SHT30_MEASURE_LOG_THRESHOLD (10)
+
+// 温度舒适下限
+#define TEMP_COMFORT_MIN            (22.0f)
+// 温度舒适上限
+#define TEMP_COMFORT_MAX            (27.0f)
+// 温度偏离舒适下限
+#define TEMP_WARN_LOW               (20.0f)
+// 温度偏离舒适上限
+#define TEMP_WARN_HIGH              (29.0f)
+// 湿度舒适下限
+#define HUMI_COMFORT_MIN            (40.f)
+// 湿度舒适上限
+#define HUMI_COMFORT_MAX            (60.f)
+// 湿度偏离舒适下限
+#define HUMI_WARN_LOW               (30.f)
+// 湿度偏离舒适上限
+#define HUMI_WARN_HIGH              (70.f)
+
+// 判断温度舒适
+#define TEMP_IS_COMFORT(temp)       ((temp) >= TEMP_COMFORT_MIN && (temp) <= TEMP_COMFORT_MAX)
+// 判断温度需要关注
+#define TEMP_IS_WARNING(temp)       (!TEMP_IS_COMFORT(temp) && (temp) >= TEMP_WARN_LOW && (temp) <= TEMP_WARN_HIGH)
+// 判断温度恶劣
+#define TEMP_IS_ALARM(temp)         ((temp) < TEMP_WARN_LOW || (temp) > TEMP_WARN_HIGH)
+
+// 判断湿度舒适
+#define HUMI_IS_COMFORT(humi)       ((humi) >= HUMI_COMFORT_MIN && (humi) <= HUMI_COMFORT_MAX)
+// 判断湿度需要关注
+#define HUMI_IS_WARNING(humi)       (!HUMI_IS_COMFORT(humi) && (humi) >= HUMI_WARN_LOW && (humi) <= HUMI_WARN_HIGH)
+// 判断湿度恶劣
+#define HUMI_IS_ALARM(humi)         ((humi) < HUMI_WARN_LOW || (humi) > HUMI_WARN_HIGH)
 
 // sht30记录历史数据个数
 #define SHT30_HISTORY_SIZE          (128)
@@ -87,18 +122,17 @@ static error_code_e _sht30_read_attr(const char *attr_name, double *value);
 static void _sht30_history_update(double temp, double humi);
 
 /**
+ * @brief       handle comfort, write syslog
+ * 
+ * @param[in]   temp    - 实际温度
+ * @param[out]  humi    - 实际湿度
+ */
+static void _sht30_comfort_handle(double temp, double humi);
+
+/**
  * @brief       ev thd work func for sht30
  */
-static attr_force_inline void _sht30_ev_thd_measure(void *args)
-{
-    double temp_raw = 0.0, humi_raw = 0.0;
-
-    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
-        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
-        return;
-
-    _sht30_history_update(temp_raw/1000.0, humi_raw/1000.0);
-}
+static attr_force_inline void _sht30_ev_thd_measure(void *args);
 
 /* ========================================================================== */
 /*                             Global Variables                               */
@@ -117,9 +151,92 @@ static fifo_t *g_sht30_history_humi = NULL;
 // lock for history
 static ev_spinlock_t g_sht30_history_splock = EV_SPINLOCK_INITIALIZER;
 
+// 检测温度不舒适次数
+static size_t g_sht30_temp_not_comfort_count = 0;
+// 检测湿度不舒适的次数
+static size_t g_sht30_humi_not_comfort_count = 0;
+
 /* ========================================================================== */
 /*                           Function Definition                              */
 /* ========================================================================== */
+
+static inline void _sht30_ev_thd_measure(void *args)
+{
+    double temp_raw = 0.0, humi_raw = 0.0;
+
+    if(ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_HUMI_RAW, &humi_raw) ||
+        ERR_NO_ERROR != _sht30_read_attr(SHT30_ATTR_TEMP_RAW, &temp_raw))
+        return;
+
+    // 更新历史
+    _sht30_history_update(temp_raw/1000.0, humi_raw/1000.0);
+
+    // 判断舒适与否，写日志
+    _sht30_comfort_handle(temp_raw/1000.0, humi_raw/1000.0);
+}
+
+void _sht30_comfort_handle(double temp, double humi)
+{
+    // 处理温度
+    if(TEMP_IS_COMFORT(temp))
+        g_sht30_temp_not_comfort_count = 0;
+    else if(TEMP_IS_WARNING(temp))
+    {
+        ++ g_sht30_temp_not_comfort_count;
+        if(unlikely(g_sht30_temp_not_comfort_count == SHT30_MEASURE_LOG_THRESHOLD))
+        {
+            SYSLOG_WARN(SYSLOG_MODULE_ID_SHT30, 
+                "Temp has been out of the comfort range for the past %d seconds, current is %.2f℃. Take note.",
+                SHT30_MEASURE_INTERVAL * SHT30_MEASURE_LOG_THRESHOLD / 1000,
+                temp
+            );
+            g_sht30_temp_not_comfort_count = 0;
+        }
+    }
+    else if(TEMP_IS_ALARM(temp))
+    {
+        ++ g_sht30_temp_not_comfort_count;
+        if(unlikely(g_sht30_temp_not_comfort_count == SHT30_MEASURE_LOG_THRESHOLD))
+        {
+            SYSLOG_ALERT(SYSLOG_MODULE_ID_SHT30, 
+                "Temp has remained in severe condition for the past %ds, current %.2f℃. Immediate attention.",
+                SHT30_MEASURE_INTERVAL * SHT30_MEASURE_LOG_THRESHOLD / 1000,
+                temp
+            );
+            g_sht30_temp_not_comfort_count = 0;
+        }
+    }
+
+    // 处理湿度
+    if(HUMI_IS_COMFORT(humi))
+        g_sht30_humi_not_comfort_count = 0;
+    else if(HUMI_IS_WARNING(humi))
+    {
+        ++ g_sht30_humi_not_comfort_count;
+        if(unlikely(g_sht30_humi_not_comfort_count == SHT30_MEASURE_LOG_THRESHOLD))
+        {
+            SYSLOG_WARN(SYSLOG_MODULE_ID_SHT30, 
+                "Humi has been out of the comfort range for the past %ds, current %.2f%%RH. Take note.",
+                SHT30_MEASURE_INTERVAL * SHT30_MEASURE_LOG_THRESHOLD / 1000,
+                humi
+            );
+            g_sht30_humi_not_comfort_count = 0;
+        }
+    }
+    else if(HUMI_IS_ALARM(humi))
+    {
+        ++ g_sht30_humi_not_comfort_count;
+        if(unlikely(g_sht30_humi_not_comfort_count == SHT30_MEASURE_LOG_THRESHOLD))
+        {
+            SYSLOG_ALERT(SYSLOG_MODULE_ID_SHT30, 
+                "Humi has remained in severe condition for the past %ds, current %.2f%%RH. Immediate attention.",
+                SHT30_MEASURE_INTERVAL * SHT30_MEASURE_LOG_THRESHOLD / 1000,
+                humi
+            );
+            g_sht30_humi_not_comfort_count = 0;
+        }
+    }
+}
 
 static void _sht30_history_update(double temp, double humi)
 {

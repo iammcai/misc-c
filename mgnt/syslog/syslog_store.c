@@ -105,17 +105,16 @@ static error_code_e _syslog_store_flash()
     pfm_ensure_ret(g_syslog_file, ERR_SYSLOG_FLASH_FILE_NO_EXIST);
 
     syslog_entry_t entry;
-    char buf[SYSLOG_ENTRY_CTX_SIZE*2] = {};     // 用于构建写入字符串
+    char log[SYSLOG_ENTRY_CTX_SIZE*2] = {};     // 用于构建写入字符串
     while(fifo_get_used(g_syslog_buffer))
     {
         fifo_read(g_syslog_buffer, (char*)&entry, sizeof(syslog_entry_t), 1);
-        memset(buf, 0, sizeof(buf));
+        memset(log, 0, sizeof(log));
         // 转换为可读格式
         struct tm tm_info;
         char time_str[32] = {};
         localtime_r(&entry.ts.tv_sec, &tm_info);
         strftime(time_str, 32, "%Y-%m-%d %H:%M:%S", &tm_info);
-        char log[256] = {};
         snprintf(log, sizeof(log), "[%s][%s][%u/%s] %s\n", 
             time_str, syslog_module_str[entry.module], 
             entry.facility, syslog_facility_str[entry.facility],
