@@ -26,6 +26,7 @@
 #include "event/ev_thread.h"
 #include "event/ev_lock.h"
 #include "cli/cli.h"
+#include "syslog/syslog_api.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -197,13 +198,9 @@ static void _sysmon_cpu_usage_cal(void *args)
             {
                 g_sysmon_cpu_usages_high[i] = 0;
                 if(i == 0)
-                {
-                    dbg_error("cpu total usage %.2f %% is ltoo high, please check", g_sysmon_cpu_usages[i]);
-                }
+                    SYSLOG_WARN(SYSLOG_MODULE_ID_SYSMON, "cpu total usage %.2f %% is ltoo high, please check", g_sysmon_cpu_usages[i])
                 else
-                {
-                    dbg_error("cpu core %zu usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i]);
-                }
+                    SYSLOG_WARN(SYSLOG_MODULE_ID_SYSMON, "cpu core %zu usage %.2f %% is ltoo high, please check", i - 1, g_sysmon_cpu_usages[i])
             }
         }
     }

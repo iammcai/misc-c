@@ -71,6 +71,7 @@ typedef enum{
 // 日志模块ID枚举
 typedef enum{
     SYSLOG_MODULE_ID_ZCAP,      // zcap
+    SYSLOG_MODULE_ID_SYSMON,    // sys monitor
     SYSLOG_MODULE_ID_LED,       // led
     SYSLOG_MODULE_ID_SHT30,     // sht30
 
@@ -104,6 +105,7 @@ extern void syslog_proc_entry();
 // 日志模块字符串
 static const char* syslog_module_str[SYSLOG_MODULE_ID_MAX] = {
     "zcap",
+    "sys_monitor",
     "led",
     "sht30",
 };
