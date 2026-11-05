@@ -643,6 +643,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
             const eth0_rx_size = (Number(data.network.eth0.rx_size) / 1024 / 1024).toFixed(3);
             const wlan0_rx_size = (Number(data.network.wlan0.rx_size) / 1024 / 1024).toFixed(3);
+            const eth0_tx_size = (Number(data.network.eth0.tx_size) / 1024 / 1024).toFixed(3);
+            const wlan0_tx_size = (Number(data.network.wlan0.tx_size) / 1024 / 1024).toFixed(3);
             eth0_rx.textContent = `eth0: 👇 ${data.network.eth0.rx_rate} kB/s, ${eth0_rx_size} MB`;
             wlan0_rx.textContent = `wlan0: 👇 ${data.network.wlan0.rx_rate} kB/s, ${wlan0_rx_size} MB`;
 
@@ -667,11 +669,20 @@ document.addEventListener('DOMContentLoaded', function(){
                 const net_stat_eth0_rx_rate = document.getElementById('eth0_rx_rate');
                 const net_stat_eth0_rx_count = document.getElementById('eth0_total_rx_count');
                 const net_stat_eth0_rx_avg_size = document.getElementById('eth0_rx_avg_size');
+                const net_stat_eth0_tx_rate = document.getElementById('eth0_tx_rate');
+                const net_stat_eth0_tx_size = document.getElementById('eth0_total_tx_size');
+                const net_stat_eth0_tx_count = document.getElementById('eth0_total_tx_count');
+                const net_stat_eth0_tx_avg_size = document.getElementById('eth0_tx_avg_size');
                 net_stat_eth0_rx_size.textContent = `${eth0_rx_size}`;
                 net_stat_eth0_rx_rate.textContent = `${data.network.eth0.rx_rate}`;
                 net_stat_eth0_rx_count.textContent = `${data.network.eth0.rx_count}`;
                 const eth0_rx_avg_size = (Number(data.network.eth0.rx_size) / Number(data.network.eth0.rx_count)).toFixed(2);
                 net_stat_eth0_rx_avg_size.textContent = `${eth0_rx_avg_size}`;
+                net_stat_eth0_tx_rate.textContent = `${data.network.eth0.tx_rate}`;
+                net_stat_eth0_tx_size.textContent = `${eth0_tx_size}`;
+                net_stat_eth0_tx_count.textContent = `${data.network.eth0.tx_count}`;
+                const eth0_tx_avg_size = (Number(data.network.eth0.tx_size) / Number(data.network.eth0.tx_count)).toFixed(2);
+                net_stat_eth0_tx_avg_size.textContent = `${eth0_tx_avg_size}`;
                 
                 // 更新流量柱状图
                 if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.eth0)) {
@@ -696,11 +707,20 @@ document.addEventListener('DOMContentLoaded', function(){
                 const net_stat_wlan0_rx_rate = document.getElementById('wlan0_rx_rate');
                 const net_stat_wlan0_rx_count = document.getElementById('wlan0_total_rx_count');
                 const net_stat_wlan0_rx_avg_size = document.getElementById('wlan0_rx_avg_size');
+                const net_stat_wlan0_tx_rate = document.getElementById('wlan0_tx_rate');
+                const net_stat_wlan0_tx_size = document.getElementById('wlan0_total_tx_size');
+                const net_stat_wlan0_tx_count = document.getElementById('wlan0_total_tx_count');
+                const net_stat_wlan0_tx_avg_size = document.getElementById('wlan0_tx_avg_size');
                 net_stat_wlan0_rx_size.textContent = `${wlan0_rx_size}`;
                 net_stat_wlan0_rx_rate.textContent = `${data.network.wlan0.rx_rate}`;
                 net_stat_wlan0_rx_count.textContent = `${data.network.wlan0.rx_count}`;
                 const wlan0_rx_avg_size = (Number(data.network.wlan0.rx_size) / Number(data.network.wlan0.rx_count)).toFixed(2);
                 net_stat_wlan0_rx_avg_size.textContent = `${wlan0_rx_avg_size}`;
+                net_stat_wlan0_tx_size.textContent = `${wlan0_tx_size}`;
+                net_stat_wlan0_tx_rate.textContent = `${data.network.wlan0.tx_rate}`;
+                net_stat_wlan0_tx_count.textContent = `${data.network.wlan0.tx_count}`;
+                const wlan0_tx_avg_size = (Number(data.network.wlan0.tx_size) / Number(data.network.wlan0.tx_count)).toFixed(2);
+                net_stat_wlan0_tx_avg_size.textContent = `${wlan0_tx_avg_size}`;
                 
                 // 更新流量柱状图
                 if (data.stream_pie && Array.isArray(data.stream_pie.labels) && Array.isArray(data.stream_pie.wlan0)) {

@@ -147,6 +147,37 @@
                                 <span class="net-stat-unit">B</span>
                             </div>
                         </div>
+                        
+                        <div class="net-dashboard">
+                            <!-- 上行速率 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">👆</span>
+                                <div class="net-stat-label">TX Rate</div>
+                                <div class="net-stat-value" id="eth0_tx_rate">--</div>
+                                <span class="net-stat-unit">kB/s</span>
+                            </div>
+                            <!-- 总接收量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">📃</span>
+                                <div class="net-stat-label">Total TX Size</div>
+                                <div class="net-stat-value" id="eth0_total_tx_size">--</div>
+                                <span class="net-stat-unit">MB</span>
+                            </div>
+                            <!-- 总接收数量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">💼</span>
+                                <div class="net-stat-label">Total TX Count</div>
+                                <div class="net-stat-value" id="eth0_total_tx_count">--</div>
+                                <span class="net-stat-unit">pkts</span>
+                            </div>
+                            <!-- 包平均长度 -->
+                            <div class="net-stat-card stat-purple">
+                                <span class="net-stat-icon">📌</span>
+                                <div class="net-stat-label">Average TX Packet Size</div>
+                                <div class="net-stat-value" id="eth0_tx_avg_size">--</div>
+                                <span class="net-stat-unit">B</span>
+                            </div>
+                        </div>
                         <div class="charts-row">
                             <div class="bar-container">
                                 <canvas id="eth0_protocol_bar"></canvas>
@@ -189,6 +220,36 @@
                                 <span class="net-stat-icon">🧩</span>
                                 <div class="net-stat-label">Average RX Packet Size</div>
                                 <div class="net-stat-value" id="wlan0_rx_avg_size">--</div>
+                                <span class="net-stat-unit">B</span>
+                            </div>
+                        </div>
+                        <div class="net-dashboard">
+                            <!-- 上行速率 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">👆</span>
+                                <div class="net-stat-label">TX Rate</div>
+                                <div class="net-stat-value" id="wlan0_tx_rate">--</div>
+                                <span class="net-stat-unit">kB/s</span>
+                            </div>
+                            <!-- 总接收量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">📃</span>
+                                <div class="net-stat-label">Total TX Size</div>
+                                <div class="net-stat-value" id="wlan0_total_tx_size">--</div>
+                                <span class="net-stat-unit">MB</span>
+                            </div>
+                            <!-- 总接收数量 -->
+                            <div class="net-stat-card stat-blue">
+                                <span class="net-stat-icon">💼</span>
+                                <div class="net-stat-label">Total TX Count</div>
+                                <div class="net-stat-value" id="wlan0_total_tx_count">--</div>
+                                <span class="net-stat-unit">pkts</span>
+                            </div>
+                            <!-- 包平均长度 -->
+                            <div class="net-stat-card stat-purple">
+                                <span class="net-stat-icon">📌</span>
+                                <div class="net-stat-label">Average TX Packet Size</div>
+                                <div class="net-stat-value" id="wlan0_tx_avg_size">--</div>
                                 <span class="net-stat-unit">B</span>
                             </div>
                         </div>

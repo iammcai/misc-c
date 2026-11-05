@@ -196,7 +196,7 @@ static attr_force_inline error_code_e _http_sync_http_cgi_cb(json_builder_t *jb)
     json_object_end(jb);
     // network
     json_object_start_with_key(jb, "network");
-    zcap_sync_rx_http_cgi_cb(jb);
+    zcap_sync_network_http_cgi_cb(jb);
     json_object_end(jb);
     // stream_pie
     json_object_start_with_key(jb, "stream_pie");

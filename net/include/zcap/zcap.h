@@ -40,14 +40,6 @@
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// 帧大小，2KB，足够满足普通以太网报文
-#define FRAME_SIZE      (2048)
-
-// mac地址长度
-#define MAC_ADDR_SIZE   (6)
-
-#define ZCAP_HASH_Q_SIZE        (4)     // hash分片处理报文的队列数量，必须2的幂次
-
 // 过滤字段长度
 #define FIELD_DATA_SIZE     (6)
 // 过滤掩码长度
@@ -72,162 +64,8 @@ typedef enum{
     SPORT,      // 源端口号
 }zcap_pkt_field_e;
 
-// 报文注册字段信息，与zcap_packet_field_e对应
-typedef struct{
-    uint8_t mac_da[MAC_ADDR_SIZE];
-    uint8_t mac_sa[MAC_ADDR_SIZE];
-    uint16_t ether_type;
-    uint32_t ip_da;
-    uint32_t ip_sa;
-    uint8_t ip_pro;
-    uint16_t l4_dport;
-    uint16_t l4_sport;
-}zcap_pkt_info_t;
-
-// 预定义field链表，存储过滤项包含的字段
-pre_declare_list(zcap_pkt_field)
-
-// 报文过滤field定义
-typedef struct{
-    zcap_pkt_field_e field;
-    uint8_t data[FIELD_DATA_SIZE];      // 最多需要6B来记录
-    uint8_t mask[FIELD_MASK_SIZE];      // 掩码
-    zcap_pkt_field_list_item_t item;    // 链表item
-}zcap_pkt_field_t;
-
-// 预定义报文过滤项哈希表，存储所有注册的过滤项
-pre_declare_hash(zcap_pkt_filter)
-
-// 报文过滤项定义
-typedef struct{
-    const char *name;       // 名称
-    int enable;             // 是否开启
-    zcap_pkt_field_list_head_t fields;  // 存储fields的链表
-    zcap_pkt_filter_match_cb cb;        // 匹配执行的回调
-    void *args;         // 回调入参
-    zcap_pkt_filter_hash_item_t item;   // filter哈希表item
-    
-    ATOMIC_UINT64_T match_cnt;      // 命中次数
-}zcap_pkt_filter_t;
-
-// 预定义hash，用于存zcap_t
-pre_declare_hash(zcaptor)
-
-// 预定义spsc_aq，用于存放alz_t和rx_t交互报文
-pre_declare_spsc_atom_queue(zcap_packet)
-
-// 报文五元组信息定义
-typedef struct{
-    uint32_t src_ip;    // ipv4 or ipv6 L32 bit
-    uint32_t dst_ip;
-    uint32_t src_port;
-    uint32_t dst_port;
-    uint8_t protocol;
-    uint8_t err_pkt;    // 是否错包
-} attr_packed zcap_pakcet_flow_key_t;
-
-// 报文定义
-typedef struct{
-    unsigned int len;           // 报文长度
-    zcap_packet_spsc_atom_queue_item_t item;    // aq item
-    zcap_pakcet_flow_key_t flow_key;    // 五元组信息
-    char packet[];    // 报文内容
-}zcap_packet_t;
-
-// 线程解析数据定义，每个解析线程更新自己的，无锁。全局直接叠加统计，允许一定误差
-typedef struct{
-    uint64_t counts;        // 收包数量
-    uint64_t bytes;         // 收包字节数
-    // cast类型
-    uint64_t uc_count;      // 单播报文个数
-    uint64_t mc_count;      // 组播报文个数
-    uint64_t bc_count;      // 广播报文个数
-    // 报文大小
-    uint64_t size_lt_64;    // 小于64B的数量
-    uint64_t size_64_128;
-    uint64_t size_128_256;
-    uint64_t size_256_512;
-    uint64_t size_512_1024;
-    uint64_t size_1024_1518;
-    uint64_t size_gt_1518;
-    // 协议统计数量
-    uint64_t arp;           // arp
-    uint64_t icmp;          // icmp
-    uint64_t miscc_web;     // tcp 8080
-    uint64_t ssh;           // tcp 22
-    uint64_t dns;           // udp 53
-    uint32_t dhcp;          // udp 67/68
-    uint64_t tcp_other;
-    uint64_t udp_other;
-    uint64_t others;
-    // tcp统计
-    tcp_dissect_summary_t tcp;      // tcp解析数据
-} attr_aligned(64) zcap_alz_stats_t;        // 按照64B对齐，避免同一个cache line伪共享，多个线程会干扰
-
-// 解析报文结构
-typedef struct{
-    pthread_t alz_t;    // 线程ID
-    zcap_packet_spsc_atom_queue_head_t alz_aq_head; // 接收的队列
-    ev_sem_t alz_sem;   // 用于唤醒
-    zcap_alz_stats_t stats;     // 统计数据
-}zcap_packet_alz_t;
-
-// 预定义流量来源哈希表节点
-pre_declare_hash(zcap_src_top)
-// heap定义
-pre_declare_heap(zcap_src_top)
-
-// 流量来源条目定义
-typedef struct{
-    uint8_t smac[MAC_ADDR_SIZE];
-    uint64_t cnt;
-
-    zcap_src_top_hash_item_t hash_item;     // hash item
-    zcap_src_top_heap_item_t heap_item;     // heap item
-}zcap_top_src_entry_t;
-
-// 处理流量来源top的线程结构定义
-typedef struct{
-    pthread_t tid;      // 线程tid
-    ATOMIC_UINT8_T run;
-    msg_q_t *msgq;      // 消息队列，解析线程发，本线程收
-    zcap_src_top_hash_head_t hashtable;     // 哈希表，存储流量来源信息
-    ev_spinlock_t lock;     // 用于并发，写多读少
-}zcap_top_cal_thd_t;
-
-// 统计数据定义
-typedef struct{
-    uint64_t last_counts;
-    uint64_t last_bytes;
-    double pps;
-    double Bps;
-
-    ev_spinlock_t lock;
-}zcap_stats_t;
-
-// 抓包结构定义
-typedef struct{
-    const char *if_name;    // 监听接口名
-    int sock_fd;            // 监听所用socket fd
-    int if_index;           // 接口对应内核index
-    uint8_t if_mac[MAC_ADDR_SIZE];  // 接口mac
-    ATOMIC_UINT8_T ready;   // 是否初始化完毕
-    void *ring_buffer;      // 映射
-    unsigned long ring_len; // 映射大小
-
-    pthread_t rx_t;         // 抓包线程
-    ATOMIC_UINT8_T running; // 启动标志
-
-    zcap_packet_alz_t alz[ZCAP_HASH_Q_SIZE];    // 解析线程相关
-
-    zcap_top_cal_thd_t top;     // src top相关
-
-    zcap_stats_t stats;         // 统计数据
-
-    zcap_pkt_filter_hash_head_t filters;    // 管理注册的过滤条件的哈希表
-
-    zcaptor_hash_item_t item;   // hash item
-}zcap_t;
+// 抓包结构声明
+typedef struct zcap_s zcap_t;
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -236,39 +74,22 @@ typedef struct{
 /**
  *  外部使用，声明抓包类型变量
  */
-#define declare_zcap(_ifname) \
-static zcap_t _ifname ## _zcaptor = {   \
-    .if_name = #_ifname,    \
-    .sock_fd = -1,  \
-    .if_index = -1, \
-    .ring_buffer = NULL,    \
-    .ring_len = 0,  \
-    .ready = 0, \
-    .rx_t = 0,  \
-    .running = 0,   \
-    .alz = {},  \
-};  \
-/* _zcap_init end */
-
-/**
- * 外部使用，注册接口抓包
- */
-#define zcap_register(_ifname)  \
-    _zcap_register(&_ifname ## _zcaptor);       \
-/* zcap_register */
+#define declare_zcap(_ifname)   \
+    _zcap_declare(#_ifname);    \
+/* declare_zcap end */
 
 /**
  * 外部使用，启动抓包
  */
-#define zcap_start(_ifname) \
-    _zcap_start(&_ifname ## _zcaptor);  \
+#define zcap_start(_ifname)     \
+    _zcap_start(#_ifname);      \
 /* zcap_start end */
 
 /**
  * 外部使用，结束抓包
  */
 #define zcap_cancel(_ifname)    \
-    _zcap_cancel(&_ifname ## _zcaptor);
+    _zcap_cancel(#_ifname);     \
 /* zcap_cancel end */
 
 /**
@@ -365,6 +186,13 @@ extern void zcap_module_exit_th();
 extern void zcap_module_exit_bh();
 
 /**
+ * @brief       内部使用，创建抓包管理变量
+ * 
+ * @param[in]   name    - if name
+ */
+extern void _zcap_declare(const char *name);
+
+/**
  * @brief       内部使用，初始化抓包组件，未启动
  * 
  * @param[in]   captor  - captor
@@ -372,28 +200,18 @@ extern void zcap_module_exit_bh();
 extern void _zcap_init(zcap_t *captor);
 
 /**
- * @brief       register captor
- * 
- * @param[in]   captor
- */
-static attr_force_inline void _zcap_register(zcap_t *captor)
-{
-    _zcap_init(captor);
-}
-
-/**
  * @brief       启动抓包线程
  * 
- * @param[in]   captor  - captor
+ * @param[in]   name
  */
-extern void _zcap_start(zcap_t *captor);
+extern void _zcap_start(const char *name);
 
 /**
  * @brief       结束抓包线程
  * 
- * @param[in]   captor  - captor
+ * @param[in]   name
  */
-extern void _zcap_cancel(zcap_t *captor);
+extern void _zcap_cancel(const char *name);
 
 /**
  * @brief       get zcaptor status
@@ -414,7 +232,7 @@ extern error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb);
  * 
  * @note        不含{}版本
  */
-extern error_code_e zcap_sync_rx_http_cgi_cb(json_builder_t *jb);
+extern error_code_e zcap_sync_network_http_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       cb for http cgi: /api/network/stream/pie
@@ -462,11 +280,18 @@ extern void _zcap_register_pkt_filter(const char *if_name, const char *filter_na
 extern void _zcap_register_field(const char *if_name, const char *filter_name, zcap_pkt_field_e field, uint8_t *data, uint8_t *mask);
 
 /**
- * @brief       cli hook for: show zcaptor
+ * @brief       cli hook for: show zcaptor rx
  * 
- * @note        打印zcaptor信息
+ * @note        打印zcaptor rx信息
  */
-extern void zcap_dump_captor_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+extern void zcap_dump_captor_rx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: show zcaptor tx
+ * 
+ * @note        打印zcaptor tx信息
+ */
+extern void zcap_dump_captor_tx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: zcap dump

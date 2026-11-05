@@ -165,9 +165,6 @@ ATOMIC_UINT8_T core_running;
 // 用于通知platform init ok
 ev_sem_t g_platform_init_ok;
 
-declare_zcap(eth0)
-declare_zcap(wlan0)
-
 // 非core运行标志
 static shm_mgnt_t *rpc_process_running;
 
@@ -419,9 +416,9 @@ static inline void signal_handler(int signo)
 static void core_iso_init()
 {
     // 启动抓包
-    zcap_register(eth0);
+    declare_zcap(eth0);
+    declare_zcap(wlan0);
     zcap_start(eth0);
-    zcap_register(wlan0);
     zcap_start(wlan0);
     // 启动发包
     declare_ftx(eth0);
