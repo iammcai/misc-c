@@ -38,7 +38,7 @@ function switchPage(pageName, updateHash = true) {
 }
 
 // 引入device.js
-import { SHT30Chart } from './device.js';
+import { SHT30HistoryChart } from './js_app/sht30.js';
 
 document.addEventListener('DOMContentLoaded', function(){
 
@@ -213,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
-    SHT30Chart.init();
+    SHT30HistoryChart.init();
 
     /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */
     const realtime = document.getElementById('realtime');
