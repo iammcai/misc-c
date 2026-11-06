@@ -85,7 +85,7 @@ extern void uss_mgnter_destory(uss_mgnt_t *uss_mgnter);
  * 
  * @retval      error code
  */
-extern error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t len);
+extern error_code_e uss_send(const uss_mgnt_t *uss_mgnter, const void *data, size_t len);
 
 /**
  * @brief       receive by uss, blocking
@@ -98,7 +98,7 @@ extern error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t le
  * 
  * @note        每次读取一个消息，配合epoll ET需要while(1)调用
  */
-extern ssize_t uss_recv(uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size);
+extern ssize_t uss_recv(const uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size);
 
 #endif
 /* __USS_H__ end */

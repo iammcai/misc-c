@@ -193,7 +193,7 @@ error_code_e shm_mgnt_read(shm_mgnt_t *shm, size_t offset, void *buf, size_t len
         return ERR_SYS_API_ERROR;
 
     shm_layout_t *layout = (shm_layout_t*)shm->map_ptr;
-    char *src = (char*)layout->data + offset;
+    const char *src = (char*)layout->data + offset;
     memcpy(buf, src, len);
 
     // unlock

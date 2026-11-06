@@ -48,7 +48,7 @@ struct fifo_s{
  * 
  * @retval      free size of fifo
  */
-static attr_pure_inline size_t _fifo_remain(fifo_t *fifo)
+static attr_pure_inline size_t _fifo_remain(const fifo_t *fifo)
 {
     if(!fifo || fifo->size == 0)
         return 0;
@@ -106,7 +106,7 @@ size_t fifo_write(fifo_t *fifo, const void *src, size_t len)
     else        // 分两段
     {
         memcpy(fifo->buffer + tail, src, first_chunk);
-        memcpy(fifo->buffer, src + first_chunk, write_size - first_chunk);
+        memcpy(fifo->buffer, (char*)src + first_chunk, write_size - first_chunk);
     }
 
     fifo->tail += write_size;
@@ -144,18 +144,18 @@ size_t fifo_read(fifo_t *fifo, char *dest, size_t len, int out)
     return len;
 }
 
-size_t fifo_get_used(fifo_t *fifo)
+size_t fifo_get_used(const fifo_t *fifo)
 {
     return !fifo ? 0 : fifo->tail - fifo->head;
 }
 
-int fifo_is_full(fifo_t *fifo)
+int fifo_is_full(const fifo_t *fifo)
 {
     pfm_ensure_ret(fifo, 0);
     return fifo_get_used(fifo) == fifo->size;
 }
 
-error_code_e fifo_peek(fifo_t *fifo, size_t index, void *dest, size_t item_size)
+error_code_e fifo_peek(const fifo_t *fifo, size_t index, void *dest, size_t item_size)
 {
     pfm_ensure_ret(fifo && dest && item_size, ERR_BAD_PARAM);
 

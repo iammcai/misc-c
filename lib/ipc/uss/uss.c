@@ -224,25 +224,24 @@ void uss_mgnter_destory(uss_mgnt_t *uss_mgnter)
     }
 }
 
-error_code_e uss_send(uss_mgnt_t *uss_mgnter, const void *data, size_t len)
+error_code_e uss_send(const uss_mgnt_t *uss_mgnter, const void *data, size_t len)
 {
     pfm_ensure_ret(uss_mgnter && data && len, ERR_BAD_PARAM);
 
     error_code_e ret = ERR_NO_ERROR;
-    ssize_t sc = 0;
 
     // 长度+内容，打包发送
     size_t tot_len = sizeof(uint32_t) + len;
     char *packed = mp_calloc(1, tot_len);
     memcpy(packed, (uint32_t*)&len, sizeof(uint32_t));
     memcpy(packed + sizeof(uint32_t), data, len);
-    if(tot_len != (sc = _uss_write_exact(uss_mgnter->fd, packed, tot_len)))
+    if(tot_len != _uss_write_exact(uss_mgnter->fd, packed, tot_len))
         ret = ERR_SYS_API_ERROR;
     mp_free(packed, tot_len);
     return ret;
 }
 
-ssize_t uss_recv(uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size)
+ssize_t uss_recv(const uss_mgnt_t *uss_mgnter, void *buf, size_t buf_size)
 {
     pfm_ensure_ret(uss_mgnter && buf && buf_size, -1);
 

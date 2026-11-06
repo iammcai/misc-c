@@ -39,7 +39,7 @@
 // type cnt size
 #define MP_MEMINFO_FMT_HEAD     "%-12s%-12s%-16s\n"
 // data fmt
-#define MP_MEMINFO_FMT_DATA     "%-12s%-12d%-14.2fKB\n"
+#define MP_MEMINFO_FMT_DATA     "%-12s%-12u%-14.2fKB\n"
 // data fmt for used
 #define MP_MEMINFO_FMT_DATA_USED    "%-12s%-12s%-14.2fKB\n"
 
@@ -235,14 +235,14 @@ void mp_show_mem_usage_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]
             rpc_out_param_get_tlv(&out_param, "free_size", sizeof(uint32_t), &free_size);
         }
 
-        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),
+        safe_snprintf(temp_buf,
             "\nProc Id: %d\n" MP_MEMINFO_FMT_HEAD MP_MEMINFO_FMT_HEAD, pid,
             "TYPE", "COUNT", "SIZE",
             "----", "-----", "----"
         );
-        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
-        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
-        snprintf(temp_buf + strlen(temp_buf), sizeof(temp_buf) - strlen(temp_buf),MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
+        safe_snprintf(temp_buf, MP_MEMINFO_FMT_DATA, "calloc", calloc_cnt, (double)calloc_size/1024);
+        safe_snprintf(temp_buf, MP_MEMINFO_FMT_DATA, "free", free_cnt, (double)free_size/1024);
+        safe_snprintf(temp_buf, MP_MEMINFO_FMT_DATA_USED, "used", "/", (double)(calloc_size - free_size)/1024);
     }
 
     cli_printf(ctx, "%s\n",temp_buf);

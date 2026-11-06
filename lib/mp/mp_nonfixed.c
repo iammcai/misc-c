@@ -534,6 +534,8 @@ static void* _mp_nofixed_node_get_slow(mem_type_attr_nonfixed_t *attr, uint32_t 
         return mp_nonfixed_node_data(node);
     }
 
+    // TODO: 合并后还是找不到，尝试扩容
+
     return NULL;
 }
 
