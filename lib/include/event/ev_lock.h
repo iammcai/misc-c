@@ -73,7 +73,7 @@ typedef struct{
 
 // 动态初始化rwlock
 #define ev_rwlock_init(lock)    \
-    _ev_rdlock_init(lock);  \
+    _ev_rwlock_init(lock);  \
 /* ev_rwlock_init end */
 
 /**
@@ -174,7 +174,7 @@ static attr_force_inline void _ev_spin_unlock(ev_spinlock_t **lock)
  * 
  * @param[in]   lock    - rw lock
  */
-static attr_force_inline void _ev_rdlock_init(ev_rwlock_t *lock)
+static attr_force_inline void _ev_rwlock_init(ev_rwlock_t *lock)
 {
     ATOM_STORE(&lock->readers, 0, MORDER_RELEASE);
     ATOM_STORE(&lock->writing, 0, MORDER_RELEASE);

@@ -23,13 +23,15 @@
 
 #include "zcap/zcap_internal.h"
 #include "swdg/swdg.h"
+#include "fifo/fifo.h"
+#include "event/ev_lock.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
 /* ========================================================================== */
 
-// tx速率计算间隔1s
-#define ZCAP_TX_RATE_CAL_INTERVAL       (1000)
+// 速率计算间隔1s
+#define ZCAP_RATE_CAL_INTERVAL          (1000)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -39,14 +41,26 @@
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
+//
+
 /**
  * @brief       tx速率计算线程的工作函数
  */
 static void* _zcap_tx_rate_cal_wf(void* args);
 
+/**
+ * @brief       rx速率计算线程的工作函数
+ */
+static void* _zcap_rx_rate_cal_wf(void *args);
+
 /* ========================================================================== */
 /*                             Global Variables                               */
 /* ========================================================================== */
+
+// 统计接口流量rx速率的线程ID
+static pthread_t g_zcap_rx_rate_cal_tid;
+// 运行标志
+static ATOMIC_UINT8_T g_zcap_rx_rate_cal_runing = 0;
 
 // 统计接口流量tx速率的线程ID
 static pthread_t g_zcap_tx_rate_cal_tid;
@@ -255,7 +269,7 @@ static void* _zcap_tx_rate_cal_wf(void* args)
     const char *th_name = "tx_rate_cal";
     prctl(PR_SET_NAME, th_name);
 
-    swdg_register(th_name, ZCAP_TX_RATE_CAL_INTERVAL * 3);
+    swdg_register(th_name, ZCAP_RATE_CAL_INTERVAL * 3);
 
     ATOM_STORE(&g_zcap_tx_rate_cal_runing, 1, MORDER_RELAXED);
     while(ATOM_LOAD(&g_zcap_tx_rate_cal_runing, MORDER_RELAXED))
@@ -276,21 +290,81 @@ static void* _zcap_tx_rate_cal_wf(void* args)
                     curr_bytes += captor->alz[q].tx_stats.bytes;
                 }
                 // 计算上次差值，更新
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
+                ev_with_wrlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
                 {
                     uint64_t delta_counts = curr_counts - captor->stats[ZCAP_PACKET_EGRESS].last_counts;
                     uint64_t delta_bytes = curr_bytes - captor->stats[ZCAP_PACKET_EGRESS].last_bytes;
                     captor->stats[ZCAP_PACKET_EGRESS].last_counts = curr_counts;
                     captor->stats[ZCAP_PACKET_EGRESS].last_bytes = curr_bytes;
-                    captor->stats[ZCAP_PACKET_EGRESS].pps = (double)delta_counts / (ZCAP_TX_RATE_CAL_INTERVAL / 1000.0);
-                    captor->stats[ZCAP_PACKET_EGRESS].Bps = (double)delta_bytes / (ZCAP_TX_RATE_CAL_INTERVAL / 1000.0);
+                    captor->stats[ZCAP_PACKET_EGRESS].pps = (double)delta_counts / (ZCAP_RATE_CAL_INTERVAL / 1000.0);
+                    captor->stats[ZCAP_PACKET_EGRESS].Bps = (double)delta_bytes / (ZCAP_RATE_CAL_INTERVAL / 1000.0);
+                    // 更新tx history
+                    fifo_t *tx_history = captor->stats[ZCAP_PACKET_EGRESS].Bps_history;
+                    double tmp;
+                    if(fifo_is_full(tx_history))
+                        fifo_read(tx_history, (char*)&tmp, sizeof(double), 1);
+                    fifo_write(tx_history, &captor->stats[ZCAP_PACKET_EGRESS].Bps, sizeof(double));
                 }
 
                 captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
             }
         }
 
-        usleep(ZCAP_TX_RATE_CAL_INTERVAL * 1000);
+        usleep(ZCAP_RATE_CAL_INTERVAL * 1000);
+    }
+
+    swdg_deregister(th_name);
+
+    return NULL;
+}
+
+static void* _zcap_rx_rate_cal_wf(void* args)
+{
+    const char *th_name = "rx_rate_cal";
+    prctl(PR_SET_NAME, th_name);
+
+    swdg_register(th_name, ZCAP_RATE_CAL_INTERVAL * 3);
+
+    ATOM_STORE(&g_zcap_rx_rate_cal_runing, 1, MORDER_RELAXED);
+    while(ATOM_LOAD(&g_zcap_rx_rate_cal_runing, MORDER_RELAXED))
+    {
+        swdg_feed();
+
+        ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        {
+            zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+            while(captor)
+            {
+                // 统计当前总数
+                uint64_t curr_counts = 0;
+                uint64_t curr_bytes = 0;
+                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                {
+                    curr_counts += captor->alz[q].rx_stats.counts;
+                    curr_bytes += captor->alz[q].rx_stats.bytes;
+                }
+                // 计算上次差值，更新
+                ev_with_wrlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+                {
+                    uint64_t delta_counts = curr_counts - captor->stats[ZCAP_PACKET_INGRESS].last_counts;
+                    uint64_t delta_bytes = curr_bytes - captor->stats[ZCAP_PACKET_INGRESS].last_bytes;
+                    captor->stats[ZCAP_PACKET_INGRESS].last_counts = curr_counts;
+                    captor->stats[ZCAP_PACKET_INGRESS].last_bytes = curr_bytes;
+                    captor->stats[ZCAP_PACKET_INGRESS].pps = (double)delta_counts / (ZCAP_RATE_CAL_INTERVAL / 1000.0);
+                    captor->stats[ZCAP_PACKET_INGRESS].Bps = (double)delta_bytes / (ZCAP_RATE_CAL_INTERVAL / 1000.0);
+                    // 更新rx history
+                    fifo_t *rx_history = captor->stats[ZCAP_PACKET_INGRESS].Bps_history;
+                    double tmp;
+                    if(fifo_is_full(rx_history))
+                        fifo_read(rx_history, (char*)&tmp, sizeof(double), 1);
+                    fifo_write(rx_history, &captor->stats[ZCAP_PACKET_INGRESS].Bps, sizeof(double));
+                }
+
+                captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+            }
+        }
+
+        usleep(ZCAP_RATE_CAL_INTERVAL * 1000);
     }
 
     swdg_deregister(th_name);
@@ -303,6 +377,19 @@ void _zcap_stats_src_top_handle(zcap_t *captor, char *src_mac)
     pfm_ensure_ret_void(captor && src_mac);
 
     _msg_q_push(captor->top.msgq, src_mac, MAC_ADDR_SIZE);
+}
+
+void _zcap_rx_rate_cal_start()
+{
+    pthread_create(&g_zcap_rx_rate_cal_tid, NULL, _zcap_rx_rate_cal_wf, NULL);
+    while(!ATOM_LOAD(&g_zcap_rx_rate_cal_runing, MORDER_RELAXED))
+        usleep(100);
+}
+
+void _zcap_rx_rate_cal_stop()
+{
+    ATOM_STORE(&g_zcap_rx_rate_cal_runing, 0, MORDER_RELAXED);
+    pthread_join(g_zcap_rx_rate_cal_tid, NULL);
 }
 
 void _zcap_tx_rate_cal_start()

@@ -237,6 +237,7 @@ static http_cgi_entry_t g_http_cgi_response_table[] = {
     {"/api/network/status/rx",          zcap_rx_http_cgi_cb},
     {"/api/network/stream/pie",         zcap_stream_pie_cgi_cb},
     {"/api/network/protocol/bar",       zcap_protocol_bar_cgi_cb},
+    {"/api/network/sync",               zcap_network_sync_cgi_cb},
 };
 
 /* ========================================================================== */

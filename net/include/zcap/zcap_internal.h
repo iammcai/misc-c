@@ -26,6 +26,7 @@
 #include <netinet/ip.h>         // for struct iphdr
 
 #include "zcap/zcap.h"
+#include "fifo/fifo.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -39,6 +40,9 @@
 
 // hash分片处理报文的队列数量，必须2的幂次
 #define ZCAP_HASH_Q_SIZE    (4)
+
+// Bps_rate历史点数，1s一次
+#define ZCAP_RATE_HISTORY_COUNT_MAX     (128)
 
 /* ========================================================================== */
 /*                             Type Definitions                               */
@@ -183,7 +187,8 @@ typedef struct{
     uint64_t last_bytes;
     double pps;
     double Bps;
-    ev_spinlock_t lock;
+    fifo_t *Bps_history;
+    ev_rwlock_t lock;
 }zcap_stats_t;
 
 // 抓包结构定义
@@ -301,6 +306,20 @@ extern void _zcap_stats_protocol_handle(zcap_alz_stats_t *stats, zcap_packet_t *
  * @note        往top消息队列发信息
  */
 extern void _zcap_stats_src_top_handle(zcap_t *captor, char *src_mac);
+
+/**
+ * @brief       start zcap rx rate caculte
+ * 
+ * @note        启动rx实时速率计算
+ */
+extern void _zcap_rx_rate_cal_start();
+
+/**
+ * @brief       stop zcap rx rate caculate
+ * 
+ * @note        结束rx实时速率计算
+ */
+extern void _zcap_rx_rate_cal_stop();
 
 /**
  * @brief       start zcap tx rate caculate

@@ -209,17 +209,20 @@ declare_list(zcap_pkt_field, zcap_pkt_field, zcap_pkt_field_t, item)
 declare_hash(zcap_pkt_filter, zcap_pkt_filter, zcap_pkt_filter_t, item, 1, 31, _zcap_pkt_filter_cmp, _zcap_pkt_filter_hash)
 
 /**
- * @brief       cal zaptor rx rate thread entry
- */
-static void* _zcap_rate_cal_wf(void *args);
-
-/**
  * @brief       common func for show zcaptor rx/tx
  * 
  * @param[in]   ctx         - cli ctx
  * @param[in]   direction
  */
 static void _zcap_dump_captor_for_cli(cli_ctx_t *ctx, zcap_packet_direction_e direction);
+
+/**
+ * @brief       common func for show zcaptor tx/tx rate history
+ * 
+ * @param[in]   ctx         - cli ctx
+ * @param[in]   direction
+ */
+static void _zcap_dump_rate_histroy(cli_ctx_t *ctx, zcap_packet_direction_e direction);
 
 /* ========================================================================== */
 /*                          Global/Static Variables                           */
@@ -232,11 +235,6 @@ ev_rwlock_t g_zcaptor_hash_rwlock = EV_RWLOCK_INITIALIZER;
 
 // 控制是否打印报文简要信息
 static ATOMIC_UINT8_T g_zcap_dump_pkt_info = 0;
-
-// 后台计算rx速率线程tid
-static pthread_t g_zcap_rx_rate_cal_tid;
-// run
-static ATOMIC_UINT8_T g_zcap_rx_rate_cal_tid_run = 0;
 
 // 用于zcap dump的参数
 cli_param_t zcap_dump_pkt_param[] = {
@@ -824,9 +822,8 @@ void zcap_module_init()
     mp_nonfixed_register(zcap);
     mem_type_attr_fixed_register(dissect_tcp);
 
-    // 启动线程计算zcaptor rx速率
-    pthread_create(&g_zcap_rx_rate_cal_tid, NULL, _zcap_rate_cal_wf, NULL);
-
+    // 启动rx速率计算
+    _zcap_rx_rate_cal_start();
     // 启动tx速率计算
     _zcap_tx_rate_cal_start();
 
@@ -909,10 +906,8 @@ void zcap_module_exit_bh()
         }
     }
 
-    // 结束rate线程
-    ATOM_STORE(&g_zcap_rx_rate_cal_tid_run, 0, MORDER_RELAXED);
-    pthread_join(g_zcap_rx_rate_cal_tid, NULL);
-
+    // 计数rx速率计算
+    _zcap_rx_rate_cal_stop();
     // 结束tx速率计算
     _zcap_tx_rate_cal_stop();
 
@@ -964,8 +959,13 @@ void _zcap_init(zcap_t *captor)
     // 统计数据初始化
     memset(&captor->stats[ZCAP_PACKET_INGRESS], 0, sizeof(zcap_stats_t));
     memset(&captor->stats[ZCAP_PACKET_EGRESS], 0, sizeof(zcap_stats_t));
-    ev_spinlock_init(&captor->stats[ZCAP_PACKET_INGRESS].lock);
-    ev_spinlock_init(&captor->stats[ZCAP_PACKET_EGRESS].lock);
+    ev_rwlock_init(&captor->stats[ZCAP_PACKET_INGRESS].lock);
+    ev_rwlock_init(&captor->stats[ZCAP_PACKET_EGRESS].lock);
+    // 创建rate history fifo
+    captor->stats[ZCAP_PACKET_INGRESS].Bps_history = fifo_create(sizeof(double) * ZCAP_RATE_HISTORY_COUNT_MAX);
+    pfm_ensure_ret_void(captor->stats[ZCAP_PACKET_INGRESS].Bps_history);
+    captor->stats[ZCAP_PACKET_EGRESS].Bps_history = fifo_create(sizeof(double) * ZCAP_RATE_HISTORY_COUNT_MAX);
+    pfm_ensure_ret_void(captor->stats[ZCAP_PACKET_EGRESS].Bps_history);
 
     captor->ring_buffer = MAP_FAILED;
 
@@ -1049,6 +1049,10 @@ void _zcap_cancel(const char *name)
             dbg_major("alz thread %d end", i);
         }
     }
+
+    // 销毁fifo
+    fifo_destroy(&captor->stats[ZCAP_PACKET_INGRESS].Bps_history);
+    fifo_destroy(&captor->stats[ZCAP_PACKET_EGRESS].Bps_history);
 }
 
 int zcap_status_get(const char *if_name)
@@ -1190,7 +1194,7 @@ void _zcap_dump_captor_for_cli(cli_ctx_t *ctx, zcap_packet_direction_e direction
             else
                 safe_snprintf(temp_buf, "Total Bytes: %llu B\n", total_bytes);
             safe_snprintf(temp_buf, "Average Size: %.2f Bytes\n", (double)total_bytes/total_counts);
-            ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+            ev_with_rdlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
                 safe_snprintf(temp_buf, "%s Rate: %.1f pkts/s, %.1f Bytes/s\n", direction == ZCAP_PACKET_INGRESS ? "RX" : "TX",
                     captor->stats[ZCAP_PACKET_INGRESS].pps, 
                     captor->stats[ZCAP_PACKET_INGRESS].Bps);
@@ -1337,14 +1341,56 @@ void _zcap_dump_captor_for_cli(cli_ctx_t *ctx, zcap_packet_direction_e direction
     cli_printf(ctx, "%s", temp_buf);
 }
 
+static void _zcap_dump_rate_histroy(cli_ctx_t *ctx, zcap_packet_direction_e direction)
+{
+    // TODO: 
+    char temp_buf[2048] = {};
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
+    {
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
+        {
+            safe_snprintf(temp_buf, "\n%s Rate History of IF: %s\nOrder: early -> later\n\n", 
+                direction == ZCAP_PACKET_INGRESS ? "RX" : "TX", captor->if_name);
+            
+            zcap_stats_t *stats = &captor->stats[direction];
+            ev_with_rdlock(&stats->lock)
+            {
+                int count = fifo_get_used(stats->Bps_history) / sizeof(double);
+                for(int i = 0; i < count; ++ i)
+                {
+                    double rate;
+                    fifo_peek(stats->Bps_history, i, &rate, sizeof(double));
+                    safe_snprintf(temp_buf, "%.2f B/s\n", rate);
+                }
+            }
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+    safe_snprintf(temp_buf, "\n");
+
+    cli_printf(ctx, "%s", temp_buf);
+}
+
 void zcap_dump_captor_rx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     _zcap_dump_captor_for_cli(ctx, ZCAP_PACKET_INGRESS);
 }
 
+void zcap_dump_captor_rx_rate_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
+{
+    _zcap_dump_rate_histroy(ctx, ZCAP_PACKET_INGRESS);
+}
+
 void zcap_dump_captor_tx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
     _zcap_dump_captor_for_cli(ctx, ZCAP_PACKET_EGRESS);
+}
+
+void zcap_dump_captor_tx_rate_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
+{
+    _zcap_dump_rate_histroy(ctx, ZCAP_PACKET_EGRESS);
 }
 
 void zcap_dump_pkt_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
@@ -1431,7 +1477,7 @@ error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
                     eth0_rx_size += captor->alz[q].rx_stats.bytes;
                     eth0_rx_count += captor->alz[q].rx_stats.counts;
                 }
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
                     eth0_rx_rate = captor->stats[ZCAP_PACKET_INGRESS].Bps / 1000.0;
             }
             else if(0 == strcmp(captor->if_name, "wlan0"))
@@ -1441,7 +1487,7 @@ error_code_e zcap_rx_http_cgi_cb(json_builder_t *jb)
                     wlan0_rx_size += captor->alz[q].rx_stats.bytes;
                     wlan0_rx_count += captor->alz[q].rx_stats.counts;
                 }
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
                     wlan0_rx_rate = captor->stats[ZCAP_PACKET_INGRESS].Bps / 1000.0;
             }
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
@@ -1496,9 +1542,9 @@ error_code_e zcap_sync_network_http_cgi_cb(json_builder_t *jb)
                     eth0_tx_size += captor->alz[q].tx_stats.bytes;
                     eth0_tx_count += captor->alz[q].tx_stats.counts;
                 }
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
                     eth0_rx_rate = captor->stats[ZCAP_PACKET_INGRESS].Bps / 1000.0;
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
                     eth0_tx_rate = captor->stats[ZCAP_PACKET_EGRESS].Bps / 1000.0;
             }
             else if(0 == strcmp(captor->if_name, "wlan0"))
@@ -1510,9 +1556,9 @@ error_code_e zcap_sync_network_http_cgi_cb(json_builder_t *jb)
                     wlan0_tx_size += captor->alz[q].tx_stats.bytes;
                     wlan0_tx_count += captor->alz[q].tx_stats.counts;
                 }
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
                     wlan0_rx_rate = captor->stats[ZCAP_PACKET_INGRESS].Bps / 1000.0;
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
+                ev_with_rdlock(&captor->stats[ZCAP_PACKET_EGRESS].lock)
                     wlan0_tx_rate = captor->stats[ZCAP_PACKET_EGRESS].Bps / 1000.0;
             }
             captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
@@ -1778,46 +1824,56 @@ error_code_e zcap_sync_protocol_bar_cgi_cb(json_builder_t *jb)
     return ERR_NO_ERROR;
 }
 
-static void* _zcap_rate_cal_wf(void *args)
+error_code_e zcap_network_sync_cgi_cb(json_builder_t *jb)
 {
-    const char *name = "zcap_rate_cal";
-
-    prctl(PR_SET_NAME, name);
-    swdg_register(name, ZCAP_CAL_RATE_INTERVAL * 3);
-
-    ATOM_STORE(&g_zcap_rx_rate_cal_tid_run, 1, MORDER_RELAXED);
-    while(ATOM_LOAD(&g_zcap_rx_rate_cal_tid_run, MORDER_RELAXED))
+    json_object_start(jb);
+    ev_with_rdlock(&g_zcaptor_hash_rwlock)
     {
-        ev_with_rdlock(&g_zcaptor_hash_rwlock)
+        zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
+        while(captor)
         {
-            swdg_feed();
-            zcap_t *captor = zcaptor_hash_first(&g_zcaptor_hash_head);
-            while(captor)
+            json_object_start_with_key(jb, captor->if_name);
+
+            // RX
+            json_object_start_with_key(jb, "rx");
+            json_array_start_with_key(jb, "history");
+            zcap_stats_t *stats = &captor->stats[ZCAP_PACKET_INGRESS];
+            ev_with_rdlock(&stats->lock)
             {
-                // 统计当前总数
-                uint64_t curr_counts = 0;
-                uint64_t curr_bytes = 0;
-                for(int q = 0; q < ZCAP_HASH_Q_SIZE; ++ q)
+                int count = fifo_get_used(stats->Bps_history) / sizeof(double);
+                for(int i = 0; i < count; ++ i)
                 {
-                    curr_counts += captor->alz[q].rx_stats.counts;
-                    curr_bytes += captor->alz[q].rx_stats.bytes;
+                    double rate;
+                    fifo_peek(stats->Bps_history, i, &rate, sizeof(double));
+                    json_array_add_double(jb, rate);
                 }
-                // 计算上次差值，更新
-                ev_with_spinlock(&captor->stats[ZCAP_PACKET_INGRESS].lock)
-                {
-                    uint64_t delta_counts = curr_counts - captor->stats[ZCAP_PACKET_INGRESS].last_counts;
-                    uint64_t delta_bytes = curr_bytes - captor->stats[ZCAP_PACKET_INGRESS].last_bytes;
-                    captor->stats[ZCAP_PACKET_INGRESS].last_counts = curr_counts;
-                    captor->stats[ZCAP_PACKET_INGRESS].last_bytes = curr_bytes;
-                    captor->stats[ZCAP_PACKET_INGRESS].pps = (double)delta_counts / (ZCAP_CAL_RATE_INTERVAL / 1000.0);
-                    captor->stats[ZCAP_PACKET_INGRESS].Bps = (double)delta_bytes / (ZCAP_CAL_RATE_INTERVAL / 1000.0);
-                }
-
-                captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
             }
-        }
-        usleep(ZCAP_CAL_RATE_INTERVAL * 1000);
-    }
+            json_array_end(jb);             // end of history
+            json_object_end(jb);            // end of rx
 
-    swdg_deregister(name);
+            // TX
+            json_object_start_with_key(jb, "tx");
+            json_array_start_with_key(jb, "history");
+            stats = &captor->stats[ZCAP_PACKET_EGRESS];
+            ev_with_rdlock(&stats->lock)
+            {
+                int count = fifo_get_used(stats->Bps_history) / sizeof(double);
+                for(int i = 0; i < count; ++ i)
+                {
+                    double rate;
+                    fifo_peek(stats->Bps_history, i, &rate, sizeof(double));
+                    json_array_add_double(jb, rate);
+                }
+            }
+            json_array_end(jb);             // end of history
+            json_object_end(jb);            // end of tx
+
+            json_object_end(jb);            // end of ifname
+
+            captor = zcaptor_hash_next(&g_zcaptor_hash_head, captor);
+        }
+    }
+    json_object_end(jb);            // end
+
+    return ERR_NO_ERROR;
 }

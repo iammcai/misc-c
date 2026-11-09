@@ -188,7 +188,9 @@ const static cli_register_entry_t g_cli_register_table[] = {
     CLI_REG_ENTRY("show cpu usage", "dump cpu usage", NULL, sysmon_show_cpu_usage_cli_hook),
     // zcap
     CLI_REG_ENTRY("show zcaptor rx", "dump rx info of zcaptor", NULL, zcap_dump_captor_rx_cli_hook),
+    CLI_REG_ENTRY("show zcaptor rx rate history", "dump rx rate history", NULL, zcap_dump_captor_rx_rate_history_cli_hook),
     CLI_REG_ENTRY("show zcaptor tx", "dump tx info of zcaptor", NULL, zcap_dump_captor_tx_cli_hook),
+    CLI_REG_ENTRY("show zcaptor tx rate history", "dump tx rate history", NULL, zcap_dump_captor_tx_rate_history_cli_hook),
     CLI_REG_ENTRY("zcaptor dump packet", "dump info of rx packet during a preiod", zcap_dump_pkt_param, zcap_dump_pkt_cli_hook),
     CLI_REG_ENTRY("show zcaptor src top", "dump TOP3 rx source", NULL, zcap_dump_src_top_cli_hook),
     // ftx

@@ -37,8 +37,10 @@ function switchPage(pageName, updateHash = true) {
     }
 }
 
-// 引入device.js
+// 引入sht30.js
 import { SHT30HistoryChart } from './js_app/sht30.js';
+// 引入network.js
+import { networkSyncHdl } from "./js_app/network.js"
 
 document.addEventListener('DOMContentLoaded', function(){
 
@@ -214,6 +216,8 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     SHT30HistoryChart.init();
+
+    networkSyncHdl.init();
 
     /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */
     const realtime = document.getElementById('realtime');

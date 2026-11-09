@@ -259,6 +259,11 @@ extern error_code_e zcap_protocol_bar_cgi_cb(json_builder_t *jb);
 extern error_code_e zcap_sync_protocol_bar_cgi_cb(json_builder_t *jb);
 
 /**
+ * @brief       cb for http cgi: /api/network/sync
+ */
+extern error_code_e zcap_network_sync_cgi_cb(json_builder_t *jb);
+
+/**
  * @brief       register filter into zcaptor
  * 
  * @param[in]   if_name         - if name
@@ -287,11 +292,21 @@ extern void _zcap_register_field(const char *if_name, const char *filter_name, z
 extern void zcap_dump_captor_rx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
+ * @brief       cli hook for: show zcaptor rx rate history
+ */
+extern void zcap_dump_captor_rx_rate_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+
+/**
  * @brief       cli hook for: show zcaptor tx
  * 
  * @note        打印zcaptor tx信息
  */
 extern void zcap_dump_captor_tx_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
+
+/**
+ * @brief       cli hook for: show zcaptor tx rate history
+ */
+extern void zcap_dump_captor_tx_rate_history_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[]);
 
 /**
  * @brief       cli hook for: zcap dump
