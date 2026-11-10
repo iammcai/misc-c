@@ -3,6 +3,7 @@ set(DRIVER_MODULES
     led
     sht30
     ssd1306
+    bh1750
 )
 
 foreach(mod ${DRIVER_MODULES})

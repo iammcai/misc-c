@@ -47,6 +47,7 @@ typedef enum{
     ERR_NOT_SUPPORT,                // 未支持
     ERR_SYS_API_ERROR,              // 系统API报错
     ERR_NO_DEV,                     // 设备不存在
+    ERR_NO_OPER,                    // 实际无操作
 
     // rpc
     ERR_RPC_START = 100,            // rpc错误码起始

@@ -48,10 +48,6 @@ typedef enum{
 }led_status_e;
 
 /* ========================================================================== */
-/*                             Global Variables                               */
-/* ========================================================================== */
-
-/* ========================================================================== */
 /*                           Function Prototypes                              */
 /* ========================================================================== */
 
@@ -104,5 +100,15 @@ extern void led_module_init();
  * @brief       led模块退出
  */
 extern void led_module_exit();
+
+/**
+ * @brief       turn on led
+ */
+extern error_code_e led_turn_on();
+
+/**
+ * @brief       turn off led
+ */
+extern error_code_e led_turn_off();
 
 #endif

@@ -3,6 +3,7 @@ add_library(App STATIC
     sht30/sht30.c
     ssd1306/ssd1306.c
     sysmon/sysmon.c
+    bh1750/bh1750.c
 )
 
 target_include_directories(App PUBLIC

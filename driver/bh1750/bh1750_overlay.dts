@@ -1,0 +1,20 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2712";
+
+    fragment@1 {
+        target = <&i2c1>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            miscc_bh1750@23 {
+                compatible = "miscc,bh1750";
+                reg = <0x23>;
+                status = "okay";
+            };
+        };
+    };
+};

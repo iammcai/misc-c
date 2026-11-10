@@ -49,6 +49,7 @@
 #include "thp/thp.h"
 #include "swdg/swdg.h"
 #include "proc/heart_beat.h"
+#include "bh1750/bh1750.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -186,6 +187,8 @@ const static cli_register_entry_t g_cli_register_table[] = {
     CLI_REG_ENTRY("show humidity history", "dump humidity history", NULL, sht30_show_humi_history),
     // sysmon
     CLI_REG_ENTRY("show cpu usage", "dump cpu usage", NULL, sysmon_show_cpu_usage_cli_hook),
+    // bh1750
+    CLI_REG_ENTRY("show light", "dump light measured by bh1750", NULL, bh1750_light_dump_cli_cb),
     // zcap
     CLI_REG_ENTRY("show zcaptor rx", "dump rx info of zcaptor", NULL, zcap_dump_captor_rx_cli_hook),
     CLI_REG_ENTRY("show zcaptor rx rate history", "dump rx rate history", NULL, zcap_dump_captor_rx_rate_history_cli_hook),

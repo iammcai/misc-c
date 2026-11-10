@@ -67,20 +67,8 @@ static int g_led_fd = -1;
  */
 void led_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_ON)
-        return;
-    
-    int on = 1;
-    if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &on) < 0)
-    {
-        if(ctx)
-            cli_printf(ctx, "-led: ioctl() fail.\n");
-        return;
-    }
-
-    ATOM_STORE(&g_led_status, LED_STATUS_ON, MORDER_RELAXED);
-
-    SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led turn on");
+    if(ERR_NO_ERROR == led_turn_on())
+        SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led turn on");
 }
 
 /**
@@ -90,19 +78,8 @@ void led_on_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
  */
 void led_off_cli_hook(cli_ctx_t *ctx, unsigned char argc, char *argv[])
 {
-    if(ATOM_LOAD(&g_led_status, MORDER_RELAXED) == LED_STATUS_OFF)
-        return;
-
-    int off = 0;
-    if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &off) < 0)
-    {
-        if(ctx)
-            cli_printf(ctx, "-led: ioctl() fail.\n");
-        return;
-    }
-    ATOM_STORE(&g_led_status, LED_STATUS_OFF, MORDER_RELAXED);
-
-    SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led trun off");
+    if(ERR_NO_ERROR == led_turn_off())
+        SYSLOG_NOTICE(SYSLOG_MODULE_ID_LED, "led trun off");
 }
 
 error_code_e led_turn_http_cgi_cb(json_builder_t *jb)
@@ -113,12 +90,16 @@ error_code_e led_turn_http_cgi_cb(json_builder_t *jb)
     switch(status)
     {
         case LED_STATUS_OFF:
-            led_on_cli_hook(NULL, 0, NULL);
-            json_add_string(jb, "status", "on");
+            if(ERR_NO_ERROR == led_turn_on())
+                json_add_string(jb, "status", "on");
+            else
+                json_add_string(jb, "status", "off");
             break;
         case LED_STATUS_ON:
-            led_off_cli_hook(NULL, 0, NULL);
-            json_add_string(jb, "status", "off");
+            if(ERR_NO_ERROR == led_turn_off())
+                json_add_string(jb, "status", "off");
+            else
+                json_add_string(jb, "status", "on");
             break;
         default:
             json_add_string(jb, "status", "unknown");
@@ -218,4 +199,36 @@ void led_module_exit()
     system("rmmod miscc_led");
 
     dbg_major("led module exit ok");
+}
+
+error_code_e led_turn_on()
+{
+    led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
+    if(status == LED_STATUS_ON || status == LED_STATUS_UNKNOWN)
+        return ERR_NO_OPER;
+
+    int on = 1;
+    if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &on) < 0)
+        return ERR_SYS_API_ERROR;
+    
+    led_status_e off = LED_STATUS_OFF;
+    ATOM_CMP_XCHG_WEAK(&g_led_status, &off, LED_STATUS_ON, MORDER_RELAXED, MORDER_RELAXED);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e led_turn_off()
+{
+    led_status_e status = ATOM_LOAD(&g_led_status, MORDER_RELAXED);
+    if(status == LED_STATUS_OFF || status == LED_STATUS_UNKNOWN)
+        return ERR_NO_OPER;
+
+    int off = 0;
+    if(ioctl(g_led_fd, LED_IOCTL_SET_STATE, &off) < 0)
+        return ERR_SYS_API_ERROR;
+    
+    led_status_e on = LED_STATUS_ON;
+    ATOM_CMP_XCHG_WEAK(&g_led_status, &on, LED_STATUS_OFF, MORDER_RELAXED, MORDER_RELAXED);
+
+    return ERR_NO_ERROR;
 }

@@ -53,6 +53,7 @@
 #include "rpc/rpc.h"
 #include "ipc/shm/shm.h"
 #include "syslog/syslog_api.h"
+#include "bh1750/bh1750.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -229,6 +230,7 @@ static const module_init_entry_t module_init_core_table[] = {
     MODULE_INIT_ENTRY(sht30_init,           sht30_module_init),
     MODULE_INIT_ENTRY(ssd1306_init,         ssd1306_module_init),
     MODULE_INIT_ENTRY(sysmon_init,          sysmon_module_init),
+    MODULE_INIT_ENTRY(bh1750_init,          bh1750_module_init),
     MODULE_INIT_ENTRY(cli_init,             cli_module_init),
 };
 
@@ -237,6 +239,7 @@ static const module_exit_entry_t module_exit_core_table[] = {
     MODULE_EXIT_ENTRY(cli_exit_th,          cli_module_exit_th),
     MODULE_EXIT_ENTRY(zcap_exit_th,         zcap_module_exit_th),
     MODULE_EXIT_ENTRY(cli_exit_bh,          cli_module_exit_bh),
+    MODULE_EXIT_ENTRY(bh1750_exit,          bh1750_module_exit),
     MODULE_EXIT_ENTRY(sysmon_exit,          sysmon_module_exit),
     MODULE_EXIT_ENTRY(ssd1306_exit,         ssd1306_module_exit),
     MODULE_EXIT_ENTRY(sht30_exit,           sht30_module_exit),
