@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-08-12 | cai | Initial creation.
+ *   1.1 | 2026-11-10 | cai | Add device common control in sysmon.
  */
 
 #ifndef __SYSMON_H__
@@ -49,6 +50,11 @@ extern error_code_e sysmon_cpu_usage_http_cgi_cb(json_builder_t *jb);
  * @note        不含{}版本
  */
 extern error_code_e sysmon_sync_http_cgi_cb(json_builder_t *jb);
+
+/**
+ * @brief       http cgi response for /api/device/sync
+ */
+extern error_code_e sysmon_device_sync_cgi_cb(json_builder_t *jb);
 
 /**
  * @brief       get total cpu usage

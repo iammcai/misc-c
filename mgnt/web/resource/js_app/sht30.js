@@ -6,10 +6,13 @@
 import { 
     createLineChart, 
     updateChartData, 
-    destroyChart, 
+    destroyChart
+} from '../js_lib/line_chart.js';
+
+import { 
     startPolling, 
     stopPolling 
-} from '../js_lib/line_chart.js';
+} from '../js_lib/poll.js';
 
 let chartInstance = null;
 let pollTimer = null;

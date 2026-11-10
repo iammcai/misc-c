@@ -37,6 +37,8 @@ function switchPage(pageName, updateHash = true) {
     }
 }
 
+// 引入device.js
+import { deviceSyncHdl } from './js_app/device.js';
 // 引入sht30.js
 import { SHT30HistoryChart } from './js_app/sht30.js';
 // 引入network.js
@@ -215,8 +217,8 @@ document.addEventListener('DOMContentLoaded', function(){
         });
     });
 
+    deviceSyncHdl.init();
     SHT30HistoryChart.init();
-
     networkSyncHdl.init();
 
     /* =-=-=-=-=-=-=-=- realtime -=-=-=-=-=-=-=-= */

@@ -12,6 +12,7 @@
  *
  * @history
  *   1.0 | 2026-08-12 | cai | Initial creation.
+ *   1.1 | 2026-11-10 | cai | Add device common control in sysmon.
  */
 
 /* ========================================================================== */
@@ -27,6 +28,7 @@
 #include "event/ev_lock.h"
 #include "cli/cli.h"
 #include "syslog/syslog_api.h"
+#include "bh1750/bh1750.h"
 
 /* ========================================================================== */
 /*                             Macro Definitions                              */
@@ -259,6 +261,24 @@ error_code_e sysmon_sync_http_cgi_cb(json_builder_t *jb)
     json_add_double(jb, "cpu1", temp[2]);
     json_add_double(jb, "cpu2", temp[3]);
     json_add_double(jb, "cpu3", temp[4]);
+
+    return ERR_NO_ERROR;
+}
+
+error_code_e sysmon_device_sync_cgi_cb(json_builder_t *jb)
+{
+    double lux = 0.0;
+
+    // get datas
+    bh1750_lux_read(&lux);
+
+    json_object_start(jb);
+
+    json_object_start_with_key(jb, "bh1750");
+    json_add_double(jb, "lux", lux);
+    json_object_end(jb);            // end of bh1750
+
+    json_object_end(jb);            // end
 
     return ERR_NO_ERROR;
 }
